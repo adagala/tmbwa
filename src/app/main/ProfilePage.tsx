@@ -41,7 +41,7 @@ export default function ProfilePage() {
 
   return (
     <div className="flex flex-col gap-8">
-      <div className="mt-6 text-xl font-medium flex items-center gap-1 dark:text-gray-200">
+      <div className="mt-6 text-xl font-bold flex items-center gap-1 text-guardsman-red-600 dark:text-gray-200">
         <RiUserLine className="size-6 shrink-0" aria-hidden="true" />
         Profile
       </div>
@@ -57,7 +57,7 @@ export default function ProfilePage() {
           <div className="flex justify-center items-center h-96">
             <div className="flex flex-col items-center space-y-3">
               <RiLoaderLine className="size-6 animate-spin" />
-              <div className="font-medium">Loading Contributions</div>
+              <div className="font-medium">Loading Profile</div>
             </div>
           </div>
         ) : (

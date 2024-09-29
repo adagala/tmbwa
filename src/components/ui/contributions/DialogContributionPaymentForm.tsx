@@ -91,7 +91,7 @@ export const DialogContributionPaymentForm = ({
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
             <Button
-              className="h-10 whitespace-nowrap w-full sm:w-auto gap-1 text-indigo-600"
+              className="h-10 whitespace-nowrap w-full sm:w-auto gap-1 text-guardsman-red-500"
               variant="ghost"
             >
               <RiAddLine className="size-4" />

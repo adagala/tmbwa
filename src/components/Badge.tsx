@@ -12,8 +12,8 @@ const badgeVariants = tv({
   variants: {
     variant: {
       default: [
-        'bg-indigo-50 text-indigo-800 ring-indigo-500/30',
-        'dark:bg-indigo-400/10 dark:text-indigo-400 dark:ring-indigo-400/30',
+        'bg-guardsman-red-50 text-guardsman-red-800 ring-guardsman-red-500/30',
+        'dark:bg-guardsman-red-400/10 dark:text-guardsman-red-400 dark:ring-guardsman-red-400/30',
       ],
       neutral: [
         'bg-gray-50 text-gray-700 ring-gray-500/30',

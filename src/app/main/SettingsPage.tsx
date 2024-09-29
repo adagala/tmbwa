@@ -26,7 +26,7 @@ export default function SettingsPage() {
   }, [user?.uid]);
   return (
     <div className="flex flex-col gap-8">
-      <div className="mt-6 text-xl font-medium flex items-center gap-1">
+      <div className="mt-6 text-xl font-bold flex items-center gap-1 text-guardsman-red-600">
         <RiSettings5Line className="size-6 shrink-0" aria-hidden="true" />
         Settings
       </div>

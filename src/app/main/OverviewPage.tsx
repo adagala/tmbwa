@@ -5,6 +5,7 @@ import { List, ListItem } from '@tremor/react';
 import { AreaChart } from '@/components/AreaChart';
 import { useEffect, useState } from 'react';
 import { getMonthlyStats, getRecentPayments } from '@/lib/firebase/firestore';
+import { Avatar } from '@/components/Avatar';
 
 export default function OverviewPage() {
   const [payments, setPayments] = useState<Payment[]>([]);
@@ -33,7 +34,7 @@ export default function OverviewPage() {
 
   return (
     <div className="flex flex-col gap-8">
-      <div className="mt-6 text-xl font-medium flex items-center gap-1">
+      <div className="mt-6  text-guardsman-red-600 text-xl font-bold flex items-center gap-1">
         <RiHome2Line className="size-6 shrink-0" aria-hidden="true" />
         Overview
       </div>
@@ -84,13 +85,7 @@ export default function OverviewPage() {
                 className="hover:bg-gray-50 dark:hover:bg-gray-900/60 dark:border-gray-800 px-2"
               >
                 <div className="flex items-center min-w-0 gap-x-4">
-                  <span
-                    className="flex size-8 shrink-0 items-center justify-center rounded-full border border-gray-300 bg-white text-xs text-gray-700 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300"
-                    aria-hidden="true"
-                  >
-                    {payment.firstname.charAt(0)}
-                    {payment.lastname.charAt(0)}
-                  </span>
+                  <Avatar initial={`${payment.firstname.charAt(0)}${payment.lastname.charAt(0)}`} />
                   <div className="min-w-0 flex-auto">
                     <p className="text-sm font-semibold leading-6 text-gray-900 dark:text-gray-200">
                       {payment.firstname} {payment.lastname}

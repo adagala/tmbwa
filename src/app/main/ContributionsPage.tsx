@@ -25,6 +25,7 @@ import {
 import { getMonthlyMembersContributions } from '@/lib/firebase/firestore';
 import { getMonth, months, years } from '@/lib/utils';
 import debounce from 'lodash.debounce';
+import { Avatar } from '@/components/Avatar';
 
 const currentYear = new Date().getFullYear().toString();
 const currentMonth = String(new Date().getMonth() + 1).padStart(2, '0');
@@ -98,8 +99,8 @@ export default function ContributionsPage() {
 
   return (
     <div className="flex flex-col gap-6 h-auto">
-      <div className="flex justify-between mt-6 font-medium">
-        <div className="flex items-center gap-1 text-xl">
+      <div className="flex justify-between mt-6 font-bold">
+        <div className="flex items-center gap-1 text-xl text-guardsman-red-600">
           <RiWalletLine className="size-6 shrink-0" aria-hidden="true" />
           Contributions
         </div>
@@ -243,13 +244,7 @@ export default function ContributionsPage() {
                     }}
                   >
                     <div className="flex min-w-0 gap-x-4">
-                      <span
-                        className="flex size-8 shrink-0 items-center justify-center rounded-full border border-gray-300 bg-white text-xs text-gray-700 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300"
-                        aria-hidden="true"
-                      >
-                        {contribution.firstname.charAt(0)}
-                        {contribution.lastname.charAt(0)}
-                      </span>
+                      <Avatar initial={`${contribution.firstname.charAt(0)}${contribution.lastname.charAt(0)}`} />
                       <div className="min-w-0 flex-auto">
                         <p className="text-sm font-semibold leading-6 text-gray-900 dark:text-gray-200">
                           {contribution.firstname} {contribution.lastname}

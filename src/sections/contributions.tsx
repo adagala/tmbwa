@@ -1,10 +1,11 @@
-import React from 'react';
-import { Contribution, Member, PaymentStatusEnum } from '@/schemas/member';
-import { RiWalletLine, RiArrowRightSLine } from '@remixicon/react';
-import { List, ListItem } from '@tremor/react';
-import { DialogContributionDetails } from '@/components/ui/contributions/DialogContributionDetails';
+import React from "react";
+import { Contribution, Member, PaymentStatusEnum } from "@/schemas/member";
+import { RiWalletLine, RiArrowRightSLine } from "@remixicon/react";
+import { List, ListItem } from "@tremor/react";
+import { DialogContributionDetails } from "@/components/ui/contributions/DialogContributionDetails";
+import { Avatar } from "@/components/Avatar";
 
-interface ContributionsProps extends React.ComponentPropsWithoutRef<'div'> {
+interface ContributionsProps extends React.ComponentPropsWithoutRef<"div"> {
   member: Member;
   contributions: Contribution[];
 }
@@ -34,22 +35,19 @@ const Contributions = React.forwardRef<HTMLDivElement, ContributionsProps>(
               }}
             >
               <div className="flex min-w-0 gap-x-4">
-                <span
-                  className="flex size-8 shrink-0 items-center justify-center rounded-full border border-gray-300 bg-white text-xs text-gray-700 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300"
-                  aria-hidden="true"
-                >
-                  {new Date(contribution.month)
-                    .toLocaleDateString('en-US', {
-                      year: 'numeric',
-                      month: 'long',
+                <Avatar
+                  initial={new Date(contribution.month)
+                    .toLocaleDateString("en-US", {
+                      year: "numeric",
+                      month: "long",
                     })
                     .charAt(0)}
-                </span>
+                />
                 <div className="min-w-0 flex flex-auto items-center">
                   <p className="text-sm font-semibold leading-6 text-gray-900 dark:text-gray-200">
-                    {new Date(contribution.month).toLocaleDateString('en-US', {
-                      year: 'numeric',
-                      month: 'long',
+                    {new Date(contribution.month).toLocaleDateString("en-US", {
+                      year: "numeric",
+                      month: "long",
                     })}
                   </p>
                 </div>
@@ -63,30 +61,30 @@ const Contributions = React.forwardRef<HTMLDivElement, ContributionsProps>(
                     <div
                       className={`flex-none rounded-full ${
                         contribution.paid === PaymentStatusEnum.enum.paid
-                          ? 'bg-emerald-500/20'
+                          ? "bg-emerald-500/20"
                           : contribution.paid === PaymentStatusEnum.enum.partial
-                            ? 'bg-orange-300/20'
-                            : 'bg-red-500/20'
+                            ? "bg-orange-300/20"
+                            : "bg-red-500/20"
                       }  p-1`}
                     >
                       <div
                         className={`h-1.5 w-1.5 rounded-full ${
                           contribution.paid === PaymentStatusEnum.enum.paid
-                            ? 'bg-emerald-500'
+                            ? "bg-emerald-500"
                             : contribution.paid ===
                                 PaymentStatusEnum.enum.partial
-                              ? 'bg-orange-300'
-                              : 'bg-red-500'
+                              ? "bg-orange-300"
+                              : "bg-red-500"
                         }`}
                       ></div>
                     </div>
                     <p
                       className={`hidden sm:flex text-xs leading-5 font-medium ${
                         contribution.paid === PaymentStatusEnum.enum.paid
-                          ? 'text-emerald-500'
+                          ? "text-emerald-500"
                           : contribution.paid === PaymentStatusEnum.enum.partial
-                            ? 'text-orange-300'
-                            : 'text-red-500'
+                            ? "text-orange-300"
+                            : "text-red-500"
                       } capitalize`}
                     >
                       {contribution.paid}
@@ -107,9 +105,9 @@ const Contributions = React.forwardRef<HTMLDivElement, ContributionsProps>(
         ) : null}
       </div>
     );
-  },
+  }
 );
 
-Contributions.displayName = 'Contributions';
+Contributions.displayName = "Contributions";
 
 export { Contributions };
