@@ -57,7 +57,7 @@ export default function ProfilePage() {
           <div className="flex justify-center items-center h-96">
             <div className="flex flex-col items-center space-y-3">
               <RiLoaderLine className="size-6 animate-spin" />
-              <div className="font-medium">Loading Profile</div>
+              <div className="font-medium">Loading Contribution history</div>
             </div>
           </div>
         ) : (

@@ -52,6 +52,7 @@ export const DialogMemberForm = ({ member }: { member?: Member }) => {
         gender: member.gender,
         lastname: member.lastname,
         membernumber: member.membernumber,
+        win: member.win,
         phonenumber: member.phonenumber,
         role: member.role,
         isFeesPaid: member.isFeesPaid,
@@ -184,6 +185,18 @@ export const DialogMemberForm = ({ member }: { member?: Member }) => {
                       />
                       <InputErrorMessage
                         message={errors.membernumber?.message}
+                      />
+                    </div>
+                    <div className="mx-auto space-y-1">
+                      <Label htmlFor="win">Welfare identification number</Label>
+                      <Input
+                        placeholder="Enter WIN number"
+                        id="win"
+                        {...register('win')}
+                        type="text"
+                      />
+                      <InputErrorMessage
+                        message={errors.win?.message}
                       />
                     </div>
                     <div className="flex gap-1">

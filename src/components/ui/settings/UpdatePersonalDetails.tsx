@@ -1,26 +1,26 @@
-import React from 'react';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { toast } from '@/hooks/useToast';
-import { Label } from '@/components/Label';
-import { Input } from '@/components/Input';
-import { Button } from '@/components/Button';
+import React from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { toast } from "@/hooks/useToast";
+import { Label } from "@/components/Label";
+import { Input } from "@/components/Input";
+import { Button } from "@/components/Button";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/Select';
-import { InputErrorMessage } from '../InputErrorMessage';
+} from "@/components/Select";
+import { InputErrorMessage } from "../InputErrorMessage";
 import {
   Gender,
   Member,
   OwnMemberForm,
   genders,
   ownMemberFormSchema,
-} from '@/schemas/member';
-import { updateMember } from '@/lib/firebase/firestore';
+} from "@/schemas/member";
+import { updateMember } from "@/lib/firebase/firestore";
 
 export function UpdatePersonalDetails({ member }: { member: Member }) {
   const [isUpdating, setIsUpdating] = React.useState(false);
@@ -31,6 +31,7 @@ export function UpdatePersonalDetails({ member }: { member: Member }) {
     lastname: member.lastname,
     gender: member.gender,
     membernumber: member.membernumber,
+    win: member.win,
     phonenumber: member.phonenumber,
   };
 
@@ -52,18 +53,18 @@ export function UpdatePersonalDetails({ member }: { member: Member }) {
       .then(() => {
         console.log(data);
         toast({
-          title: 'Success',
-          description: 'Profile has been updated',
-          variant: 'success',
+          title: "Success",
+          description: "Profile has been updated",
+          variant: "success",
           duration: 3000,
         });
         reset();
       })
       .catch(() => {
         toast({
-          title: 'Error',
-          description: 'Unable to update profile',
-          variant: 'error',
+          title: "Error",
+          description: "Unable to update profile",
+          variant: "error",
           duration: 3000,
         });
       })
@@ -81,7 +82,7 @@ export function UpdatePersonalDetails({ member }: { member: Member }) {
             <Input
               placeholder="Enter first name"
               id="firstname"
-              {...register('firstname')}
+              {...register("firstname")}
               type="text"
             />
             <InputErrorMessage message={errors.firstname?.message} />
@@ -91,7 +92,7 @@ export function UpdatePersonalDetails({ member }: { member: Member }) {
             <Input
               placeholder="Enter last name"
               id="lastname"
-              {...register('lastname')}
+              {...register("lastname")}
               type="text"
             />
             <InputErrorMessage message={errors.lastname?.message} />
@@ -103,7 +104,7 @@ export function UpdatePersonalDetails({ member }: { member: Member }) {
             <Input
               placeholder="Enter P105"
               id="membernumber"
-              {...register('membernumber')}
+              {...register("membernumber")}
               type="text"
             />
             <InputErrorMessage message={errors.membernumber?.message} />
@@ -111,11 +112,11 @@ export function UpdatePersonalDetails({ member }: { member: Member }) {
           <div className="col-span-full sm:col-span-3">
             <Label htmlFor="gender">Gender</Label>
             <Select
-              {...register('gender')}
+              {...register("gender")}
               onValueChange={(gender: Gender) => {
                 setGender(gender);
-                setValue('gender', gender);
-                trigger('gender');
+                setValue("gender", gender);
+                trigger("gender");
               }}
               value={gender}
               defaultValue={member.gender}
@@ -136,6 +137,18 @@ export function UpdatePersonalDetails({ member }: { member: Member }) {
               </SelectContent>
             </Select>
             <InputErrorMessage message={errors.gender?.message} />
+          </div>
+        </div>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-6">
+          <div className="col-span-full sm:col-span-3">
+            <Label htmlFor="win">Welfare identication number</Label>
+            <Input
+              placeholder="Enter WIN number"
+              id="win"
+              {...register("win")}
+              type="text"
+            />
+            <InputErrorMessage message={errors.win?.message} />
           </div>
         </div>
         <div className="col-span-full mt-6 flex justify-end">

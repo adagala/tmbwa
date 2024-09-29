@@ -1,11 +1,11 @@
 // schemas/memberSchema.ts
-import { z } from 'zod';
-import { isMobilePhone } from 'validator';
+import { z } from "zod";
+import { isMobilePhone } from "validator";
 
-export const member_roles = ['member', 'administrator'] as const;
-export const payment_status = ['paid', 'unpaid', 'partial'] as const;
-export const genders = ['male', 'female'] as const;
-export const member_status = ['active', 'inactive', 'suspended'] as const;
+export const member_roles = ["member", "administrator"] as const;
+export const payment_status = ["paid", "unpaid", "partial"] as const;
+export const genders = ["male", "female"] as const;
+export const member_status = ["active", "inactive", "suspended"] as const;
 
 // Enums
 export const StatusEnum = z.enum(member_status);
@@ -15,18 +15,19 @@ export const PaymentStatusEnum = z.enum(payment_status);
 
 // Member Schema
 export const ownMemberFormSchema = z.object({
-  firstname: z.string().min(1, 'First name cannot be empty'),
-  lastname: z.string().min(1, 'Last name cannot be empty'),
+  firstname: z.string().min(1, "First name cannot be empty"),
+  lastname: z.string().min(1, "Last name cannot be empty"),
   membernumber: z
     .string()
-    .min(1, 'Admission number cannot be empty')
-    .regex(/^\d{5}\/\d{2}$/, 'Admission number format required is 00000/24'),
+    .min(1, "Admission number cannot be empty")
+    .regex(/^\d{5}\/\d{2}$/, "Admission number format required is 00000/24"),
+  win: z.string().min(1, "Welfare Identification Number cannot be empty"),
   phonenumber: z
     .string()
-    .min(1, 'Phone number cannot be empty')
+    .min(1, "Phone number cannot be empty")
     .refine(
-      (value) => isMobilePhone(value, ['en-KE'], { strictMode: true }),
-      'Provide a valid phone number',
+      (value) => isMobilePhone(value, ["en-KE"], { strictMode: true }),
+      "Provide a valid phone number"
     ),
   gender: GenderEnum,
 });
@@ -35,21 +36,21 @@ export const memberFormSchema = ownMemberFormSchema.merge(
   z.object({
     email: z
       .string()
-      .email('Invalid email address')
-      .min(1, 'Email cannot be empty'),
+      .email("Invalid email address")
+      .min(1, "Email cannot be empty"),
     role: RoleEnum,
     isFeesPaid: z.boolean().default(false),
-  }),
+  })
 );
 
 // Complete Member Schema (includes fields not in the form)
 export const memberSchema = memberFormSchema.merge(
   z.object({
-    member_id: z.string().min(1, 'ID cannot be empty'),
+    member_id: z.string().min(1, "ID cannot be empty"),
     status: StatusEnum,
     datejoined: z.date(),
     balance: z.number(),
-  }),
+  })
 );
 
 export const firebaseTimestampSchema = z.object({
@@ -60,12 +61,12 @@ export const firebaseTimestampSchema = z.object({
 export const paymentFormSchema = z.object({
   referencenumber: z
     .string()
-    .min(1, 'Reference number cannot be empty')
-    .regex(/^[a-zA-Z0-9]*$/, 'Reference number must be alphanumeric'),
+    .min(1, "Reference number cannot be empty")
+    .regex(/^[a-zA-Z0-9]*$/, "Reference number must be alphanumeric"),
   amount: z
     .string()
     .transform((value) => parseFloat(value))
-    .refine((value) => value > 0, { message: 'Amount must be greater than 0' }),
+    .refine((value) => value > 0, { message: "Amount must be greater than 0" }),
   paymentdate: z.union([z.date(), firebaseTimestampSchema]),
 });
 
@@ -75,13 +76,13 @@ export const paymentSchema = paymentFormSchema.merge(
     firstname: z.string(),
     lastname: z.string(),
     contribution_id: z.string(),
-    member_id: z.string().min(1, 'Member cannot be empty'),
+    member_id: z.string().min(1, "Member cannot be empty"),
     contribution_amount: z.number(),
-  }),
+  })
 );
 
 export const memberContributionSchema = z.object({
-  contribution_id: z.string().min(1, 'Please select a member'),
+  contribution_id: z.string().min(1, "Please select a member"),
   paid: PaymentStatusEnum,
   amount: z.number(),
   payments: z.array(paymentSchema),
