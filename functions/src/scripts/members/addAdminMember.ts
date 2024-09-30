@@ -27,6 +27,7 @@ const member: Member = {
   role: ROLE.ADMINISTRATOR,
   status: STATUS.ACTIVE,
   isFeesPaid: false,
+  win: '0',
 };
 
 // in functions directory use like:  ~ npm run build && node lib/src/scripts/members/addAdminMember.js

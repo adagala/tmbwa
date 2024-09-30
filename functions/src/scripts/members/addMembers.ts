@@ -8,7 +8,7 @@ admin.initializeApp({
 
 const members: Partial<Member>[] = [];
 
-// in functions directory use like:  ~ tsc && node lib/src/scripts/members/addMembers.js
+// in functions directory use like:  ~ npm run build && node lib/src/scripts/members/addMembers.js
 const addMembers = async () => {
   console.log('Start addMembers ...!');
 

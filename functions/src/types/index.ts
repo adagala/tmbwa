@@ -6,6 +6,7 @@ export type Member = {
   email: string;
   role: ROLE;
   membernumber: string;
+  win: string;
   phonenumber: string;
   status: STATUS;
   gender: GENDER;

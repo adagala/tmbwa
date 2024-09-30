@@ -141,7 +141,7 @@ export function UpdatePersonalDetails({ member }: { member: Member }) {
         </div>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-6">
           <div className="col-span-full sm:col-span-3">
-            <Label htmlFor="win">Welfare identication number</Label>
+            <Label htmlFor="win">Welfare identification number</Label>
             <Input
               placeholder="Enter WIN number"
               id="win"
