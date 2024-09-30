@@ -1,44 +1,43 @@
-import React, { useEffect } from "react";
+import React, { useEffect } from 'react';
 import {
-  RiArrowRightSLine,
   RiGroupLine,
   RiIndeterminateCircleLine,
   RiLoaderLine,
   RiShieldCheckLine,
   RiUserForbidLine,
-} from "@remixicon/react";
-import { List, ListItem } from "@tremor/react";
-import { Member, Role, member_roles } from "@/schemas/member";
-import { Input } from "@/components/Input";
+} from '@remixicon/react';
+import { Member, Role, member_roles } from '@/schemas/member';
+import { Input } from '@/components/Input';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/Select";
-import { Button } from "@/components/Button";
-import { DialogMemberForm } from "@/components/ui/members/DialogMemberForm";
-import { getMembers } from "@/lib/firebase/firestore";
-import useUser from "@/hooks/useUser";
-import debounce from "lodash.debounce";
-import { Link } from "react-router-dom";
-import { Tooltip } from "@/components/Tooltip";
-import { Avatar } from "@/components/Avatar";
+} from '@/components/Select';
+import { Button } from '@/components/Button';
+import { DialogMemberForm } from '@/components/ui/members/DialogMemberForm';
+import { getMembers } from '@/lib/firebase/firestore';
+import useUser from '@/hooks/useUser';
+import debounce from 'lodash.debounce';
+import { Link } from 'react-router-dom';
+import { Tooltip } from '@/components/Tooltip';
+import { Avatar } from '@/components/Avatar';
+import { Card } from '@/components/Card';
 
 export default function MembersPage() {
   const { role } = useUser();
-  const [selectedRole, setSelectedRole] = React.useState<Role | "">("");
-  const [selectedFeeStatus, setSelectedFeeStatus] = React.useState("");
-  const [searchValue, setSearchValue] = React.useState("");
-  const [querySearch, setQuerySearch] = React.useState("");
+  const [selectedRole, setSelectedRole] = React.useState<Role | ''>('');
+  const [selectedFeeStatus, setSelectedFeeStatus] = React.useState('');
+  const [searchValue, setSearchValue] = React.useState('');
+  const [querySearch, setQuerySearch] = React.useState('');
   const [members, setMembers] = React.useState<Member[]>([]);
   const [allMembers, setAllMembers] = React.useState<Member[]>([]);
   const [isLoading, setIsLoading] = React.useState(false);
 
   const debouncedSearch = React.useCallback(
     debounce((query: string) => setQuerySearch(query), 500),
-    []
+    [],
   );
 
   useEffect(() => {
@@ -65,17 +64,17 @@ export default function MembersPage() {
   useEffect(() => {
     if (
       querySearch.length < 1 &&
-      selectedRole === "" &&
-      selectedFeeStatus === ""
+      selectedRole === '' &&
+      selectedFeeStatus === ''
     ) {
       setMembers(allMembers);
     } else {
       const filteredMembers = allMembers.filter((member) => {
-        const regex = new RegExp(querySearch, "gi");
+        const regex = new RegExp(querySearch, 'gi');
         const isQueryMatch =
           member.firstname.match(regex) || member.lastname.match(regex);
         const isRoleMatch = !selectedRole ? true : member.role === selectedRole;
-        const feeStatus = selectedFeeStatus === "paid" ? true : false;
+        const feeStatus = selectedFeeStatus === 'paid' ? true : false;
         const isFeeStatusMatch = !selectedFeeStatus
           ? true
           : (member.isFeesPaid || false) === feeStatus;
@@ -93,7 +92,7 @@ export default function MembersPage() {
           Members
         </div>
         <div className="">
-          {role === "administrator" ? <DialogMemberForm /> : null}
+          {role === 'administrator' ? <DialogMemberForm /> : null}
         </div>
       </div>
       <div className="flex flex-col gap-3">
@@ -141,7 +140,7 @@ export default function MembersPage() {
                 <SelectValue placeholder="Membership fees status" />
               </SelectTrigger>
               <SelectContent>
-                {["paid", "unpaid"].map((feeStatus) => (
+                {['paid', 'unpaid'].map((feeStatus) => (
                   <SelectItem
                     key={feeStatus}
                     value={feeStatus}
@@ -159,10 +158,10 @@ export default function MembersPage() {
             className="h-10 whitespace-nowrap"
             variant="secondary"
             onClick={() => {
-              setSelectedRole("");
-              setSearchValue("");
-              setQuerySearch("");
-              setSelectedFeeStatus("");
+              setSelectedRole('');
+              setSearchValue('');
+              setQuerySearch('');
+              setSelectedFeeStatus('');
             }}
           >
             Reset filter
@@ -182,56 +181,50 @@ export default function MembersPage() {
             {members.length > 0 ? (
               <>
                 <div className="text-sm font-semibold text-gray-500 dark:text-gray-200 ml-2">
-                  {members.length} Member{members.length === 1 ? "" : "s"}
+                  {members.length} Member{members.length === 1 ? '' : 's'}
                 </div>
-                <List className="mt-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 mt-2">
                   {members.map((member) => (
-                    <ListItem
-                      key={member.member_id}
-                      className="hover:bg-gray-50 dark:hover:bg-gray-900/60 dark:border-gray-800 pl-2"
+                    <Link
+                      to={member.member_id}
                     >
-                      <Link
-                        to={member.member_id}
-                        // to="/settings"
-                        className="flex justify-between w-full"
+                      <Card
+                        key={member.member_id}
+                        className="flex gap-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-900/60 dark:border-gray-800"
                       >
-                        <div className="flex min-w-0 gap-x-4">
+                        <div>
                           <Avatar
                             initial={`${member.firstname.charAt(0)}${member.lastname.charAt(0)}`}
                           />
-                          <div className="min-w-0 flex-auto">
-                            <div className="text-sm flex items-center gap-1 font-semibold leading-6 text-gray-900 dark:text-gray-200">
-                              {member.firstname} {member.lastname}
-                              <Tooltip
-                                content={`Membership fees ${!member.isFeesPaid ? "not " : ""} paid`}
-                              >
-                                {member.isFeesPaid ? (
-                                  <RiShieldCheckLine className="size-3.5 text-emerald-500" />
-                                ) : (
-                                  <RiIndeterminateCircleLine className="size-3.5 text-red-500" />
-                                )}
-                              </Tooltip>
-                            </div>
-                            <p className="mt-1 truncate text-xs leading-5 text-gray-500 dark:text-gray-400">
-                              {member.email}
-                            </p>
+                        </div>
+                        <div>
+                          <div className="text-sm flex items-center gap-1 font-semibold leading-6 text-gray-900 dark:text-gray-200">
+                            {member.firstname} {member.lastname}
+                            <Tooltip
+                              content={`Membership fees ${!member.isFeesPaid ? 'not ' : ''} paid`}
+                              className="cursor-help"
+                            >
+                              {member.isFeesPaid ? (
+                                <RiShieldCheckLine className="size-3.5 text-emerald-500" />
+                              ) : (
+                                <RiIndeterminateCircleLine className="size-3.5 text-red-500" />
+                              )}
+                            </Tooltip>
+                          </div>
+                          <div className="text-xs font-medium leading-6 text-gray-900 dark:text-gray-200 capitalize">
+                            {member.role}
+                          </div>
+                          <div className="truncate text-xs leading-5 text-gray-500 dark:text-gray-400">
+                            {member.email}
+                          </div>
+                          <div className="text-xs leading-5 text-guardsman-red-600 font-bold">
+                            WIN: {member.win}
                           </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <div className="hidden shrink-0 sm:flex sm:flex-col sm:items-end">
-                            <p className="text-xs font-medium leading-6 text-gray-900 dark:text-gray-200 capitalize">
-                              {member.role}
-                            </p>
-                            <p className="mt-1 text-xs leading-5 text-guardsman-red-600 font-bold">
-                              WIN: {member.win}
-                            </p>
-                          </div>
-                          <RiArrowRightSLine className="size-6 text-gray-400" />
-                        </div>
-                      </Link>
-                    </ListItem>
+                      </Card>
+                    </Link>
                   ))}
-                </List>
+                </div>
               </>
             ) : (
               <div className="flex justify-center items-center h-96">
