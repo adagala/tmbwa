@@ -85,7 +85,9 @@ export default function OverviewPage() {
                 className="hover:bg-gray-50 dark:hover:bg-gray-900/60 dark:border-gray-800 px-2"
               >
                 <div className="flex items-center min-w-0 gap-x-4">
-                  <Avatar initial={`${payment.firstname.charAt(0)}${payment.lastname.charAt(0)}`} />
+                  <Avatar
+                    initial={`${payment.firstname.charAt(0)}${payment.lastname.charAt(0)}`}
+                  />
                   <div className="min-w-0 flex-auto">
                     <p className="text-sm font-semibold leading-6 text-gray-900 dark:text-gray-200">
                       {payment.firstname} {payment.lastname}
