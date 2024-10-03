@@ -28,6 +28,8 @@ export const setMonthlyContributions = onSchedule(
       return _member;
     });
 
+    const contributions: Partial<Contribution>[] = [];
+
     const month = getCurrentMonth();
 
     // create a document for each member for that month
@@ -50,7 +52,7 @@ export const setMonthlyContributions = onSchedule(
       const contributionBalance = MONTHLY_CONTRIBUTION - contributionAmount;
       totalContribution = totalContribution + contributionAmount;
 
-      const payments: Payment[] = [];
+      let payment: Payment | undefined = undefined;
 
       if (contributionAmount > 0) {
         paymentsCount = paymentsCount + 1;
@@ -63,7 +65,7 @@ export const setMonthlyContributions = onSchedule(
           .firestore()
           .doc(`members/${member.member_id}/payments/${paymentId}`);
 
-        const payment: Payment = {
+        const memberPayment: Payment = {
           amount: contributionAmount,
           paymentdate: admin.firestore.Timestamp.now(),
           referencenumber: 'BALANCE B/F',
@@ -73,11 +75,11 @@ export const setMonthlyContributions = onSchedule(
           member_id: member.member_id,
           payment_id: paymentId,
         };
-        payments.push(payment);
+        payment = memberPayment;
         batch.set(paymentRef, payment, { merge: true });
       }
 
-      const contribution: Contribution = {
+      const contribution: Partial<Contribution> = {
         ...member,
         amount: MONTHLY_CONTRIBUTION,
         balance: contributionBalance,
@@ -87,17 +89,22 @@ export const setMonthlyContributions = onSchedule(
             : contributionBalance === MONTHLY_CONTRIBUTION
               ? PAYMENT_STATUS.UNPAID
               : PAYMENT_STATUS.PARTIAL,
-        payments,
+        ...(payment?.payment_id && {
+          payments: admin.firestore.FieldValue.arrayUnion(payment),
+        }),
         createdat: admin.firestore.Timestamp.now(),
         month,
       };
+      contributions.push(contribution);
       batch.set(memberContributionRef, contribution, {
         merge: true,
       });
 
       const memberRef = admin.firestore().doc(`members/${member.member_id}`);
       const memberData: Partial<Member> = {
-        balance: admin.firestore.FieldValue.increment(newMemberBalance),
+        balance: newMemberBalance,
+        contributionBalance:
+          admin.firestore.FieldValue.increment(contributionAmount),
       };
       batch.set(memberRef, memberData, { merge: true });
     });
