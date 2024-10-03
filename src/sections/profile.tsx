@@ -96,7 +96,7 @@ export function Profile({ member }: { member: Member }) {
           <dd
             className={`mt-1 text-sm leading-6 font-semibold sm:col-span-2 sm:mt-0 flex ${balanceColor}`}
           >
-            {member.balance}{' '}
+            {(member.balance || 0).toLocaleString()}{' '}
             {accountState === 'positive' && (
               <RiArrowUpDoubleLine className="size-6" />
             )}
@@ -106,6 +106,19 @@ export function Profile({ member }: { member: Member }) {
             {accountState === 'neutral' && (
               <RiSubtractLine className="size-6" />
             )}
+          </dd>
+        </div>
+        <div className="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-0">
+          <dt className="text-sm font-medium leading-6 text-gray-900 dark:text-gray-100">
+            Contribution balance
+          </dt>
+          <dd
+            className={`mt-1 text-sm leading-6 font-semibold sm:col-span-2 sm:mt-0 flex text-gray-700 dark:text-gray-300`}
+          >
+            {(member.contributionBalance || 0).toLocaleString('en-US', {
+              style: 'currency',
+              currency: 'KES',
+            })}
           </dd>
         </div>
       </dl>

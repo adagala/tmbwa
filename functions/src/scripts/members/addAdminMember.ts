@@ -15,6 +15,7 @@ const firstname = '';
 const lastname = '';
 const member: Member = {
   balance: 0,
+  contributionBalance: 0,
   createat: admin.firestore.Timestamp.now(),
   email: '',
   gender: GENDER.MALE,

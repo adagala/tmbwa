@@ -27,6 +27,8 @@ export const newMember = onDocumentCreated(
       createat: admin.firestore.Timestamp.now(),
       firstnameSearchableIndex,
       lastnameSearchableIndex,
+      balance: 0,
+      contributionBalance: 0,
     };
 
     batch.set(memberRef, memberUpdate, { merge: true });

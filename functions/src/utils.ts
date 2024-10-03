@@ -1,4 +1,4 @@
-export const MONTHLY_CONTRIBUTION = 200;
+export const MONTHLY_CONTRIBUTION = 500;
 
 export const getCurrentMonth = () => {
   const date = new Date();

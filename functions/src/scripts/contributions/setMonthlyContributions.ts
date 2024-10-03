@@ -17,7 +17,7 @@ admin.initializeApp({
 // in functions directory use like:  ~ npm run build && node lib/src/scripts/contributions/setMonthlyContributions.js
 const setMonthlyContributions = async () => {
   // get all members
-  const membersRef = admin.firestore().collection('members').limit(5);
+  const membersRef = admin.firestore().collection('members');
   const membersSnapshot = await membersRef.get();
   const members = membersSnapshot.docs.map((member) => {
     const _member = {
@@ -102,6 +102,8 @@ const setMonthlyContributions = async () => {
     const memberRef = admin.firestore().doc(`members/${member.member_id}`);
     const memberData: Partial<Member> = {
       balance: newMemberBalance,
+      contributionBalance:
+        admin.firestore.FieldValue.increment(contributionAmount),
     };
     batch.set(memberRef, memberData, { merge: true });
   });

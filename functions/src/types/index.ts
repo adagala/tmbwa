@@ -18,6 +18,7 @@ export type Member = {
     [key: string]: boolean;
   };
   balance: number | FieldValue;
+  contributionBalance: number | FieldValue;
   isFeesPaid: boolean;
 };
 

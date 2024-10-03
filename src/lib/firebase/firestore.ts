@@ -244,7 +244,14 @@ export const addPayment = async ({
 
   // update member balance
   const memberRef = doc(db, `members/${memberId}`);
-  batch.set(memberRef, { balance: increment(payment.amount) }, { merge: true });
+  batch.set(
+    memberRef,
+    {
+      balance: increment(payment.amount),
+      contributionBalance: increment(payment.amount),
+    },
+    { merge: true },
+  );
 
   // update stat for that month
   const statRef = doc(db, `monthly_stats/${contribution.month}`);
