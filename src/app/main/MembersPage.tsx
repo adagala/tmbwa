@@ -185,9 +185,7 @@ export default function MembersPage() {
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 mt-2">
                   {members.map((member) => (
-                    <Link
-                      to={member.member_id}
-                    >
+                    <Link to={member.member_id}>
                       <Card
                         key={member.member_id}
                         className="flex gap-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-900/60 dark:border-gray-800"
@@ -214,9 +212,11 @@ export default function MembersPage() {
                           <div className="text-xs font-medium leading-6 text-gray-900 dark:text-gray-200 capitalize">
                             {member.role}
                           </div>
-                          <div className="truncate text-xs leading-5 text-gray-500 dark:text-gray-400">
-                            {member.email}
-                          </div>
+                          {role === 'administrator' ? (
+                            <div className="truncate text-xs leading-5 text-gray-500 dark:text-gray-400">
+                              {member.email}
+                            </div>
+                          ) : null}
                           <div className="text-xs leading-5 text-guardsman-red-600 font-bold">
                             WIN: {member.win}
                           </div>

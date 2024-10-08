@@ -76,7 +76,7 @@ export default function MemberProfilePage() {
                 </Link>
               </Button>
             </div>
-            {member ? <Profile member={member} /> : null}
+            {member ? <Profile member={member} ownProile={false} /> : null}
           </div>
 
           <div className="flex flex-col sm:flex-row gap-1 sm:justify-end">

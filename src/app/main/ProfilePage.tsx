@@ -52,7 +52,7 @@ export default function ProfilePage() {
             Personal details.
           </p>
         </div>
-        {member ? <Profile member={member} /> : null}
+        {member ? <Profile member={member} ownProile={true} /> : null}
         {isLoading ? (
           <div className="flex justify-center items-center h-96">
             <div className="flex flex-col items-center space-y-3">
