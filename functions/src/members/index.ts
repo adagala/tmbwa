@@ -138,6 +138,13 @@ export const updateMember = onDocumentUpdated(
         .updateUser(uid, { phoneNumber: memberAfter.phonenumber });
     }
 
+    // if email is updated, update email
+    if (memberBefore.email !== memberAfter.email) {
+      await admin
+        .auth()
+        .updateUser(uid, { email: memberAfter.email });
+    }
+
     // if role updated, update customClaims for role
     if (memberBefore.role !== memberAfter.role) {
       await admin.auth().setCustomUserClaims(uid, { role: memberAfter.role });
