@@ -248,7 +248,7 @@ export const addPayment = async ({
     memberRef,
     {
       balance: increment(payment.amount),
-      contributionBalance: increment(payment.amount),
+      contributionBalance: increment(contributionBalance),
     },
     { merge: true },
   );
