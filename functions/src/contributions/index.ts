@@ -67,6 +67,7 @@ export const setMonthlyContributions = onSchedule(
 
         const memberPayment: Payment = {
           amount: contributionAmount,
+          contribution_amount: contributionAmount,
           paymentdate: admin.firestore.Timestamp.now(),
           referencenumber: 'BALANCE B/F',
           contribution_id: month,

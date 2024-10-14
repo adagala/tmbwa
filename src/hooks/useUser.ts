@@ -10,8 +10,8 @@ export default function useUser() {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (authUser) => {
-      // const idTokenResult = await authUser?.getIdTokenResult();
-      const role = 'administrator' as Role; // idTokenResult?.claims.role as Role;
+      const idTokenResult = await authUser?.getIdTokenResult();
+      const role = idTokenResult?.claims.role as Role;
       setRole(role);
       setUser(authUser);
     });
