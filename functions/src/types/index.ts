@@ -33,6 +33,7 @@ export type Payment = {
   contribution_id: string;
   firstname: string;
   lastname: string;
+  contribution_amount: number;
 };
 
 export type PaymentWithId = Payment & { payment_id: string };

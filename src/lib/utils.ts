@@ -39,9 +39,9 @@ export const hasErrorInput = [
 ];
 
 export const getMemberInitials = (fullName: string | null | undefined) => {
-  const nameParts = fullName?.split(' ');
+  const nameParts = fullName?.split(' ') || [];
 
-  const initials = nameParts?.map((part) => part[0].toUpperCase());
+  const initials = nameParts?.map((part) => part[0]?.toUpperCase());
 
   return initials?.join('') || '';
 };
@@ -69,3 +69,5 @@ export const months = [
   { label: 'November', value: '11' },
   { label: 'December', value: '12' },
 ] as const;
+
+export const MONTHLY_CONTRIBUTION = 500;

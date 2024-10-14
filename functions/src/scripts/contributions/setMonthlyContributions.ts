@@ -41,7 +41,6 @@ const setMonthlyContributions = async () => {
       .firestore()
       .doc(`members/${member.member_id}/contributions/${month}`);
     const memberBalance = (member.balance as number) || 0;
-    const newMemberBalance = memberBalance - MONTHLY_CONTRIBUTION;
     const contributionAmount =
       memberBalance > MONTHLY_CONTRIBUTION
         ? MONTHLY_CONTRIBUTION
@@ -49,6 +48,7 @@ const setMonthlyContributions = async () => {
           ? 0
           : memberBalance;
     const contributionBalance = MONTHLY_CONTRIBUTION - contributionAmount;
+    const newMemberBalance = memberBalance - contributionAmount;
     totalContribution = totalContribution + contributionAmount;
 
     let payment: Payment | undefined = undefined;
@@ -66,6 +66,7 @@ const setMonthlyContributions = async () => {
 
       const memberPayment: Payment = {
         amount: contributionAmount,
+        contribution_amount: contributionAmount,
         paymentdate: admin.firestore.Timestamp.now(),
         referencenumber: 'BALANCE B/F',
         contribution_id: month,

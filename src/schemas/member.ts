@@ -1,17 +1,34 @@
 // schemas/memberSchema.ts
 import { z } from 'zod';
 import { isMobilePhone } from 'validator';
+import { years } from '@/lib/utils';
 
 export const member_roles = ['member', 'administrator'] as const;
 export const payment_status = ['paid', 'unpaid', 'partial'] as const;
 export const genders = ['male', 'female'] as const;
 export const member_status = ['active', 'inactive', 'suspended'] as const;
+const months = [
+  '01',
+  '02',
+  '03',
+  '04',
+  '05',
+  '06',
+  '07',
+  '08',
+  '09',
+  '10',
+  '11',
+  '12',
+] as const;
 
 // Enums
 export const StatusEnum = z.enum(member_status);
 export const RoleEnum = z.enum(member_roles);
 export const GenderEnum = z.enum(genders);
 export const PaymentStatusEnum = z.enum(payment_status);
+export const YearEnum = z.enum(years);
+export const MonthEnum = z.enum(months);
 
 // Member Schema
 export const ownMemberFormSchema = z.object({
@@ -42,6 +59,11 @@ export const memberFormSchema = ownMemberFormSchema.merge(
     isFeesPaid: z.boolean().default(false),
   }),
 );
+
+export const contributionFormSchema = z.object({
+  year: YearEnum,
+  month: MonthEnum,
+});
 
 // Complete Member Schema (includes fields not in the form)
 export const memberSchema = memberFormSchema.merge(
@@ -106,6 +128,7 @@ export const monthlyStatsSchema = z.object({
 export type Member = z.infer<typeof memberSchema>;
 export type MemberForm = z.infer<typeof memberFormSchema>;
 export type OwnMemberForm = z.infer<typeof ownMemberFormSchema>;
+export type ContributioForm = z.infer<typeof contributionFormSchema>;
 export type Payment = z.infer<typeof paymentSchema>;
 export type PaymentForm = z.infer<typeof paymentFormSchema>;
 export type MemberContribution = z.infer<typeof memberContributionSchema>;
@@ -113,6 +136,8 @@ export type Contribution = z.infer<typeof contributionSchema>;
 export type Gender = z.infer<typeof GenderEnum>;
 export type Status = z.infer<typeof StatusEnum>;
 export type Role = z.infer<typeof RoleEnum>;
+export type Year = z.infer<typeof YearEnum>;
+export type Month = z.infer<typeof MonthEnum>;
 export type PaymentStatus = z.infer<typeof PaymentStatusEnum>;
 export type MonthlyStats = z.infer<typeof monthlyStatsSchema>;
 export type FirebaseTimestamp = z.infer<typeof firebaseTimestampSchema>;

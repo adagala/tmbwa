@@ -11,54 +11,63 @@ import {
   DialogTrigger,
 } from '@/components/Dialog';
 import { useToast } from '@/hooks/useToast';
-import { Contribution } from '@/schemas/member';
-
-const wait = () => new Promise((resolve) => setTimeout(resolve, 1000));
+import { Contribution, Member } from '@/schemas/member';
+import { deleteContribution } from '@/lib/firebase/firestore';
 
 export const DialogDeleteContribution = ({
   contribution,
-  open,
-  setOpen,
-  handleDeleteContribution,
+  member,
 }: {
-  open: boolean;
-  contribution?: Contribution;
-  setOpen: React.Dispatch<React.SetStateAction<boolean>>;
-  handleDeleteContribution: React.Dispatch<React.SetStateAction<boolean>>;
+  contribution: Contribution;
+  member: Member;
 }) => {
   const { toast } = useToast();
   const [isLoading, setIsLoading] = React.useState(false);
+  const [open, setOpen] = React.useState(false);
 
   return (
     <>
       <div className="flex justify-center">
         <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild></DialogTrigger>
+          <DialogTrigger asChild>
+            <Button
+              className="h-10 whitespace-nowrap w-full sm:w-auto gap-1"
+              variant="primary"
+            >
+              Delete
+            </Button>
+          </DialogTrigger>
           <DialogContent className="sm:max-w-lg">
             <form
-              onSubmit={(event) => {
-                setIsLoading(true);
-                wait().then(() => {
-                  setIsLoading(false);
-                  setOpen(false);
+              onSubmit={async (event) => {
+                try {
+                  setIsLoading(true);
+                  await deleteContribution({ contribution, member });
                   toast({
                     title: 'Success',
-                    description: 'Contribution has been successfully deleted.',
+                    description: 'Contribution deleted.',
                     variant: 'success',
                     duration: 3000,
                   });
-                  handleDeleteContribution(false);
-                });
+                  setOpen(false);
+                } catch (error: any) {
+                  toast({
+                    title: 'Error',
+                    description: error?.message || 'Error deleting contribution',
+                    variant: 'error',
+                    duration: 3000,
+                  });
+                } finally {
+                  setIsLoading(false);
+                }
+
                 event.preventDefault();
               }}
             >
               <DialogHeader>
                 <DialogTitle>Delete contribution</DialogTitle>
                 <DialogDescription className="mt-1 text-sm leading-6">
-                  <p>
-                    Are you sure you want to delete this contribution for $
-                    {contribution?.firstname}? Action is irreversible.
-                  </p>
+                  <p>Action is irreversible.</p>
                 </DialogDescription>
               </DialogHeader>
               <DialogFooter className="mt-6">
@@ -77,7 +86,7 @@ export const DialogDeleteContribution = ({
                   isLoading={isLoading}
                   loadingText="Deleting"
                 >
-                  Delete contribution
+                  Delete
                 </Button>
               </DialogFooter>
             </form>

@@ -13,22 +13,26 @@ import {
 import {
   Contribution,
   FirebaseTimestamp,
+  Member,
   PaymentStatusEnum,
 } from '@/schemas/member';
 import { Badge } from '@/components/Badge';
 import { Label } from '@/components/Label';
 import { RiCoinsLine, RiSafe2Line, RiShoppingBag3Line } from '@remixicon/react';
-import { DialogDeleteContributionPayment } from './DialogDeleteContributionPayment';
+// import { DialogDeleteContributionPayment } from './DialogDeleteContributionPayment';
 import { DialogContributionPaymentForm } from './DialogContributionPaymentForm';
 import useUser from '@/hooks/useUser';
+// import { DialogDeleteContribution } from './DialogDeleteContribution';
 
 export const DialogContributionDetails = ({
   contribution,
+  // member,
   open,
   setOpen,
 }: {
   open: boolean;
   contribution: Contribution;
+  member?: Member;
   setOpen: React.Dispatch<React.SetStateAction<boolean>>;
 }) => {
   const { role } = useUser();
@@ -137,14 +141,14 @@ export const DialogContributionDetails = ({
                       key={payment.payment_id}
                       className="mt-3 border-t border-gray-100 dark:border-gray-800 relative"
                     >
-                      {role === 'administrator' ? (
+                      {/* {role === 'administrator' ? (
                         <DialogDeleteContributionPayment
                           contribution={contribution}
                           payment={payment}
                         />
                       ) : (
                         <></>
-                      )}
+                      )} */}
                       <dl className="divide-y divide-gray-100 dark:divide-gray-800 mt-1">
                         <div className="px-4 py-0.5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-0">
                           <dt className="text-sm font-medium leading-6 text-gray-900 dark:text-gray-200">
@@ -195,6 +199,12 @@ export const DialogContributionDetails = ({
               </DialogDescription>
             </DialogHeader>
             <DialogFooter className="mt-6">
+              {/* {member && role === 'administrator' ? (
+                <DialogDeleteContribution
+                  contribution={contribution}
+                  member={member}
+                />
+              ) : null} */}
               <DialogClose asChild>
                 <Button
                   className="mt-2 w-full sm:mt-0 sm:w-fit"
