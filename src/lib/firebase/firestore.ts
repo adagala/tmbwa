@@ -388,7 +388,7 @@ export const addContribution = async ({
     const memberPayment = {
       amount: contributionAmount,
       contribution_amount: contributionAmount,
-      paymentdate: serverTimestamp(),
+      paymentdate: new Date(),
       referencenumber: 'BALANCE B/F',
       contribution_id: month,
       firstname: member.firstname,
