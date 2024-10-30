@@ -60,7 +60,7 @@ export const DialogAddContribution = ({ member }: { member: Member }) => {
       const month = `${data.year}-${data.month}-01`;
       const currentMonth = getMonth();
 
-      if (month >= currentMonth) {
+      if (month > currentMonth) {
         toast({
           title: 'Warning',
           description: 'You can only add past contributions',
