@@ -1,6 +1,6 @@
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 
-export type Member = {
+export interface Member {
   firstname: string;
   lastname: string;
   email: string;
@@ -20,7 +20,7 @@ export type Member = {
   balance: number | FieldValue;
   contributionBalance: number | FieldValue;
   isFeesPaid: boolean;
-};
+}
 
 export type MemberWithId = Member & { member_id: string };
 
