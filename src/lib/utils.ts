@@ -53,7 +53,7 @@ export const getMonth = (_date?: string) => {
   return `${year}-${month}-01`;
 };
 
-export const years = ['2024'] as const;
+export const years = ['2024', '2025'] as const;
 
 export const months = [
   { label: 'January', value: '01' },

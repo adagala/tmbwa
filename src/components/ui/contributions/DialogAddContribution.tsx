@@ -31,7 +31,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { InputErrorMessage } from '../InputErrorMessage';
 import { addContribution } from '@/lib/firebase/firestore';
-import { getMonth, months, years } from '@/lib/utils';
+import { months, years } from '@/lib/utils';
 
 export const DialogAddContribution = ({ member }: { member: Member }) => {
   const [open, setOpen] = React.useState(false);
@@ -58,17 +58,17 @@ export const DialogAddContribution = ({ member }: { member: Member }) => {
 
     try {
       const month = `${data.year}-${data.month}-01`;
-      const currentMonth = getMonth();
+      // const currentMonth = getMonth();
 
-      if (month > currentMonth) {
-        toast({
-          title: 'Warning',
-          description: 'You can only add past contributions',
-          variant: 'warning',
-          duration: 3000,
-        });
-        return;
-      }
+      // if (month > currentMonth) {
+      //   toast({
+      //     title: 'Warning',
+      //     description: 'You can only add past contributions',
+      //     variant: 'warning',
+      //     duration: 3000,
+      //   });
+      //   return;
+      // }
 
       await addContribution({ member, month });
       setOpen(false);
