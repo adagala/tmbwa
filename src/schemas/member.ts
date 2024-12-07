@@ -2,6 +2,7 @@
 import { z } from 'zod';
 import { isMobilePhone } from 'validator';
 import { years } from '@/lib/utils';
+import { FieldValue } from 'firebase/firestore';
 
 export const member_roles = ['member', 'administrator'] as const;
 export const contribution_status = ['paid', 'unpaid', 'partial'] as const;
@@ -31,6 +32,11 @@ export const ContributionStatusEnum = z.enum(contribution_status);
 export const YearEnum = z.enum(years);
 export const MonthEnum = z.enum(months);
 export const PaymentTypeEnum = z.enum(payment_type);
+
+const FieldValueSchema = z.custom<FieldValue>(
+  (value) => value instanceof FieldValue,
+  { message: 'Invalid FieldValue' },
+);
 
 // Member Schema
 export const ownMemberFormSchema = z.object({
@@ -105,6 +111,7 @@ export const paymentSchema = paymentFormSchema.merge(
     contribution_amount: z.number(),
     payment_type: PaymentTypeEnum,
     action_by: z.string(),
+    created_at: z.union([FieldValueSchema, firebaseTimestampSchema]),
   }),
 );
 

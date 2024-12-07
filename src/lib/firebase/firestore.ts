@@ -540,6 +540,7 @@ export const increaseMemberBalance = ({
     payment_id,
     payment_type: PaymentTypeEnum.Enum.account,
     action_by: uid,
+    created_at: serverTimestamp(),
   };
   batch.set(paymentRef, payment, { merge: true });
 
@@ -582,6 +583,7 @@ export const descreaseMemberBalance = ({
     payment_id,
     payment_type: PaymentTypeEnum.Enum.account,
     action_by: uid,
+    created_at: serverTimestamp(),
   };
   batch.set(paymentRef, payment, { merge: true });
 
