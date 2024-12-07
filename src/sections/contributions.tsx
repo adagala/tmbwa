@@ -1,5 +1,5 @@
 import React from 'react';
-import { Contribution, Member, PaymentStatusEnum } from '@/schemas/member';
+import { Contribution, Member, ContributionStatusEnum } from '@/schemas/member';
 import { RiWalletLine, RiArrowRightSLine } from '@remixicon/react';
 import { List, ListItem } from '@tremor/react';
 import { DialogContributionDetails } from '@/components/ui/contributions/DialogContributionDetails';
@@ -64,19 +64,19 @@ const Contributions = React.forwardRef<HTMLDivElement, ContributionsProps>(
                   <div className="flex items-center gap-x-1.5 sm:min-w-16">
                     <div
                       className={`flex-none rounded-full ${
-                        contribution.paid === PaymentStatusEnum.enum.paid
+                        contribution.paid === ContributionStatusEnum.enum.paid
                           ? 'bg-emerald-500/20'
-                          : contribution.paid === PaymentStatusEnum.enum.partial
+                          : contribution.paid === ContributionStatusEnum.enum.partial
                             ? 'bg-orange-300/20'
                             : 'bg-red-500/20'
                       }  p-1`}
                     >
                       <div
                         className={`h-1.5 w-1.5 rounded-full ${
-                          contribution.paid === PaymentStatusEnum.enum.paid
+                          contribution.paid === ContributionStatusEnum.enum.paid
                             ? 'bg-emerald-500'
                             : contribution.paid ===
-                                PaymentStatusEnum.enum.partial
+                                ContributionStatusEnum.enum.partial
                               ? 'bg-orange-300'
                               : 'bg-red-500'
                         }`}
@@ -84,9 +84,9 @@ const Contributions = React.forwardRef<HTMLDivElement, ContributionsProps>(
                     </div>
                     <p
                       className={`hidden sm:flex text-xs leading-5 font-medium ${
-                        contribution.paid === PaymentStatusEnum.enum.paid
+                        contribution.paid === ContributionStatusEnum.enum.paid
                           ? 'text-emerald-500'
-                          : contribution.paid === PaymentStatusEnum.enum.partial
+                          : contribution.paid === ContributionStatusEnum.enum.partial
                             ? 'text-orange-300'
                             : 'text-red-500'
                       } capitalize`}

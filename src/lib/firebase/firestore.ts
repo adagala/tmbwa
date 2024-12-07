@@ -26,7 +26,8 @@ import {
   OwnMemberForm,
   Role,
   Payment,
-  PaymentStatusEnum,
+  ContributionStatusEnum,
+  PaymentTypeEnum,
 } from '@/schemas/member';
 import { MONTHLY_CONTRIBUTION } from '../utils';
 import { PAYMENT_STATUS } from '../types';
@@ -241,8 +242,8 @@ export const addPayment = async ({
     balance: increment(-contributionAmount),
     paid:
       contribution.balance - payment.amount > 0
-        ? PaymentStatusEnum.Enum.partial
-        : PaymentStatusEnum.Enum.paid,
+        ? ContributionStatusEnum.Enum.partial
+        : ContributionStatusEnum.Enum.paid,
   };
   batch.set(contributionRef, contributionUpdate, { merge: true });
 
@@ -297,8 +298,8 @@ export const deletePayment = async ({
       balance: increment(payment.contribution_amount),
       paid:
         contribution.amount - (payment.amount + contribution.balance) > 0
-          ? PaymentStatusEnum.Enum.partial
-          : PaymentStatusEnum.Enum.unpaid,
+          ? ContributionStatusEnum.Enum.partial
+          : ContributionStatusEnum.Enum.unpaid,
     },
     { merge: true },
   );
@@ -346,9 +347,11 @@ export const getRecentPayments = (cb: (data: Payment[]) => void) => {
 };
 
 export const addContribution = async ({
+  uid,
   month,
   member,
 }: {
+  uid: string;
   month: string;
   member: Member;
 }) => {
@@ -395,6 +398,8 @@ export const addContribution = async ({
       lastname: member.lastname,
       member_id: member.member_id,
       payment_id: paymentId,
+      payment_type: PaymentTypeEnum.Enum.contribution,
+      action_by: uid,
     };
     payment = memberPayment;
     batch.set(paymentRef, payment, { merge: true });
@@ -495,6 +500,90 @@ export const deleteContribution = async ({
     paymentsCount: increment(-paymentIds.length),
   };
   batch.set(statsRef, stats, { merge: true });
+
+  return batch.commit();
+};
+
+export const increaseMemberBalance = ({
+  uid,
+  amount,
+  member,
+}: {
+  uid: string;
+  member: Member;
+  amount: number;
+}) => {
+  const batch = writeBatch(db);
+
+  const memberRef = doc(db, `members/${member.member_id}`);
+  const memberData = {
+    balance: increment(amount),
+  };
+  batch.set(memberRef, memberData, { merge: true });
+
+  const paymentsRef = collection(db, `members/${member.member_id}/payments`);
+  const payment_id = doc(paymentsRef).id;
+  const paymentRef = doc(
+    db,
+    `members/${member.member_id}/payments/${payment_id}`,
+  );
+
+  const payment: Payment = {
+    amount,
+    contribution_amount: 0,
+    paymentdate: new Date(),
+    referencenumber: 'ACCOUNT BALANCE TOP UP',
+    contribution_id: '',
+    firstname: member.firstname,
+    lastname: member.lastname,
+    member_id: member.member_id,
+    payment_id,
+    payment_type: PaymentTypeEnum.Enum.account,
+    action_by: uid,
+  };
+  batch.set(paymentRef, payment, { merge: true });
+
+  return batch.commit();
+};
+
+export const descreaseMemberBalance = ({
+  uid,
+  amount,
+  member,
+}: {
+  uid: string;
+  member: Member;
+  amount: number;
+}) => {
+  const batch = writeBatch(db);
+
+  const memberRef = doc(db, `members/${member.member_id}`);
+  const memberData = {
+    balance: increment(-amount),
+  };
+  batch.set(memberRef, memberData, { merge: true });
+
+  const paymentsRef = collection(db, `members/${member.member_id}/payments`);
+  const payment_id = doc(paymentsRef).id;
+  const paymentRef = doc(
+    db,
+    `members/${member.member_id}/payments/${payment_id}`,
+  );
+
+  const payment: Payment = {
+    amount,
+    contribution_amount: 0,
+    paymentdate: new Date(),
+    referencenumber: 'ACCOUNT BALANCE DEDUCTION',
+    contribution_id: '',
+    firstname: member.firstname,
+    lastname: member.lastname,
+    member_id: member.member_id,
+    payment_id,
+    payment_type: PaymentTypeEnum.Enum.account,
+    action_by: uid,
+  };
+  batch.set(paymentRef, payment, { merge: true });
 
   return batch.commit();
 };

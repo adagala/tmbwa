@@ -14,7 +14,7 @@ import {
   Contribution,
   FirebaseTimestamp,
   Member,
-  PaymentStatusEnum,
+  ContributionStatusEnum,
 } from '@/schemas/member';
 import { Badge } from '@/components/Badge';
 import { Label } from '@/components/Label';
@@ -70,10 +70,10 @@ export const DialogContributionDetails = ({
                         <dd className="mt-1 text-sm leading-6 text-gray-700 dark:text-gray-300 sm:col-span-2 sm:mt-0 capitalize">
                           <Badge
                             variant={
-                              contribution?.paid === PaymentStatusEnum.Enum.paid
+                              contribution?.paid === ContributionStatusEnum.Enum.paid
                                 ? 'success'
                                 : contribution?.paid ===
-                                    PaymentStatusEnum.Enum.partial
+                                    ContributionStatusEnum.Enum.partial
                                   ? 'warning'
                                   : 'error'
                             }

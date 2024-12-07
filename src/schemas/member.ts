@@ -4,7 +4,7 @@ import { isMobilePhone } from 'validator';
 import { years } from '@/lib/utils';
 
 export const member_roles = ['member', 'administrator'] as const;
-export const payment_status = ['paid', 'unpaid', 'partial'] as const;
+export const contribution_status = ['paid', 'unpaid', 'partial'] as const;
 export const genders = ['male', 'female'] as const;
 export const member_status = ['active', 'inactive', 'suspended'] as const;
 const months = [
@@ -21,14 +21,16 @@ const months = [
   '11',
   '12',
 ] as const;
+export const payment_type = ['contribution', 'account'] as const;
 
 // Enums
 export const StatusEnum = z.enum(member_status);
 export const RoleEnum = z.enum(member_roles);
 export const GenderEnum = z.enum(genders);
-export const PaymentStatusEnum = z.enum(payment_status);
+export const ContributionStatusEnum = z.enum(contribution_status);
 export const YearEnum = z.enum(years);
 export const MonthEnum = z.enum(months);
+export const PaymentTypeEnum = z.enum(payment_type);
 
 // Member Schema
 export const ownMemberFormSchema = z.object({
@@ -101,12 +103,14 @@ export const paymentSchema = paymentFormSchema.merge(
     contribution_id: z.string(),
     member_id: z.string().min(1, 'Member cannot be empty'),
     contribution_amount: z.number(),
+    payment_type: PaymentTypeEnum,
+    action_by: z.string(),
   }),
 );
 
 export const memberContributionSchema = z.object({
   contribution_id: z.string().min(1, 'Please select a member'),
-  paid: PaymentStatusEnum,
+  paid: ContributionStatusEnum,
   amount: z.number(),
   payments: z.array(paymentSchema),
   month: z.string(),
@@ -138,6 +142,6 @@ export type Status = z.infer<typeof StatusEnum>;
 export type Role = z.infer<typeof RoleEnum>;
 export type Year = z.infer<typeof YearEnum>;
 export type Month = z.infer<typeof MonthEnum>;
-export type PaymentStatus = z.infer<typeof PaymentStatusEnum>;
+export type PaymentStatus = z.infer<typeof ContributionStatusEnum>;
 export type MonthlyStats = z.infer<typeof monthlyStatsSchema>;
 export type FirebaseTimestamp = z.infer<typeof firebaseTimestampSchema>;

@@ -19,8 +19,8 @@ import { DialogContributionDetails } from '@/components/ui/contributions/DialogC
 import {
   Contribution,
   PaymentStatus,
-  PaymentStatusEnum,
-  payment_status,
+  ContributionStatusEnum,
+  contribution_status,
 } from '@/schemas/member';
 import { getMonthlyMembersContributions } from '@/lib/firebase/firestore';
 import { getMonth, months, years } from '@/lib/utils';
@@ -137,7 +137,7 @@ export default function ContributionsPage() {
                 />
               </SelectTrigger>
               <SelectContent>
-                {payment_status.map((status) => (
+                {contribution_status.map((status) => (
                   <SelectItem
                     key={status}
                     value={status}
@@ -264,10 +264,10 @@ export default function ContributionsPage() {
                         <div className="flex items-center gap-x-1.5 sm:min-w-16">
                           <div
                             className={`flex-none rounded-full ${
-                              contribution.paid === PaymentStatusEnum.Enum.paid
+                              contribution.paid === ContributionStatusEnum.Enum.paid
                                 ? 'bg-emerald-500/20'
                                 : contribution.paid ===
-                                    PaymentStatusEnum.Enum.partial
+                                    ContributionStatusEnum.Enum.partial
                                   ? 'bg-orange-300/20'
                                   : 'bg-red-500/20'
                             } p-1`}
@@ -275,10 +275,10 @@ export default function ContributionsPage() {
                             <div
                               className={`h-1.5 w-1.5 rounded-full ${
                                 contribution.paid ===
-                                PaymentStatusEnum.Enum.paid
+                                ContributionStatusEnum.Enum.paid
                                   ? 'bg-emerald-500'
                                   : contribution.paid ===
-                                      PaymentStatusEnum.Enum.partial
+                                      ContributionStatusEnum.Enum.partial
                                     ? 'bg-orange-300'
                                     : 'bg-red-500'
                               }`}
@@ -286,10 +286,10 @@ export default function ContributionsPage() {
                           </div>
                           <p
                             className={`hidden sm:flex text-xs leading-5 font-medium ${
-                              contribution.paid === PaymentStatusEnum.Enum.paid
+                              contribution.paid === ContributionStatusEnum.Enum.paid
                                 ? 'text-emerald-500'
                                 : contribution.paid ===
-                                    PaymentStatusEnum.Enum.partial
+                                    ContributionStatusEnum.Enum.partial
                                   ? 'text-orange-300'
                                   : 'text-red-500'
                             } capitalize`}

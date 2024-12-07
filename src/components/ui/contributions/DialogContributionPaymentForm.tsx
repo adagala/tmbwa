@@ -12,7 +12,7 @@ import {
 } from '@/components/Dialog';
 import { Input } from '@/components/Input';
 import { Label } from '@/components/Label';
-import { Contribution, Payment, PaymentForm } from '@/schemas/member';
+import { Contribution, Payment, PaymentForm, PaymentTypeEnum } from '@/schemas/member';
 import { toast } from '@/hooks/useToast';
 import { DatePicker } from '@/components/DatePicker';
 import { useForm } from 'react-hook-form';
@@ -22,12 +22,14 @@ import { InputErrorMessage } from '../InputErrorMessage';
 import { RiAddLine, RiErrorWarningFill } from '@remixicon/react';
 import { addPayment } from '@/lib/firebase/firestore';
 import { Callout } from '@/components/Callout';
+import useUser from '@/hooks/useUser';
 
 export const DialogContributionPaymentForm = ({
   contribution,
 }: {
   contribution: Contribution;
 }) => {
+  const { user } = useUser();
   const [open, setOpen] = React.useState(false);
   const [isLoading, setIsLoading] = React.useState(false);
 
@@ -44,7 +46,7 @@ export const DialogContributionPaymentForm = ({
   });
 
   const onSubmit = (data: PaymentForm) => {
-    if (!contribution) {
+    if (!contribution || !user?.uid) {
       setIsLoading(false);
       return;
     }
@@ -59,6 +61,8 @@ export const DialogContributionPaymentForm = ({
       referencenumber: data.referencenumber,
       payment_id: '',
       contribution_amount: data.amount,
+      action_by: user.uid,
+      payment_type: PaymentTypeEnum.Enum.contribution,
     };
     setIsLoading(true);
     addPayment({ contribution, payment })

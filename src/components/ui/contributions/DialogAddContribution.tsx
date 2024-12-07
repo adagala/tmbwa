@@ -32,8 +32,10 @@ import { useForm } from 'react-hook-form';
 import { InputErrorMessage } from '../InputErrorMessage';
 import { addContribution } from '@/lib/firebase/firestore';
 import { months, years } from '@/lib/utils';
+import useUser from '@/hooks/useUser';
 
 export const DialogAddContribution = ({ member }: { member: Member }) => {
+  const { user } = useUser();
   const [open, setOpen] = React.useState(false);
   const [isLoading, setIsLoading] = React.useState(false);
   const [year, setYear] = React.useState<Year>();
@@ -57,6 +59,9 @@ export const DialogAddContribution = ({ member }: { member: Member }) => {
     setIsLoading(true);
 
     try {
+      const uid = user?.uid;
+      if (!uid) return;
+
       const month = `${data.year}-${data.month}-01`;
       // const currentMonth = getMonth();
 
@@ -70,7 +75,7 @@ export const DialogAddContribution = ({ member }: { member: Member }) => {
       //   return;
       // }
 
-      await addContribution({ member, month });
+      await addContribution({ uid, member, month });
       setOpen(false);
       reset();
       setYear(undefined);
