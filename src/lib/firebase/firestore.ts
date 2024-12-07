@@ -422,7 +422,7 @@ export const addContribution = async ({
 
   const memberRef = doc(db, `members/${member.member_id}`);
   const memberData = {
-    balance: increment(-contributionBalance),
+    balance: increment(-MONTHLY_CONTRIBUTION),
     contributionBalance: increment(contributionAmount),
   };
   batch.set(memberRef, memberData, { merge: true });
