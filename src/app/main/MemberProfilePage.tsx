@@ -12,6 +12,7 @@ import {
 } from '@/lib/firebase/firestore';
 import useUser from '@/hooks/useUser';
 import { Link, useParams } from 'react-router-dom';
+import { DialogUpdateMemberBalance } from '@/components/ui/members/DialogUpdateMemberBalance';
 
 export default function MemberProfilePage() {
   const { role } = useUser();
@@ -79,15 +80,12 @@ export default function MemberProfilePage() {
             {member ? <Profile member={member} ownProile={false} /> : null}
           </div>
 
-          <div className="flex flex-col sm:flex-row gap-1 sm:justify-end">
-            {member ? (
+          <div className="flex flex-col sm:flex-row gap-1.5 sm:justify-end">
+            {member && role === 'administrator' ? (
               <>
-                {role === 'administrator' ? (
-                  <DialogMemberForm member={member} />
-                ) : null}
-                {role === 'administrator' ? (
-                  <DialogDeleteMember member={member} />
-                ) : null}
+                <DialogUpdateMemberBalance member={member} />
+                <DialogMemberForm member={member} />
+                <DialogDeleteMember member={member} />
               </>
             ) : null}
           </div>

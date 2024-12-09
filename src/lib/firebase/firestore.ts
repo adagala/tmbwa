@@ -28,6 +28,8 @@ import {
   Payment,
   ContributionStatusEnum,
   PaymentTypeEnum,
+  MemberBalanceForm,
+  MemberBalanceTypeEnum,
 } from '@/schemas/member';
 import { MONTHLY_CONTRIBUTION } from '../utils';
 import { PAYMENT_STATUS } from '../types';
@@ -504,20 +506,22 @@ export const deleteContribution = async ({
   return batch.commit();
 };
 
-export const increaseMemberBalance = ({
+export const updateMemberBalance = ({
   uid,
-  amount,
   member,
+  balanceForm,
 }: {
   uid: string;
   member: Member;
-  amount: number;
+  balanceForm: MemberBalanceForm;
 }) => {
   const batch = writeBatch(db);
+  const { amount, type } = balanceForm;
 
+  const balance = type === MemberBalanceTypeEnum.Enum.top_up ? amount : -amount;
   const memberRef = doc(db, `members/${member.member_id}`);
   const memberData = {
-    balance: increment(amount),
+    balance: increment(balance),
   };
   batch.set(memberRef, memberData, { merge: true });
 
@@ -528,54 +532,15 @@ export const increaseMemberBalance = ({
     `members/${member.member_id}/payments/${payment_id}`,
   );
 
+  const referencenumber =
+    type === MemberBalanceTypeEnum.Enum.top_up
+      ? 'ACCOUNT BALANCE TOP UP'
+      : 'ACCOUNT BALANCE DEDUCTION';
   const payment: Payment = {
     amount,
     contribution_amount: 0,
-    paymentdate: new Date(),
-    referencenumber: 'ACCOUNT BALANCE TOP UP',
-    contribution_id: '',
-    firstname: member.firstname,
-    lastname: member.lastname,
-    member_id: member.member_id,
-    payment_id,
-    payment_type: PaymentTypeEnum.Enum.account,
-    action_by: uid,
-    created_at: serverTimestamp(),
-  };
-  batch.set(paymentRef, payment, { merge: true });
-
-  return batch.commit();
-};
-
-export const descreaseMemberBalance = ({
-  uid,
-  amount,
-  member,
-}: {
-  uid: string;
-  member: Member;
-  amount: number;
-}) => {
-  const batch = writeBatch(db);
-
-  const memberRef = doc(db, `members/${member.member_id}`);
-  const memberData = {
-    balance: increment(-amount),
-  };
-  batch.set(memberRef, memberData, { merge: true });
-
-  const paymentsRef = collection(db, `members/${member.member_id}/payments`);
-  const payment_id = doc(paymentsRef).id;
-  const paymentRef = doc(
-    db,
-    `members/${member.member_id}/payments/${payment_id}`,
-  );
-
-  const payment: Payment = {
-    amount,
-    contribution_amount: 0,
-    paymentdate: new Date(),
-    referencenumber: 'ACCOUNT BALANCE DEDUCTION',
+    paymentdate: serverTimestamp(),
+    referencenumber,
     contribution_id: '',
     firstname: member.firstname,
     lastname: member.lastname,

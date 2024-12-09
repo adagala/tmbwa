@@ -23,6 +23,7 @@ const months = [
   '12',
 ] as const;
 export const payment_type = ['contribution', 'account'] as const;
+export const member_balance_type = ['top_up', 'deduction'] as const;
 
 // Enums
 export const StatusEnum = z.enum(member_status);
@@ -32,6 +33,7 @@ export const ContributionStatusEnum = z.enum(contribution_status);
 export const YearEnum = z.enum(years);
 export const MonthEnum = z.enum(months);
 export const PaymentTypeEnum = z.enum(payment_type);
+export const MemberBalanceTypeEnum = z.enum(member_balance_type);
 
 const FieldValueSchema = z.custom<FieldValue>(
   (value) => value instanceof FieldValue,
@@ -73,6 +75,14 @@ export const contributionFormSchema = z.object({
   month: MonthEnum,
 });
 
+export const memberBalanceFormSchema = z.object({
+  type: MemberBalanceTypeEnum,
+  amount: z
+    .string()
+    .transform((value) => parseFloat(value))
+    .refine((value) => value > 0, { message: 'Amount must be greater than 0' }),
+});
+
 // Complete Member Schema (includes fields not in the form)
 export const memberSchema = memberFormSchema.merge(
   z.object({
@@ -98,7 +108,7 @@ export const paymentFormSchema = z.object({
     .string()
     .transform((value) => parseFloat(value))
     .refine((value) => value > 0, { message: 'Amount must be greater than 0' }),
-  paymentdate: z.union([z.date(), firebaseTimestampSchema]),
+  paymentdate: z.union([z.date(), firebaseTimestampSchema, FieldValueSchema]),
 });
 
 export const paymentSchema = paymentFormSchema.merge(
@@ -149,6 +159,8 @@ export type Status = z.infer<typeof StatusEnum>;
 export type Role = z.infer<typeof RoleEnum>;
 export type Year = z.infer<typeof YearEnum>;
 export type Month = z.infer<typeof MonthEnum>;
+export type MemberBalanceType = z.infer<typeof MemberBalanceTypeEnum>;
 export type PaymentStatus = z.infer<typeof ContributionStatusEnum>;
 export type MonthlyStats = z.infer<typeof monthlyStatsSchema>;
 export type FirebaseTimestamp = z.infer<typeof firebaseTimestampSchema>;
+export type MemberBalanceForm = z.infer<typeof memberBalanceFormSchema>;
