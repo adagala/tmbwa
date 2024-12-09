@@ -264,7 +264,7 @@ export const addPayment = async ({
   const statRef = doc(db, `monthly_stats/${contribution.month}`);
   batch.set(
     statRef,
-    { contribution: increment(contributionAmount) },
+    { contribution: increment(contributionAmount), month: contribution.month },
     { merge: true },
   );
 
@@ -321,7 +321,10 @@ export const deletePayment = async ({
   const statRef = doc(db, `monthly_stats/${contribution.month}`);
   batch.set(
     statRef,
-    { contribution: increment(-payment.contribution_amount) },
+    {
+      contribution: increment(-payment.contribution_amount),
+      month: contribution.month,
+    },
     { merge: true },
   );
 
@@ -440,6 +443,7 @@ export const addContribution = async ({
     amount: increment(MONTHLY_CONTRIBUTION),
     contribution: increment(contributionAmount),
     paymentsCount: increment(paymentsCount),
+    month,
   };
   batch.set(statsRef, stats, { merge: true });
 
@@ -500,6 +504,7 @@ export const deleteContribution = async ({
     amount: increment(-contributionAmount),
     contribution: increment(-contributionPaid),
     paymentsCount: increment(-paymentIds.length),
+    month,
   };
   batch.set(statsRef, stats, { merge: true });
 
