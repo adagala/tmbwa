@@ -79,9 +79,7 @@ export const DialogMemberForm = ({ member }: { member?: Member }) => {
     setIsLoading(true);
 
     try {
-      if (member) {
-        await updateMember(member.member_id, data);
-      } else {
+      if (!member || (member && member.email !== data.email)) {
         const exists = await memberEmailExists(data.email);
         if (exists) {
           toast({
@@ -92,6 +90,11 @@ export const DialogMemberForm = ({ member }: { member?: Member }) => {
           });
           return;
         }
+      }
+
+      if (member) {
+        await updateMember(member.member_id, data);
+      } else {
         await addMember(data);
       }
       setOpen(false);
