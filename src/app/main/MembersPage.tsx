@@ -71,14 +71,21 @@ export default function MembersPage() {
     } else {
       const filteredMembers = allMembers.filter((member) => {
         const regex = new RegExp(querySearch, 'gi');
-        const isQueryMatch =
+        const isNameMatch =
           member.firstname.match(regex) || member.lastname.match(regex);
+        const isEmailMatch = member.email.match(regex);
         const isRoleMatch = !selectedRole ? true : member.role === selectedRole;
-        const feeStatus = selectedFeeStatus === 'paid' ? true : false;
+        const isFeesPaid = selectedFeeStatus === 'paid';
+        const isWinMatch =
+          querySearch.length < 1 ? true : member.win === querySearch;
         const isFeeStatusMatch = !selectedFeeStatus
           ? true
-          : (member.isFeesPaid || false) === feeStatus;
-        return isQueryMatch && isRoleMatch && isFeeStatusMatch;
+          : (member.isFeesPaid || false) === isFeesPaid;
+        return (
+          (isNameMatch || isEmailMatch || isWinMatch) &&
+          isRoleMatch &&
+          isFeeStatusMatch
+        );
       });
       setMembers(filteredMembers);
     }
