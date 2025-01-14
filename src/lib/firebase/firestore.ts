@@ -198,7 +198,7 @@ export const getMemberContributions = (
   const { memberId } = filters;
   const memberContributionQuery = query(
     collection(db, `members/${memberId}/contributions`),
-    orderBy('month', 'asc'),
+    orderBy('month', 'desc'),
   );
 
   const unsubscribe = onSnapshot(
@@ -212,6 +212,27 @@ export const getMemberContributions = (
         } as Contribution;
       });
       cb(contributions);
+    },
+  );
+  return unsubscribe;
+};
+
+export const getMemberPayments = (
+  cb: (data: Payment[]) => void,
+  filters: MemberContributionsFilters,
+) => {
+  const { memberId } = filters;
+  const memberPaymentsQuery = query(
+    collection(db, `members/${memberId}/payments`),
+    orderBy('paymentdate', 'desc'),
+  );
+
+  const unsubscribe = onSnapshot(
+    memberPaymentsQuery,
+    { includeMetadataChanges: true },
+    (querySnapshot) => {
+      const payments = querySnapshot.docs.map((doc) => doc.data() as Payment);
+      cb(payments);
     },
   );
   return unsubscribe;

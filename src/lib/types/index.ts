@@ -3,3 +3,5 @@ export enum PAYMENT_STATUS {
   UNPAID = 'unpaid',
   PARTIAL = 'partial',
 }
+
+export type MemberTab = 'contributions' | 'transactions';

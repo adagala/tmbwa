@@ -1,46 +1,30 @@
 import { Profile } from '@/sections/profile';
-import { Member, Contribution } from '@/schemas/member';
+import { Member } from '@/schemas/member';
 import { RiArrowLeftSLine, RiLoaderLine, RiUserLine } from '@remixicon/react';
 import { Button } from '@/components/Button';
 import { DialogDeleteMember } from '@/components/ui/members/DialogDeleteMember';
 import { DialogMemberForm } from '@/components/ui/members/DialogMemberForm';
-import { Contributions } from '@/sections/contributions';
 import { Suspense, useEffect, useState } from 'react';
-import {
-  getMemberById,
-  getMemberContributions,
-} from '@/lib/firebase/firestore';
+import { getMemberById } from '@/lib/firebase/firestore';
 import useUser from '@/hooks/useUser';
 import { Link, useParams } from 'react-router-dom';
 import { DialogUpdateMemberBalance } from '@/components/ui/members/DialogUpdateMemberBalance';
+import { ContributionsAndTransactions } from '@/sections/contributionsAndTansactions';
 
 export default function MemberProfilePage() {
   const { role } = useUser();
   const { memberId } = useParams<{ memberId: string }>();
   const [member, setMember] = useState<Member | null>();
   const [isLoading, setIsLoading] = useState(false);
-  const [contributions, setContributions] = useState<Contribution[]>([]);
-
-  useEffect(() => {
-    if (memberId) {
-      const unsubscribe = getMemberById(memberId, (fetchedMember) => {
-        setMember(fetchedMember);
-      });
-
-      return () => unsubscribe();
-    }
-  }, [memberId]);
 
   useEffect(() => {
     if (memberId) {
       setIsLoading(true);
-      const unsubscribe = getMemberContributions(
-        (contributions) => {
-          setContributions(contributions);
-          setIsLoading(false);
-        },
-        { memberId },
-      );
+      const unsubscribe = getMemberById(memberId, (fetchedMember) => {
+        setMember(fetchedMember);
+        setIsLoading(false);
+      });
+
       return () => unsubscribe();
     }
   }, [memberId]);
@@ -89,21 +73,7 @@ export default function MemberProfilePage() {
               </>
             ) : null}
           </div>
-
-          {isLoading ? (
-            <div className="flex justify-center items-center h-96">
-              <div className="flex flex-col items-center space-y-3">
-                <RiLoaderLine className="size-6 animate-spin" />
-                <div className="font-medium">Loading Contributions</div>
-              </div>
-            </div>
-          ) : (
-            <>
-              {member ? (
-                <Contributions member={member} contributions={contributions} />
-              ) : null}{' '}
-            </>
-          )}
+          {member ? <ContributionsAndTransactions member={member} /> : null}
         </div>
       )}
     </Suspense>
