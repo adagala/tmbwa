@@ -85,13 +85,16 @@ export default function ContributionsPage() {
     } else {
       const filteredContributions = allContributions.filter((contribution) => {
         const regex = new RegExp(querySearch, 'gi');
-        const isQueryMatch =
+        const isNameMatch =
           contribution.firstname.match(regex) ||
           contribution.lastname.match(regex);
+        const isEmailMatch = contribution.email.match(regex);
+        const isWinMatch =
+          querySearch.length < 1 ? true : contribution.win === querySearch;
         const isPaymentMatch = !paymentStatus
           ? true
           : contribution.paid === paymentStatus;
-        return isQueryMatch && isPaymentMatch;
+        return (isNameMatch || isEmailMatch || isWinMatch) && isPaymentMatch;
       });
       setContributions(filteredContributions);
     }
@@ -264,7 +267,8 @@ export default function ContributionsPage() {
                         <div className="flex items-center gap-x-1.5 sm:min-w-16">
                           <div
                             className={`flex-none rounded-full ${
-                              contribution.paid === ContributionStatusEnum.Enum.paid
+                              contribution.paid ===
+                              ContributionStatusEnum.Enum.paid
                                 ? 'bg-emerald-500/20'
                                 : contribution.paid ===
                                     ContributionStatusEnum.Enum.partial
@@ -286,7 +290,8 @@ export default function ContributionsPage() {
                           </div>
                           <p
                             className={`hidden sm:flex text-xs leading-5 font-medium ${
-                              contribution.paid === ContributionStatusEnum.Enum.paid
+                              contribution.paid ===
+                              ContributionStatusEnum.Enum.paid
                                 ? 'text-emerald-500'
                                 : contribution.paid ===
                                     ContributionStatusEnum.Enum.partial
