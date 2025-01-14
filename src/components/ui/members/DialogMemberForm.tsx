@@ -33,7 +33,11 @@ import {
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { InputErrorMessage } from '../InputErrorMessage';
-import { addMember, updateMember } from '@/lib/firebase/firestore';
+import {
+  addMember,
+  memberEmailExists,
+  updateMember,
+} from '@/lib/firebase/firestore';
 import { Checkbox } from '@/components/Checkbox';
 
 export const DialogMemberForm = ({ member }: { member?: Member }) => {
@@ -78,6 +82,16 @@ export const DialogMemberForm = ({ member }: { member?: Member }) => {
       if (member) {
         await updateMember(member.member_id, data);
       } else {
+        const exists = await memberEmailExists(data.email);
+        if (exists) {
+          toast({
+            title: 'Warning',
+            description: `The email ${data.email} already exists.`,
+            variant: 'error',
+            duration: 3000,
+          });
+          return;
+        }
         await addMember(data);
       }
       setOpen(false);
@@ -195,9 +209,7 @@ export const DialogMemberForm = ({ member }: { member?: Member }) => {
                         {...register('win')}
                         type="text"
                       />
-                      <InputErrorMessage
-                        message={errors.win?.message}
-                      />
+                      <InputErrorMessage message={errors.win?.message} />
                     </div>
                     <div className="flex gap-1">
                       <div className="flex-1 mx-auto space-y-1">

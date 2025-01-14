@@ -16,6 +16,7 @@ import {
   arrayRemove,
   serverTimestamp,
   getDoc,
+  getDocs,
 } from 'firebase/firestore';
 import { db } from './clientApp';
 import {
@@ -109,6 +110,13 @@ export const getMemberById = (
   );
 
   return unsubscribe;
+};
+
+export const memberEmailExists = async (email: string) => {
+  const collectionRef = collection(db, 'members');
+  const memberQuery = query(collectionRef, where('email', '==', email));
+  const snapshot = await getDocs(memberQuery);
+  return snapshot.docs.length > 0;
 };
 
 export const addMember = (member: MemberForm) => {
