@@ -23,7 +23,10 @@ export default function OverviewPage() {
   }));
 
   useEffect(() => {
-    const unsubscribe = getMonthlyStats((stats) => setMonthlyStats(stats));
+    const unsubscribe = getMonthlyStats((stats) => setMonthlyStats(stats), {
+      max: 12,
+      direction: 'asc',
+    });
     return () => unsubscribe();
   }, []);
 

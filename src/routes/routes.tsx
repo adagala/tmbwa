@@ -11,6 +11,7 @@ import SettingsPage from '../app/main/SettingsPage';
 import MemberProfilePage from '../app/main/MemberProfilePage';
 import ProtectedRoute from './ProtectedRoute';
 import PublicRoute from './PublicRoute';
+import ReportPage from '../app/main/ReportPage';
 
 export const router = createBrowserRouter([
   {
@@ -62,6 +63,10 @@ export const router = createBrowserRouter([
       {
         path: 'settings',
         element: <SettingsPage />,
+      },
+      {
+        path: 'report',
+        element: <ReportPage />,
       },
     ],
   },

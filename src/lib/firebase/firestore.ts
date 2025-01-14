@@ -17,6 +17,7 @@ import {
   serverTimestamp,
   getDoc,
   getDocs,
+  OrderByDirection,
 } from 'firebase/firestore';
 import { db } from './clientApp';
 import {
@@ -46,6 +47,11 @@ type ContributionsFilters = {
 
 type MemberContributionsFilters = {
   memberId: string;
+};
+
+type MonthlyStatsFilters = {
+  direction?: OrderByDirection;
+  max?: number;
 };
 
 export const getMembers = (
@@ -144,12 +150,19 @@ export const deleteMember = (memberId: string) => {
   return deleteDoc(memberRef);
 };
 
-export const getMonthlyStats = (cb: (data: MonthlyStats[]) => void) => {
-  const statsQuery = query(
+export const getMonthlyStats = (
+  cb: (data: MonthlyStats[]) => void,
+  { direction, max }: MonthlyStatsFilters,
+) => {
+  direction = direction || 'desc';
+  let statsQuery = query(
     collection(db, 'monthly_stats'),
-    orderBy('month', 'asc'),
-    limit(10),
+    orderBy('month', direction),
   );
+
+  if (max) {
+    statsQuery = query(statsQuery, limit(max));
+  }
 
   const unsubscribe = onSnapshot(
     statsQuery,

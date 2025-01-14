@@ -17,7 +17,7 @@ const Contributions = React.forwardRef<HTMLDivElement, ContributionsProps>(
     const [contribution, setContribution] = React.useState<Contribution>();
     return (
       <div className={className} {...props} ref={ref}>
-        <div className='flex items-center justify-between'>
+        <div className="flex items-center justify-between">
           <div className="my-6 text-xl font-semibold flex items-center gap-1">
             <RiWalletLine className="size-5 shrink-0" aria-hidden="true" />
             Contribution History
@@ -51,7 +51,7 @@ const Contributions = React.forwardRef<HTMLDivElement, ContributionsProps>(
                   <p className="text-sm font-semibold leading-6 text-gray-900 dark:text-gray-200">
                     {new Date(contribution.month).toLocaleDateString('en-US', {
                       year: 'numeric',
-                      month: 'long',
+                      month: 'short',
                     })}
                   </p>
                 </div>
@@ -66,7 +66,8 @@ const Contributions = React.forwardRef<HTMLDivElement, ContributionsProps>(
                       className={`flex-none rounded-full ${
                         contribution.paid === ContributionStatusEnum.enum.paid
                           ? 'bg-emerald-500/20'
-                          : contribution.paid === ContributionStatusEnum.enum.partial
+                          : contribution.paid ===
+                              ContributionStatusEnum.enum.partial
                             ? 'bg-orange-300/20'
                             : 'bg-red-500/20'
                       }  p-1`}
@@ -86,7 +87,8 @@ const Contributions = React.forwardRef<HTMLDivElement, ContributionsProps>(
                       className={`hidden sm:flex text-xs leading-5 font-medium ${
                         contribution.paid === ContributionStatusEnum.enum.paid
                           ? 'text-emerald-500'
-                          : contribution.paid === ContributionStatusEnum.enum.partial
+                          : contribution.paid ===
+                              ContributionStatusEnum.enum.partial
                             ? 'text-orange-300'
                             : 'text-red-500'
                       } capitalize`}

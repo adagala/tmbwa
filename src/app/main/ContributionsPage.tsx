@@ -26,11 +26,13 @@ import { getMonthlyMembersContributions } from '@/lib/firebase/firestore';
 import { getMonth, months, years } from '@/lib/utils';
 import debounce from 'lodash.debounce';
 import { Avatar } from '@/components/Avatar';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 
 const currentYear = new Date().getFullYear().toString();
 const currentMonth = String(new Date().getMonth() + 1).padStart(2, '0');
 
 export default function ContributionsPage() {
+  const navigate = useNavigate();
   const [paymentStatus, setPaymentStatus] = React.useState<PaymentStatus | ''>(
     '',
   );
@@ -45,6 +47,24 @@ export default function ContributionsPage() {
   const [isLoading, setIsLoading] = React.useState(false);
   const [searchValue, setSearchValue] = React.useState('');
   const [querySearch, setQuerySearch] = React.useState('');
+  const [searchParams] = useSearchParams();
+  const yearParam = searchParams.get('year');
+  const monthParam = searchParams.get('month');
+
+  const updateParams = ({ month, year }: { month: string; year: string }) => {
+    searchParams.set('year', year);
+    searchParams.set('month', month);
+    setYear(year);
+    setMonth(month);
+    navigate(`${location.pathname}?${searchParams.toString()}`);
+  };
+
+  React.useEffect(() => {
+    updateParams({
+      month: monthParam || currentMonth,
+      year: yearParam || currentYear,
+    });
+  }, [yearParam, monthParam]);
 
   React.useEffect(() => {
     setIsLoading(true);
@@ -161,7 +181,7 @@ export default function ContributionsPage() {
                   setSearchValue('');
                   setQuerySearch('');
                   setPaymentStatus('');
-                  setYear(value);
+                  updateParams({ month, year: value });
                 }}
               >
                 <SelectTrigger id="year" name="year" className="capitalize">
@@ -184,7 +204,7 @@ export default function ContributionsPage() {
                   setSearchValue('');
                   setQuerySearch('');
                   setPaymentStatus('');
-                  setMonth(value);
+                  updateParams({ month: value, year });
                 }}
               >
                 <SelectTrigger id="month" name="month" className="capitalize">

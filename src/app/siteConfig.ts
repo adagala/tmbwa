@@ -4,6 +4,7 @@ import {
   RiWalletLine,
   RiUserLine,
   RiSettings5Line,
+  RiFileTextLine,
 } from '@remixicon/react';
 
 export const siteConfig = {
@@ -36,5 +37,10 @@ export const navigation = [
     name: 'Settings',
     href: siteConfig.baseLinks.settings,
     icon: RiSettings5Line,
+  },
+  {
+    name: 'Report',
+    href: '/report',
+    icon: RiFileTextLine,
   },
 ] as const;
