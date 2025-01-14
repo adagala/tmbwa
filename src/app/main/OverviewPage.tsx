@@ -31,10 +31,12 @@ export default function OverviewPage() {
   }));
 
   useEffect(() => {
-    const unsubscribe = getMonthlyStats((stats) => setMonthlyStats(stats), {
-      max: 12,
-      direction: 'asc',
-    });
+    const unsubscribe = getMonthlyStats(
+      (stats) => setMonthlyStats(stats.reverse()),
+      {
+        max: 12,
+      },
+    );
     return () => unsubscribe();
   }, []);
 
