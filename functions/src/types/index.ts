@@ -51,7 +51,7 @@ export type MemberContributionWithId = MemberContribution & {
   contribution_id: string;
 };
 
-export type Contribution = Member & MemberContribution;
+export type Contribution = MemberWithId & MemberContribution;
 
 export enum STATUS {
   ACTIVE = 'active',

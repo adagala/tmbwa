@@ -69,3 +69,23 @@ export const deleteCollection = ({
     deleteQueryBatch(query, batchSize, resolve, reject);
   });
 };
+
+export const deleteCollectionGroup = ({
+  collectionName,
+  batchSize = 500,
+}: {
+  collectionName: string;
+  batchSize?: number;
+}): Promise<void> => {
+  const collectionGroupRef = admin.firestore().collectionGroup(collectionName);
+  const query = collectionGroupRef.limit(batchSize);
+
+  return new Promise((resolve, reject) => {
+    deleteQueryBatch(query, batchSize, resolve, reject);
+  });
+};
+
+export const arrayToChunks = <T>(array: T[], size: number) =>
+  Array.from({ length: Math.ceil(array.length / size) }, (_v, i) =>
+    array.slice(i * size, i * size + size),
+  );
