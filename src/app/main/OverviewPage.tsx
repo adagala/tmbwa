@@ -13,7 +13,15 @@ export default function OverviewPage() {
   const currentMonth = new Date().toLocaleDateString('en-US', {
     month: 'long',
   });
-  const currentMonthStats = monthlyStats[monthlyStats.length - 1];
+  const currentMonthShort = new Date().toLocaleDateString('en-US', {
+    month: '2-digit',
+  });
+  const currentYear = new Date().toLocaleDateString('en-US', {
+    year: 'numeric',
+  });
+  const currentMonthStats = monthlyStats.find(
+    (stat) => stat.month === `${currentYear}-${currentMonthShort}-01`,
+  );
   const chartdata = monthlyStats.map((stats) => ({
     date: new Intl.DateTimeFormat('en-US', {
       month: 'short',
