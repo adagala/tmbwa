@@ -5,7 +5,12 @@ import {
   onDocumentUpdated,
 } from 'firebase-functions/v2/firestore';
 import { Member, MonthlyStats, Stats } from '../types';
-import { createIndex, getCurrentMonth, MONTHLY_CONTRIBUTION } from '../utils';
+import {
+  createIndex,
+  deleteCollection,
+  getCurrentMonth,
+  MONTHLY_CONTRIBUTION,
+} from '../utils';
 
 export const newMember = onDocumentCreated(
   'members/{memberId}',
@@ -93,6 +98,9 @@ export const deleteMember = onDocumentDeleted(
 
     await batch.commit();
 
+    await deleteCollection({ collectionPath: `members/${uid}/payments` });
+    await deleteCollection({ collectionPath: `members/${uid}/contributions` });
+
     // delete account
     return admin.auth().deleteUser(uid);
   },
@@ -140,9 +148,7 @@ export const updateMember = onDocumentUpdated(
 
     // if email is updated, update email
     if (memberBefore.email !== memberAfter.email) {
-      await admin
-        .auth()
-        .updateUser(uid, { email: memberAfter.email });
+      await admin.auth().updateUser(uid, { email: memberAfter.email });
     }
 
     // if role updated, update customClaims for role

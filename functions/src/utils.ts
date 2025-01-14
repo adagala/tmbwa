@@ -1,3 +1,4 @@
+import * as admin from 'firebase-admin';
 export const MONTHLY_CONTRIBUTION = 500;
 
 export const getCurrentMonth = () => {
@@ -23,4 +24,48 @@ export const createIndex = (title: string) => {
   }
 
   return searchableIndex;
+};
+
+export const deleteQueryBatch = async (
+  query: FirebaseFirestore.Query<FirebaseFirestore.DocumentData>,
+  batchSize: number,
+  resolve: () => void,
+  reject: (error: Error) => void,
+) => {
+  try {
+    const snapshot = await query.get();
+
+    if (snapshot.empty) {
+      resolve();
+      return;
+    }
+
+    const batch = admin.firestore().batch();
+    snapshot.docs.forEach((doc) => {
+      batch.delete(doc.ref);
+    });
+
+    await batch.commit();
+
+    process.nextTick(() => {
+      deleteQueryBatch(query, batchSize, resolve, reject);
+    });
+  } catch (error) {
+    reject(error as unknown as Error);
+  }
+};
+
+export const deleteCollection = ({
+  collectionPath,
+  batchSize = 500,
+}: {
+  collectionPath: string;
+  batchSize?: number;
+}): Promise<void> => {
+  const collectionRef = admin.firestore().collection(collectionPath);
+  const query = collectionRef.limit(batchSize);
+
+  return new Promise((resolve, reject) => {
+    deleteQueryBatch(query, batchSize, resolve, reject);
+  });
 };
