@@ -121,7 +121,7 @@ export const paymentSchema = paymentFormSchema.merge(
     contribution_amount: z.number(),
     payment_type: PaymentTypeEnum,
     action_by: z.string(),
-    created_at: z.union([FieldValueSchema, firebaseTimestampSchema]),
+    created_at: z.union([z.date(), FieldValueSchema, firebaseTimestampSchema]),
   }),
 );
 

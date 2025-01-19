@@ -12,7 +12,12 @@ import {
 } from '@/components/Dialog';
 import { Input } from '@/components/Input';
 import { Label } from '@/components/Label';
-import { Contribution, Payment, PaymentForm, PaymentTypeEnum } from '@/schemas/member';
+import {
+  Contribution,
+  Payment,
+  PaymentForm,
+  PaymentTypeEnum,
+} from '@/schemas/member';
 import { toast } from '@/hooks/useToast';
 import { DatePicker } from '@/components/DatePicker';
 import { useForm } from 'react-hook-form';
@@ -23,7 +28,6 @@ import { RiAddLine, RiErrorWarningFill } from '@remixicon/react';
 import { addPayment } from '@/lib/firebase/firestore';
 import { Callout } from '@/components/Callout';
 import useUser from '@/hooks/useUser';
-import { serverTimestamp } from 'firebase/firestore';
 
 export const DialogContributionPaymentForm = ({
   contribution,
@@ -64,7 +68,7 @@ export const DialogContributionPaymentForm = ({
       contribution_amount: data.amount,
       action_by: user.uid,
       payment_type: PaymentTypeEnum.Enum.contribution,
-      created_at: serverTimestamp(),
+      created_at: new Date(),
     };
     setIsLoading(true);
     addPayment({ contribution, payment })
