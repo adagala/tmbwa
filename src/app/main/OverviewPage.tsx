@@ -58,7 +58,10 @@ export default function OverviewPage() {
               {currentMonth} amount
             </p>
             <p className="text-xl sm:text-2xl text-tremor-content-strong dark:text-dark-tremor-content-strong font-semibold">
-              KES {currentMonthStats?.contribution || 0}
+              KES{' '}
+              {new Intl.NumberFormat('en-US', {}).format(
+                currentMonthStats?.contribution || 0,
+              )}
             </p>
           </Card>
           <div className="flex-1 grid sm:grid-cols-2 gap-4">
@@ -104,7 +107,9 @@ export default function OverviewPage() {
                 <div className="flex items-center gap-2">
                   <div className="shrink-0 flex items-center gap-2">
                     <div className="text-sm font-medium leading-6 text-gray-900 dark:text-gray-200 capitalize">
-                      {payment.amount}
+                      {new Intl.NumberFormat('en-US', {}).format(
+                        payment.amount,
+                      )}
                     </div>
                   </div>
                 </div>
