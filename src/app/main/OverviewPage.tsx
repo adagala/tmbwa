@@ -52,15 +52,7 @@ export default function OverviewPage() {
         Overview
       </div>
       <div className="flex flex-col sm:flex-row gap-6">
-        <div className="flex-1 grid sm:grid-cols-2 gap-4">
-          <Card className="mx-auto space-y-2 hover:bg-gray-50 dark:hover:bg-gray-900/60">
-            <p className="text-tremor-default text-tremor-content dark:text-dark-tremor-content">
-              {currentMonth} contributions
-            </p>
-            <p className="text-xl sm:text-2xl text-tremor-content-strong dark:text-dark-tremor-content-strong font-semibold">
-              {currentMonthStats?.paymentsCount || 0}
-            </p>
-          </Card>
+        <div className="flex-1 grid sm:grid-cols-1 gap-4">
           <Card className="mx-auto space-y-2 hover:bg-gray-50 dark:hover:bg-gray-900/60">
             <p className="text-tremor-default text-tremor-content dark:text-dark-tremor-content">
               {currentMonth} amount
@@ -69,22 +61,24 @@ export default function OverviewPage() {
               KES {currentMonthStats?.contribution || 0}
             </p>
           </Card>
-          <Card className="mx-auto space-y-2 hover:bg-gray-50 dark:hover:bg-gray-900/60">
-            <p className="text-tremor-default text-tremor-content dark:text-dark-tremor-content">
-              Total Members
-            </p>
-            <p className="text-xl sm:text-2xl text-tremor-content-strong dark:text-dark-tremor-content-strong font-semibold">
-              {currentMonthStats?.totalMembers || 0}
-            </p>
-          </Card>
-          <Card className="mx-auto space-y-2 hover:bg-gray-50 dark:hover:bg-gray-900/60">
-            <p className="text-tremor-default text-tremor-content dark:text-dark-tremor-content">
-              New Members in {currentMonth}
-            </p>
-            <p className="text-xl sm:text-2xl text-tremor-content-strong dark:text-dark-tremor-content-strong font-semibold">
-              {currentMonthStats?.newMembers || 0}
-            </p>
-          </Card>
+          <div className="flex-1 grid sm:grid-cols-2 gap-4">
+            <Card className="mx-auto space-y-2 hover:bg-gray-50 dark:hover:bg-gray-900/60">
+              <p className="text-tremor-default text-tremor-content dark:text-dark-tremor-content">
+                Total Members
+              </p>
+              <p className="text-xl sm:text-2xl text-tremor-content-strong dark:text-dark-tremor-content-strong font-semibold">
+                {currentMonthStats?.totalMembers || 0}
+              </p>
+            </Card>
+            <Card className="mx-auto space-y-2 hover:bg-gray-50 dark:hover:bg-gray-900/60">
+              <p className="text-tremor-default text-tremor-content dark:text-dark-tremor-content">
+                New Members in {currentMonth}
+              </p>
+              <p className="text-xl sm:text-2xl text-tremor-content-strong dark:text-dark-tremor-content-strong font-semibold">
+                {currentMonthStats?.newMembers || 0}
+              </p>
+            </Card>
+          </div>
         </div>
         <Card className="flex-1 space-y-4 h-80">
           <div className="flex gap-1 font-semibold text-lg">
