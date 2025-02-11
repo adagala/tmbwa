@@ -12,14 +12,18 @@ import { getMemberById } from '@/lib/firebase/firestore';
 import { Member } from '@/schemas/member';
 
 export default function SettingsPage() {
-  const { user } = useUser();
+  const { user, role } = useUser();
   const [member, setMember] = React.useState<Member | null>();
 
   React.useEffect(() => {
-    if (user?.uid) {
-      const unsubscribe = getMemberById(user?.uid, (fetchedMember) => {
-        setMember(fetchedMember);
-      });
+    if (user?.uid && role) {
+      const unsubscribe = getMemberById(
+        user?.uid,
+        (fetchedMember) => {
+          setMember(fetchedMember);
+        },
+        { role, user },
+      );
 
       return () => unsubscribe();
     }

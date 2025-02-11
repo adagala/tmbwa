@@ -7,14 +7,18 @@ import { getMemberById } from '@/lib/firebase/firestore';
 import { ContributionsAndTransactions } from '@/sections/contributionsAndTansactions';
 
 export default function ProfilePage() {
-  const { user } = useUser();
+  const { user, role } = useUser();
   const [member, setMember] = useState<Member | null>();
 
   useEffect(() => {
-    if (user?.uid) {
-      const unsubscribe = getMemberById(user.uid, (fetchedMember) => {
-        setMember(fetchedMember);
-      });
+    if (user?.uid && role) {
+      const unsubscribe = getMemberById(
+        user.uid,
+        (fetchedMember) => {
+          setMember(fetchedMember);
+        },
+        { role, user },
+      );
 
       return () => unsubscribe();
     }

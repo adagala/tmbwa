@@ -5,6 +5,7 @@ import { List, ListItem } from '@tremor/react';
 import { DialogContributionDetails } from '@/components/ui/contributions/DialogContributionDetails';
 import { Avatar } from '@/components/Avatar';
 import { DialogAddContribution } from '@/components/ui/contributions/DialogAddContribution';
+import useUser from '@/hooks/useUser';
 
 interface ContributionsProps extends React.ComponentPropsWithoutRef<'div'> {
   member: Member;
@@ -13,6 +14,7 @@ interface ContributionsProps extends React.ComponentPropsWithoutRef<'div'> {
 
 const Contributions = React.forwardRef<HTMLDivElement, ContributionsProps>(
   ({ contributions, member, className, ...props }: ContributionsProps, ref) => {
+    const { role } = useUser();
     const [open, setOpen] = React.useState(false);
     const [contribution, setContribution] = React.useState<Contribution>();
     return (
@@ -22,7 +24,9 @@ const Contributions = React.forwardRef<HTMLDivElement, ContributionsProps>(
             <RiWalletLine className="size-5 shrink-0" aria-hidden="true" />
             Contribution History
           </div>
-          <DialogAddContribution member={member} />
+          {role === 'administrator' && (
+            <DialogAddContribution member={member} />
+          )}
         </div>
         <List className="mt-4">
           {contributions.map((contribution) => (

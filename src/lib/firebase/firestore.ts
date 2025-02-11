@@ -35,6 +35,7 @@ import {
 } from '@/schemas/member';
 import { MONTHLY_CONTRIBUTION } from '../utils';
 import { PAYMENT_STATUS } from '../types';
+import { User } from 'firebase/auth';
 
 type MemberFilters = {
   role?: Role | '';
@@ -93,18 +94,22 @@ export const getMembers = (
 export const getMemberById = (
   memberId: string,
   cb: (data: Member | null) => void,
+  user?: { role: Role; user: User },
 ) => {
   const memberRef = doc(db, 'members', memberId);
   const unsubscribe = onSnapshot(
     memberRef,
     { includeMetadataChanges: true },
-    (memberSnapshot) => {
+    async (memberSnapshot) => {
       if (memberSnapshot.exists()) {
         const memberData = {
           member_id: memberSnapshot.id,
           ...memberSnapshot.data(),
         } as Member;
         cb(memberData);
+        if (user && memberData.role !== user.role) {
+          await user.user.getIdToken(true);
+        }
       } else {
         cb(null);
       }
