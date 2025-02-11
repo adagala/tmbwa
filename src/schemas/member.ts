@@ -131,6 +131,7 @@ export const memberContributionSchema = z.object({
   amount: z.number(),
   payments: z.array(paymentSchema),
   month: z.string(),
+  action_by: z.string(),
 });
 
 // Contribution Schema

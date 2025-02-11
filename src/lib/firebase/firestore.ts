@@ -472,6 +472,7 @@ export const addContribution = async ({
     }),
     createdat: serverTimestamp(),
     month,
+    action_by: uid,
   };
   batch.set(memberContributionRef, contribution, {
     merge: true,
