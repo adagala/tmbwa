@@ -226,6 +226,7 @@ export const createContribution = onCall(async (request) => {
     if (!memberSnapshot.exists) throw new HttpsError('not-found', 'Member not found.');
     if (contributionSnapshot.exists) throw new HttpsError('already-exists', 'Contribution already exists.');
     const member = memberSnapshot.data()!;
+    if (member.status !== 'active') throw new HttpsError('failed-precondition', 'Only active members can receive new contributions.');
     const balance = Number(member.balance ?? 0);
     const applied = Math.min(Math.max(balance, 0), MONTHLY_CONTRIBUTION);
     const payments: Record<string, unknown>[] = [];
@@ -396,21 +397,18 @@ export const transitionMemberStatus = onCall(async (request) => {
   if (!Object.prototype.hasOwnProperty.call(lifecycleTransitions, status)) throw new HttpsError('invalid-argument', 'Unsupported member status.');
   const result = await db().runTransaction(async (transaction) => {
     const command = await readCommand(transaction, requestId);
-    if (command.exists) return { requestId, duplicate: true };
     const memberRef = db().doc(`members/${memberId}`);
     const snapshot = await transaction.get(memberRef);
     if (!snapshot.exists) throw new HttpsError('not-found', 'Member not found.');
     const previousStatus = String(snapshot.data()?.status || 'active');
-    if (previousStatus === status) return { requestId, duplicate: true };
+    if (command.exists || previousStatus === status) return { requestId, status: previousStatus, duplicate: true };
     if (!lifecycleTransitions[previousStatus]?.includes(status)) throw new HttpsError('failed-precondition', `Cannot transition from ${previousStatus} to ${status}.`);
     writeCommand(transaction, command.ref, 'transitionMemberStatus', actorId);
     transaction.update(memberRef, { status, statusUpdatedAt: admin.firestore.FieldValue.serverTimestamp(), statusUpdatedBy: actorId });
     writeAuditEvent(transaction, requestId, actorId, 'member.status_changed', memberId, memberId, { previousStatus, newStatus: status });
     return { requestId, previousStatus, status, duplicate: false };
   });
-  if (!result.duplicate) {
-    await admin.auth().updateUser(memberId, { disabled: status !== 'active' });
-    await admin.auth().revokeRefreshTokens(memberId);
-  }
+  await admin.auth().updateUser(memberId, { disabled: result.status !== 'active' });
+  await admin.auth().revokeRefreshTokens(memberId);
   return result;
 });
