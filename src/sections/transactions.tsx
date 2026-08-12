@@ -8,6 +8,7 @@ import {
 import { RiWalletLine } from '@remixicon/react';
 import { List, ListItem } from '@tremor/react';
 import { Badge } from '@/components/Badge';
+import { printReceipt, receiptNumber } from '@/lib/memberDocuments';
 
 interface TransactionsProps extends React.ComponentPropsWithoutRef<'div'> {
   member: Member;
@@ -15,7 +16,7 @@ interface TransactionsProps extends React.ComponentPropsWithoutRef<'div'> {
 }
 
 const Transactions = React.forwardRef<HTMLDivElement, TransactionsProps>(
-  ({ payments, className, ...props }: TransactionsProps, ref) => {
+  ({ payments, member, className, ...props }: TransactionsProps, ref) => {
     return (
       <div className={className} {...props} ref={ref}>
         <div className="flex items-center justify-between">
@@ -61,9 +62,7 @@ const Transactions = React.forwardRef<HTMLDivElement, TransactionsProps>(
                       </div>
                     </div>
                   </div>
-                  <div className="text-xs hidden sm:block">
-                    {payment.referencenumber}
-                  </div>
+                  <button type="button" className="hidden text-xs underline sm:block" onClick={() => printReceipt(payment, member)}>{receiptNumber(payment)}</button>
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="shrink-0 flex items-center gap-2">
