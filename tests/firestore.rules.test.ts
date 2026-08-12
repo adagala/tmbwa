@@ -6,7 +6,7 @@ import {
   assertSucceeds,
   initializeTestEnvironment,
 } from '@firebase/rules-unit-testing';
-import { collection, deleteDoc, doc, getDoc, getDocs, setDoc, updateDoc } from 'firebase/firestore';
+import { collection, collectionGroup, deleteDoc, doc, getDoc, getDocs, orderBy, query, setDoc, updateDoc, where } from 'firebase/firestore';
 
 const projectId = 'demo-tmbwa';
 let testEnv: RulesTestEnvironment;
@@ -47,9 +47,11 @@ async function seed() {
     await setDoc(doc(db, 'members/member-a/contributions/2026-08-01'), {
       amount: 500,
       balance: 500,
+      month: '2026-08-01',
     });
     await setDoc(doc(db, 'members/member-a/payments/payment-1'), {
       amount: 100,
+      paymentdate: new Date('2026-08-12T10:00:00+03:00'),
     });
     await setDoc(doc(db, 'monthly_stats/2026-08-01'), { amount: 1000 });
   });
@@ -80,6 +82,16 @@ describe('Firestore authorization', () => {
     await assertFails(updateDoc(doc(db, 'members/member-a'), { balance: 500 }));
     await assertFails(deleteDoc(doc(db, 'members/member-a/payments/payment-1')));
     await assertFails(updateDoc(doc(db, 'monthly_stats/2026-08-01'), { amount: 0 }));
+  });
+
+  it('allows only administrators to run reporting collection-group queries', async () => {
+    await seed();
+    const adminDb = testEnv.authenticatedContext('admin', { role: 'administrator' }).firestore();
+    const memberDb = testEnv.authenticatedContext('member-a', { role: 'member' }).firestore();
+    await assertSucceeds(getDocs(query(collectionGroup(adminDb, 'contributions'), where('month', '==', '2026-08-01'), orderBy('month'))));
+    await assertSucceeds(getDocs(query(collectionGroup(adminDb, 'payments'), orderBy('paymentdate', 'desc'))));
+    await assertFails(getDocs(query(collectionGroup(memberDb, 'contributions'), orderBy('month'))));
+    await assertFails(getDocs(query(collectionGroup(memberDb, 'payments'), orderBy('paymentdate', 'desc'))));
   });
 
   it('allows members to read their own profile and financial history', async () => {
