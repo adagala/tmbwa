@@ -379,7 +379,7 @@ export const deletePayment = async ({
 };
 
 export const getRecentPayments = (cb: (data: Payment[]) => void) => {
-  let q = query(
+  const q = query(
     collectionGroup(db, 'payments'),
     orderBy('paymentdate', 'desc'),
     limit(5),

@@ -15,7 +15,7 @@ interface TransactionsProps extends React.ComponentPropsWithoutRef<'div'> {
 }
 
 const Transactions = React.forwardRef<HTMLDivElement, TransactionsProps>(
-  ({ payments, member, className, ...props }: TransactionsProps, ref) => {
+  ({ payments, className, ...props }: TransactionsProps, ref) => {
     return (
       <div className={className} {...props} ref={ref}>
         <div className="flex items-center justify-between">

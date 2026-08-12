@@ -1,5 +1,4 @@
 import * as admin from 'firebase-admin';
-import * as serviceAccount from '../../../serviceAccount.json';
 import {
   Contribution,
   MemberWithId,
@@ -8,11 +7,9 @@ import {
 } from '../../types';
 import { arrayToChunks } from '../../utils';
 
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount as admin.ServiceAccount),
-});
+admin.initializeApp({ credential: admin.credential.applicationDefault() });
 
-// in functions directory use like:  ~ npm run build && node lib/src/scripts/members/updateAllMembers.js
+// in functions directory use like:  ~ npm run build:scripts && node lib-scripts/scripts/members/updateAllMembers.js
 const updateAllMembers = async () => {
   console.log('Start updateAllMembers ...!');
 
