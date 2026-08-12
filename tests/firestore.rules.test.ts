@@ -70,6 +70,7 @@ describe('Firestore authorization', () => {
     }).firestore();
     await assertSucceeds(getDocs(collection(db, 'members')));
     await assertSucceeds(updateDoc(doc(db, 'members/member-a'), { role: 'administrator' }));
+    await assertFails(updateDoc(doc(db, 'members/member-a'), { status: 'suspended' }));
     await assertSucceeds(getDoc(doc(db, 'monthly_stats/2026-08-01')));
   });
 

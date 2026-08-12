@@ -6,7 +6,7 @@ import { FieldValue } from 'firebase/firestore';
 export const member_roles = ['member', 'administrator'] as const;
 export const contribution_status = ['paid', 'unpaid', 'partial'] as const;
 export const genders = ['male', 'female'] as const;
-export const member_status = ['active', 'inactive', 'suspended'] as const;
+export const member_status = ['active', 'inactive', 'suspended', 'resigned', 'deceased'] as const;
 const months = [
   '01',
   '02',

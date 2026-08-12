@@ -15,3 +15,4 @@ export const reverseContributionPayment = Financial.reverseContributionPayment;
 export const createContribution = Financial.createContribution;
 export const adjustMemberBalance = Financial.adjustMemberBalance;
 export const removeContribution = Financial.removeContribution;
+export const transitionMemberStatus = Financial.transitionMemberStatus;

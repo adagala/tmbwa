@@ -28,7 +28,7 @@ service cloud.firestore {
     function administratorMemberFieldsOnly() {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
         'firstname', 'lastname', 'email', 'role', 'membernumber', 'win',
-        'phonenumber', 'status', 'gender', 'isFeesPaid'
+        'phonenumber', 'gender', 'isFeesPaid'
       ]);
     }
 

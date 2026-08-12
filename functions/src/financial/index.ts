@@ -378,3 +378,39 @@ export const removeContribution = onCall(async (request) => {
     return { requestId, duplicate: false };
   });
 });
+
+const lifecycleTransitions: Record<string, string[]> = {
+  active: ['inactive', 'suspended', 'resigned', 'deceased'],
+  inactive: ['active', 'suspended', 'resigned', 'deceased'],
+  suspended: ['active', 'inactive', 'resigned', 'deceased'],
+  resigned: [],
+  deceased: [],
+};
+
+export const transitionMemberStatus = onCall(async (request) => {
+  const actorId = requireAdministrator(request.auth);
+  const data = request.data as CommandData;
+  const requestId = requiredString(data, 'requestId');
+  const memberId = requiredString(data, 'memberId');
+  const status = requiredString(data, 'status');
+  if (!Object.prototype.hasOwnProperty.call(lifecycleTransitions, status)) throw new HttpsError('invalid-argument', 'Unsupported member status.');
+  const result = await db().runTransaction(async (transaction) => {
+    const command = await readCommand(transaction, requestId);
+    if (command.exists) return { requestId, duplicate: true };
+    const memberRef = db().doc(`members/${memberId}`);
+    const snapshot = await transaction.get(memberRef);
+    if (!snapshot.exists) throw new HttpsError('not-found', 'Member not found.');
+    const previousStatus = String(snapshot.data()?.status || 'active');
+    if (previousStatus === status) return { requestId, duplicate: true };
+    if (!lifecycleTransitions[previousStatus]?.includes(status)) throw new HttpsError('failed-precondition', `Cannot transition from ${previousStatus} to ${status}.`);
+    writeCommand(transaction, command.ref, 'transitionMemberStatus', actorId);
+    transaction.update(memberRef, { status, statusUpdatedAt: admin.firestore.FieldValue.serverTimestamp(), statusUpdatedBy: actorId });
+    writeAuditEvent(transaction, requestId, actorId, 'member.status_changed', memberId, memberId, { previousStatus, newStatus: status });
+    return { requestId, previousStatus, status, duplicate: false };
+  });
+  if (!result.duplicate) {
+    await admin.auth().updateUser(memberId, { disabled: status !== 'active' });
+    await admin.auth().revokeRefreshTokens(memberId);
+  }
+  return result;
+});
