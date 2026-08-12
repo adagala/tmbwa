@@ -1,5 +1,4 @@
 import * as admin from 'firebase-admin';
-import * as serviceAccount from '../../../serviceAccount.json';
 import {
   Contribution,
   Member,
@@ -10,11 +9,9 @@ import {
 } from '../../types';
 import { getCurrentMonth, MONTHLY_CONTRIBUTION } from '../../utils';
 
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount as admin.ServiceAccount),
-});
+admin.initializeApp({ credential: admin.credential.applicationDefault() });
 
-// in functions directory use like:  ~ npm run build && node lib/src/scripts/contributions/setMonthlyContributions.js
+// in functions directory use like:  ~ npm run build:scripts && node lib-scripts/scripts/contributions/setMonthlyContributions.js
 const setMonthlyContributions = async () => {
   // get all members
   const membersRef = admin.firestore().collection('members');

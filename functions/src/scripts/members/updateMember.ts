@@ -1,10 +1,7 @@
 import * as admin from 'firebase-admin';
-import * as serviceAccount from '../../../serviceAccount.json';
 import { Member } from '../../types';
 
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount as admin.ServiceAccount),
-});
+admin.initializeApp({ credential: admin.credential.applicationDefault() });
 
 type TMember = Omit<
   Member,
@@ -20,7 +17,7 @@ const member: Partial<TMember> & { uid: string; password?: string } = {
   uid: '',
 };
 
-// in functions directory use like:  ~ npm run build && node lib/src/scripts/members/updateMember.js
+// in functions directory use like:  ~ npm run build:scripts && node lib-scripts/scripts/members/updateMember.js
 const updateMember = async () => {
   console.log('Start updateMemberPassword ...!');
 

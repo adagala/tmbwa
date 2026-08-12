@@ -3,11 +3,13 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "engines": {
+    "node": "22.x"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
-    "test:rules": "firebase emulators:exec --config firebase.rules-test.json --only firestore --project demo-tmbwa \"vitest run tests/firestore.rules.test.ts\"",
+    "lint": "eslint src --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview",
     "deploy": "tsc -b && vite build && firebase deploy --only hosting"
   },

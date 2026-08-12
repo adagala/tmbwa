@@ -1,14 +1,11 @@
 import * as admin from 'firebase-admin';
-import * as serviceAccount from '../../../serviceAccount.json';
 import { Member } from '../../types';
 
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount as admin.ServiceAccount),
-});
+admin.initializeApp({ credential: admin.credential.applicationDefault() });
 
 const members: Partial<Member>[] = [];
 
-// in functions directory use like:  ~ npm run build && node lib/src/scripts/members/addMembers.js
+// in functions directory use like:  ~ npm run build:scripts && node lib-scripts/scripts/members/addMembers.js
 const addMembers = async () => {
   console.log('Start addMembers ...!');
 

@@ -1,12 +1,9 @@
 import * as admin from 'firebase-admin';
-import * as serviceAccount from '../../../serviceAccount.json';
 import { MemberContribution, MemberWithId, PAYMENT_STATUS } from '../../types';
 
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount as admin.ServiceAccount),
-});
+admin.initializeApp({ credential: admin.credential.applicationDefault() });
 
-// in functions directory use like:  ~ tsc && node lib/src/scripts/contributions/updateContributions.js
+// in functions directory use like:  ~ npm run build:scripts && node lib-scripts/scripts/contributions/updateContributions.js
 const updateContributions = async () => {
   console.log('Update contributions ...!');
 
