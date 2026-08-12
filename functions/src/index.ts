@@ -3,9 +3,15 @@ admin.initializeApp();
 
 import * as Member from './members';
 import * as Contribution from './contributions';
+import * as Financial from './financial';
 
 export const newMember = Member.newMember;
 export const updateMember = Member.updateMember;
 export const deleteMember = Member.deleteMember;
 
 export const setMonthlyContributions = Contribution.setMonthlyContributions;
+export const recordContributionPayment = Financial.recordContributionPayment;
+export const reverseContributionPayment = Financial.reverseContributionPayment;
+export const createContribution = Financial.createContribution;
+export const adjustMemberBalance = Financial.adjustMemberBalance;
+export const removeContribution = Financial.removeContribution;

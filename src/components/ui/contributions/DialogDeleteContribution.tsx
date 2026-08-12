@@ -12,7 +12,7 @@ import {
 } from '@/components/Dialog';
 import { useToast } from '@/hooks/useToast';
 import { Contribution, Member } from '@/schemas/member';
-import { deleteContribution } from '@/lib/firebase/firestore';
+import { deleteContribution } from '@/lib/firebase/financial';
 
 export const DialogDeleteContribution = ({
   contribution,

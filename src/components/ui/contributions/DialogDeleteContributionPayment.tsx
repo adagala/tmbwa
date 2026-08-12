@@ -11,7 +11,7 @@ import {
   DialogTrigger,
 } from '@/components/Dialog';
 import { useToast } from '@/hooks/useToast';
-import { deletePayment } from '@/lib/firebase/firestore';
+import { deletePayment } from '@/lib/firebase/financial';
 import { Contribution, Payment } from '@/schemas/member';
 import { getMonth } from '@/lib/utils';
 
