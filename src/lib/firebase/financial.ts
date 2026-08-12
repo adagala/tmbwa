@@ -2,10 +2,24 @@ import { httpsCallable } from 'firebase/functions';
 import { functions } from './clientApp';
 import { Contribution, Member, MemberBalanceForm, Payment } from '@/schemas/member';
 
-const requestId = () => crypto.randomUUID();
+const pendingRequests = new Map<string, string>();
 
-const call = (name: string, data: Record<string, unknown>) =>
-  httpsCallable(functions, name)({ requestId: requestId(), ...data });
+const call = async (name: string, data: Record<string, unknown>) => {
+  const operation = `${name}:${JSON.stringify(data)}`;
+  const requestId = pendingRequests.get(operation) ?? crypto.randomUUID();
+  pendingRequests.set(operation, requestId);
+  try {
+    const result = await httpsCallable(functions, name)({ requestId, ...data });
+    pendingRequests.delete(operation);
+    return result;
+  } catch (error) {
+    const code = (error as { code?: string }).code ?? '';
+    if (!['functions/unavailable', 'functions/deadline-exceeded', 'functions/internal'].includes(code)) {
+      pendingRequests.delete(operation);
+    }
+    throw error;
+  }
+};
 
 export const addPayment = ({ contribution, payment }: { contribution: Contribution; payment: Payment }) =>
   call('recordContributionPayment', {
