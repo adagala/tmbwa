@@ -2,8 +2,57 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isAdministrator() {
+      return signedIn() && request.auth.token.role == 'administrator';
+    }
+
+    function isOwner(memberId) {
+      return signedIn() && request.auth.uid == memberId;
+    }
+
+    function ownerProfileFieldsOnly() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+        'firstname',
+        'lastname',
+        'membernumber',
+        'win',
+        'phonenumber',
+        'gender'
+      ]);
+    }
+
+    match /members/{memberId} {
+      allow get: if isAdministrator() || isOwner(memberId);
+      allow list: if isAdministrator();
+      allow create, delete: if isAdministrator();
+      allow update: if isAdministrator() ||
+        (isOwner(memberId) && ownerProfileFieldsOnly());
+
+      match /contributions/{contributionId} {
+        allow read: if isAdministrator() || isOwner(memberId);
+        allow write: if isAdministrator();
+      }
+
+      match /payments/{paymentId} {
+        allow read: if isAdministrator() || isOwner(memberId);
+        allow write: if isAdministrator();
+      }
+    }
+
+    match /monthly_stats/{statId} {
+      allow read, write: if isAdministrator();
+    }
+
+    match /stats/{statId} {
+      allow read, write: if isAdministrator();
+    }
+
     match /{document=**} {
-      allow read, write: if request.auth.uid != null;
+      allow read, write: if false;
     }
   }
 }

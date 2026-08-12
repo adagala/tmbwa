@@ -12,6 +12,7 @@ import MemberProfilePage from '../app/main/MemberProfilePage';
 import ProtectedRoute from './ProtectedRoute';
 import PublicRoute from './PublicRoute';
 import ReportPage from '../app/main/ReportPage';
+import RoleLandingRoute from './RoleLandingRoute';
 
 export const router = createBrowserRouter([
   {
@@ -38,7 +39,7 @@ export const router = createBrowserRouter([
     children: [
       {
         index: true,
-        element: <Navigate to="overview" replace />,
+        element: <RoleLandingRoute />,
       },
       {
         path: 'overview',
