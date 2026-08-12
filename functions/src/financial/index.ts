@@ -2,6 +2,7 @@ import * as admin from 'firebase-admin';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { PAYMENT_STATUS } from '../types';
 import { MONTHLY_CONTRIBUTION } from '../utils';
+import { applyBalanceAdjustment, applyPayment, reversePayment } from './domain';
 
 type CommandData = Record<string, unknown>;
 
@@ -104,7 +105,8 @@ export const recordContributionPayment = onCall(async (request) => {
     const outstanding = Number(contribution.balance ?? 0);
     if (outstanding <= 0) throw new HttpsError('failed-precondition', 'Contribution is already paid.');
 
-    const contributionAmount = Math.min(amount, outstanding);
+    const paymentResult = applyPayment(amount, outstanding);
+    const { contributionAmount } = paymentResult;
     const paymentId = db().collection(`members/${memberId}/payments`).doc().id;
     const createdAt = admin.firestore.Timestamp.now();
     const payment = {
@@ -126,8 +128,8 @@ export const recordContributionPayment = onCall(async (request) => {
     transaction.create(db().doc(`members/${memberId}/payments/${paymentId}`), payment);
     transaction.update(contributionRef, {
       payments: admin.firestore.FieldValue.arrayUnion(payment),
-      balance: outstanding - contributionAmount,
-      paid: outstanding - contributionAmount === 0 ? PAYMENT_STATUS.PAID : PAYMENT_STATUS.PARTIAL,
+      balance: paymentResult.remainingBalance,
+      paid: paymentResult.status,
     });
     transaction.update(memberRef, {
       balance: admin.firestore.FieldValue.increment(amount),
@@ -169,14 +171,17 @@ export const reverseContributionPayment = onCall(async (request) => {
     const contributionSnapshot = await transaction.get(contributionRef);
     if (!contributionSnapshot.exists) throw new HttpsError('not-found', 'Contribution not found.');
     const contribution = contributionSnapshot.data()!;
-    const restoredBalance = Number(contribution.balance ?? 0) + Number(payment.contribution_amount ?? 0);
-    const status = restoredBalance >= Number(contribution.amount) ? PAYMENT_STATUS.UNPAID : PAYMENT_STATUS.PARTIAL;
+    const reversal = reversePayment(
+      Number(contribution.balance ?? 0),
+      Number(payment.contribution_amount ?? 0),
+      Number(contribution.amount),
+    );
     writeCommand(transaction, command.ref, 'reverseContributionPayment', actorId);
     transaction.delete(paymentRef);
     transaction.update(contributionRef, {
       payments: admin.firestore.FieldValue.arrayRemove(payment),
-      balance: restoredBalance,
-      paid: status,
+      balance: reversal.restoredBalance,
+      paid: reversal.status,
     });
     transaction.update(db().doc(`members/${memberId}`), {
       balance: admin.firestore.FieldValue.increment(-Number(payment.amount)),
@@ -284,7 +289,6 @@ export const adjustMemberBalance = onCall(async (request) => {
   if (type !== 'top_up' && type !== 'deduction') {
     throw new HttpsError('invalid-argument', 'type must be top_up or deduction.');
   }
-  const delta = type === 'top_up' ? amount : -amount;
   return db().runTransaction(async (transaction) => {
     const command = await readCommand(transaction, requestId);
     if (command.exists) {
@@ -294,8 +298,12 @@ export const adjustMemberBalance = onCall(async (request) => {
     const memberSnapshot = await transaction.get(memberRef);
     if (!memberSnapshot.exists) throw new HttpsError('not-found', 'Member not found.');
     const member = memberSnapshot.data()!;
-    const nextBalance = Number(member.balance ?? 0) + delta;
-    if (nextBalance < 0) throw new HttpsError('failed-precondition', 'Deduction exceeds account balance.');
+    let nextBalance: number;
+    try {
+      nextBalance = applyBalanceAdjustment(Number(member.balance ?? 0), amount, type);
+    } catch (error) {
+      throw new HttpsError('failed-precondition', (error as Error).message);
+    }
     const paymentId = db().collection(`members/${memberId}/payments`).doc().id;
     writeCommand(transaction, command.ref, 'adjustMemberBalance', actorId);
     transaction.update(memberRef, { balance: nextBalance });
