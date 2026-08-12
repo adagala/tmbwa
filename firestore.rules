@@ -50,6 +50,14 @@ service cloud.firestore {
       }
     }
 
+    match /{path=**}/contributions/{contributionId} {
+      allow read: if isAdministrator();
+    }
+
+    match /{path=**}/payments/{paymentId} {
+      allow read: if isAdministrator();
+    }
+
     match /monthly_stats/{statId} {
       allow read: if isAdministrator();
       allow write: if false;
