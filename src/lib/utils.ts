@@ -53,7 +53,12 @@ export const getMonth = (_date?: string) => {
   return `${year}-${month}-01`;
 };
 
-export const years = ['2024', '2025', '2026'] as const;
+const firstContributionYear = 2024;
+const currentYear = new Date().getFullYear();
+export const years = Array.from(
+  { length: currentYear - firstContributionYear + 2 },
+  (_, index) => String(firstContributionYear + index),
+);
 
 export const months = [
   { label: 'January', value: '01' },

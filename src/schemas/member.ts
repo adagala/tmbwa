@@ -1,7 +1,6 @@
 // schemas/memberSchema.ts
 import { z } from 'zod';
 import { isMobilePhone } from 'validator';
-import { years } from '@/lib/utils';
 import { FieldValue } from 'firebase/firestore';
 
 export const member_roles = ['member', 'administrator'] as const;
@@ -30,7 +29,7 @@ export const StatusEnum = z.enum(member_status);
 export const RoleEnum = z.enum(member_roles);
 export const GenderEnum = z.enum(genders);
 export const ContributionStatusEnum = z.enum(contribution_status);
-export const YearEnum = z.enum(years);
+export const YearEnum = z.string().regex(/^\d{4}$/, 'Provide a valid year');
 export const MonthEnum = z.enum(months);
 export const PaymentTypeEnum = z.enum(payment_type);
 export const MemberBalanceTypeEnum = z.enum(member_balance_type);

@@ -68,6 +68,15 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    match /contribution_rates/{rateId} {
+      allow read: if isAdministrator();
+      allow create, update: if isAdministrator() &&
+        request.resource.data.keys().hasOnly(['amount', 'effectiveFrom', 'updatedAt', 'updatedBy']) &&
+        request.resource.data.amount is number && request.resource.data.amount > 0 &&
+        request.resource.data.effectiveFrom is string;
+      allow delete: if false;
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }
