@@ -33,6 +33,26 @@ const positiveNumber = (data: CommandData, key: string) => {
 
 const commandRef = (requestId: string) => db().doc(`financial_commands/${requestId}`);
 
+const writeAuditEvent = (
+  transaction: FirebaseFirestore.Transaction,
+  requestId: string,
+  actorId: string,
+  action: string,
+  memberId: string,
+  targetId: string,
+  changes: Record<string, unknown>,
+) => {
+  transaction.create(db().doc(`audit_events/${requestId}`), {
+    requestId,
+    actorId,
+    action,
+    memberId,
+    targetId,
+    changes,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+};
+
 const assertNewCommand = async (
   transaction: FirebaseFirestore.Transaction,
   requestId: string,
@@ -109,6 +129,12 @@ export const recordContributionPayment = onCall(async (request) => {
       contribution: admin.firestore.FieldValue.increment(contributionAmount),
       month: contributionId,
     }, { merge: true });
+    writeAuditEvent(transaction, requestId, actorId, 'payment.recorded', memberId, paymentId, {
+      amount,
+      contributionAmount,
+      contributionId,
+      referenceNumber,
+    });
     return { requestId, paymentId, contributionAmount, duplicate: false };
   });
 });
@@ -150,6 +176,11 @@ export const reverseContributionPayment = onCall(async (request) => {
       contribution: admin.firestore.FieldValue.increment(-Number(payment.contribution_amount)),
       month: contributionId,
     }, { merge: true });
+    writeAuditEvent(transaction, requestId, actorId, 'payment.reversed', memberId, paymentId, {
+      amount: Number(payment.amount),
+      contributionAmount: Number(payment.contribution_amount),
+      contributionId,
+    });
     return { requestId, duplicate: false };
   });
 });
@@ -200,6 +231,10 @@ export const createContribution = onCall(async (request) => {
       contribution: admin.firestore.FieldValue.increment(applied),
       month,
     }, { merge: true });
+    writeAuditEvent(transaction, requestId, actorId, 'contribution.created', memberId, month, {
+      amount: MONTHLY_CONTRIBUTION,
+      appliedFromBalance: applied,
+    });
     return { requestId, duplicate: false };
   });
 });
@@ -243,6 +278,12 @@ export const adjustMemberBalance = onCall(async (request) => {
       action_by: actorId,
       request_id: requestId,
     });
+    writeAuditEvent(transaction, requestId, actorId, 'balance.adjusted', memberId, paymentId, {
+      amount,
+      direction: type,
+      previousBalance: Number(member.balance ?? 0),
+      newBalance: nextBalance,
+    });
     return { requestId, paymentId, duplicate: false };
   });
 });
@@ -278,6 +319,11 @@ export const removeContribution = onCall(async (request) => {
       paymentsCount: admin.firestore.FieldValue.increment(-payments.length),
       month: contributionId,
     }, { merge: true });
+    writeAuditEvent(transaction, requestId, actorId, 'contribution.removed', memberId, contributionId, {
+      amount: Number(contribution.amount ?? 0),
+      paidAmount,
+      removedPaymentIds: payments.map((payment) => payment.payment_id),
+    });
     return { requestId, duplicate: false };
   });
 });

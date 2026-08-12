@@ -13,6 +13,7 @@ import ProtectedRoute from './ProtectedRoute';
 import PublicRoute from './PublicRoute';
 import ReportPage from '../app/main/ReportPage';
 import RoleLandingRoute from './RoleLandingRoute';
+import AuditPage from '../app/main/AuditPage';
 
 export const router = createBrowserRouter([
   {
@@ -68,6 +69,10 @@ export const router = createBrowserRouter([
       {
         path: 'report',
         element: <ReportPage />,
+      },
+      {
+        path: 'audit',
+        element: <AuditPage />,
       },
     ],
   },
