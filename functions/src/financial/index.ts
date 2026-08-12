@@ -54,21 +54,26 @@ const writeAuditEvent = (
   });
 };
 
-const assertNewCommand = async (
+const readCommand = async (
   transaction: FirebaseFirestore.Transaction,
   requestId: string,
-  type: string,
-  actorId: string,
 ) => {
   const ref = commandRef(requestId);
   const snapshot = await transaction.get(ref);
-  if (snapshot.exists) return false;
+  return { ref, exists: snapshot.exists };
+};
+
+const writeCommand = (
+  transaction: FirebaseFirestore.Transaction,
+  ref: FirebaseFirestore.DocumentReference,
+  type: string,
+  actorId: string,
+) => {
   transaction.create(ref, {
     type,
     actorId,
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
   });
-  return true;
 };
 
 export const recordContributionPayment = onCall(async (request) => {
@@ -82,7 +87,8 @@ export const recordContributionPayment = onCall(async (request) => {
   const paymentDateMillis = positiveNumber(data, 'paymentDateMillis');
 
   return db().runTransaction(async (transaction) => {
-    if (!(await assertNewCommand(transaction, requestId, 'recordContributionPayment', actorId))) {
+    const command = await readCommand(transaction, requestId);
+    if (command.exists) {
       return { requestId, duplicate: true };
     }
     const memberRef = db().doc(`members/${memberId}`);
@@ -102,12 +108,13 @@ export const recordContributionPayment = onCall(async (request) => {
     const paymentResult = applyPayment(amount, outstanding);
     const { contributionAmount } = paymentResult;
     const paymentId = db().collection(`members/${memberId}/payments`).doc().id;
+    const createdAt = admin.firestore.Timestamp.now();
     const payment = {
       payment_id: paymentId,
       referencenumber: referenceNumber,
       amount,
       paymentdate: admin.firestore.Timestamp.fromMillis(paymentDateMillis),
-      created_at: admin.firestore.FieldValue.serverTimestamp(),
+      created_at: createdAt,
       member_id: memberId,
       contribution_id: contributionId,
       firstname: member.firstname,
@@ -117,6 +124,7 @@ export const recordContributionPayment = onCall(async (request) => {
       action_by: actorId,
       request_id: requestId,
     };
+    writeCommand(transaction, command.ref, 'recordContributionPayment', actorId);
     transaction.create(db().doc(`members/${memberId}/payments/${paymentId}`), payment);
     transaction.update(contributionRef, {
       payments: admin.firestore.FieldValue.arrayUnion(payment),
@@ -149,7 +157,8 @@ export const reverseContributionPayment = onCall(async (request) => {
   const paymentId = requiredString(data, 'paymentId');
 
   return db().runTransaction(async (transaction) => {
-    if (!(await assertNewCommand(transaction, requestId, 'reverseContributionPayment', actorId))) {
+    const command = await readCommand(transaction, requestId);
+    if (command.exists) {
       return { requestId, duplicate: true };
     }
     const paymentRef = db().doc(`members/${memberId}/payments/${paymentId}`);
@@ -167,6 +176,7 @@ export const reverseContributionPayment = onCall(async (request) => {
       Number(payment.contribution_amount ?? 0),
       Number(contribution.amount),
     );
+    writeCommand(transaction, command.ref, 'reverseContributionPayment', actorId);
     transaction.delete(paymentRef);
     transaction.update(contributionRef, {
       payments: admin.firestore.FieldValue.arrayRemove(payment),
@@ -201,7 +211,8 @@ export const createContribution = onCall(async (request) => {
   }
 
   return db().runTransaction(async (transaction) => {
-    if (!(await assertNewCommand(transaction, requestId, 'createContribution', actorId))) {
+    const command = await readCommand(transaction, requestId);
+    if (command.exists) {
       return { requestId, duplicate: true };
     }
     const memberRef = db().doc(`members/${memberId}`);
@@ -215,13 +226,36 @@ export const createContribution = onCall(async (request) => {
     const member = memberSnapshot.data()!;
     const balance = Number(member.balance ?? 0);
     const applied = Math.min(Math.max(balance, 0), MONTHLY_CONTRIBUTION);
+    const payments: Record<string, unknown>[] = [];
+    if (applied > 0) {
+      const paymentId = db().collection(`members/${memberId}/payments`).doc().id;
+      const createdAt = admin.firestore.Timestamp.now();
+      const payment = {
+        payment_id: paymentId,
+        referencenumber: 'BALANCE B/F',
+        amount: applied,
+        paymentdate: createdAt,
+        created_at: createdAt,
+        member_id: memberId,
+        contribution_id: month,
+        firstname: member.firstname,
+        lastname: member.lastname,
+        contribution_amount: applied,
+        payment_type: 'contribution',
+        action_by: actorId,
+        request_id: requestId,
+      };
+      payments.push(payment);
+      transaction.create(db().doc(`members/${memberId}/payments/${paymentId}`), payment);
+    }
+    writeCommand(transaction, command.ref, 'createContribution', actorId);
     transaction.create(contributionRef, {
       ...member,
       member_id: memberId,
       amount: MONTHLY_CONTRIBUTION,
       balance: MONTHLY_CONTRIBUTION - applied,
       paid: applied === MONTHLY_CONTRIBUTION ? PAYMENT_STATUS.PAID : applied > 0 ? PAYMENT_STATUS.PARTIAL : PAYMENT_STATUS.UNPAID,
-      payments: [],
+      payments,
       createdat: admin.firestore.FieldValue.serverTimestamp(),
       month,
       action_by: actorId,
@@ -234,6 +268,7 @@ export const createContribution = onCall(async (request) => {
     transaction.set(db().doc(`monthly_stats/${month}`), {
       amount: admin.firestore.FieldValue.increment(MONTHLY_CONTRIBUTION),
       contribution: admin.firestore.FieldValue.increment(applied),
+      paymentsCount: admin.firestore.FieldValue.increment(payments.length),
       month,
     }, { merge: true });
     writeAuditEvent(transaction, requestId, actorId, 'contribution.created', memberId, month, {
@@ -255,7 +290,8 @@ export const adjustMemberBalance = onCall(async (request) => {
     throw new HttpsError('invalid-argument', 'type must be top_up or deduction.');
   }
   return db().runTransaction(async (transaction) => {
-    if (!(await assertNewCommand(transaction, requestId, 'adjustMemberBalance', actorId))) {
+    const command = await readCommand(transaction, requestId);
+    if (command.exists) {
       return { requestId, duplicate: true };
     }
     const memberRef = db().doc(`members/${memberId}`);
@@ -269,6 +305,7 @@ export const adjustMemberBalance = onCall(async (request) => {
       throw new HttpsError('failed-precondition', (error as Error).message);
     }
     const paymentId = db().collection(`members/${memberId}/payments`).doc().id;
+    writeCommand(transaction, command.ref, 'adjustMemberBalance', actorId);
     transaction.update(memberRef, { balance: nextBalance });
     transaction.create(db().doc(`members/${memberId}/payments/${paymentId}`), {
       payment_id: paymentId,
@@ -303,7 +340,8 @@ export const removeContribution = onCall(async (request) => {
   const memberId = requiredString(data, 'memberId');
   const contributionId = requiredString(data, 'contributionId');
   return db().runTransaction(async (transaction) => {
-    if (!(await assertNewCommand(transaction, requestId, 'removeContribution', actorId))) {
+    const command = await readCommand(transaction, requestId);
+    if (command.exists) {
       return { requestId, duplicate: true };
     }
     const contributionRef = db().doc(`members/${memberId}/contributions/${contributionId}`);
@@ -317,6 +355,7 @@ export const removeContribution = onCall(async (request) => {
       }
     }
     const paidAmount = Number(contribution.amount ?? 0) - Number(contribution.balance ?? 0);
+    writeCommand(transaction, command.ref, 'removeContribution', actorId);
     transaction.delete(contributionRef);
     transaction.update(db().doc(`members/${memberId}`), {
       contributionBalance: admin.firestore.FieldValue.increment(-paidAmount),
