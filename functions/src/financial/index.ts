@@ -108,6 +108,7 @@ export const recordContributionPayment = onCall(async (request) => {
     const paymentResult = applyPayment(amount, outstanding);
     const { contributionAmount } = paymentResult;
     const paymentId = db().collection(`members/${memberId}/payments`).doc().id;
+    const receiptNumber = `TMBWA-${paymentId.toUpperCase()}`;
     const createdAt = admin.firestore.Timestamp.now();
     const payment = {
       payment_id: paymentId,
@@ -123,6 +124,7 @@ export const recordContributionPayment = onCall(async (request) => {
       payment_type: 'contribution',
       action_by: actorId,
       request_id: requestId,
+      receipt_number: receiptNumber,
     };
     writeCommand(transaction, command.ref, 'recordContributionPayment', actorId);
     transaction.create(db().doc(`members/${memberId}/payments/${paymentId}`), payment);
@@ -145,7 +147,7 @@ export const recordContributionPayment = onCall(async (request) => {
       contributionId,
       referenceNumber,
     });
-    return { requestId, paymentId, contributionAmount, duplicate: false };
+    return { requestId, paymentId, receiptNumber, contributionAmount, duplicate: false };
   });
 });
 
@@ -244,6 +246,7 @@ export const createContribution = onCall(async (request) => {
         payment_type: 'contribution',
         action_by: actorId,
         request_id: requestId,
+        receipt_number: `TMBWA-${paymentId.toUpperCase()}`,
       };
       payments.push(payment);
       transaction.create(db().doc(`members/${memberId}/payments/${paymentId}`), payment);
@@ -322,6 +325,7 @@ export const adjustMemberBalance = onCall(async (request) => {
       balance_direction: type,
       action_by: actorId,
       request_id: requestId,
+      receipt_number: `TMBWA-${paymentId.toUpperCase()}`,
     });
     writeAuditEvent(transaction, requestId, actorId, 'balance.adjusted', memberId, paymentId, {
       amount,

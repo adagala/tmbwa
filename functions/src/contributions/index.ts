@@ -44,6 +44,7 @@ const createForMember = async (member: MemberWithId, month: string, amount: numb
         payment_type: 'contribution',
         action_by: 'system',
         request_id: `monthly:${month}:${member.member_id}`,
+        receipt_number: `TMBWA-${paymentId.toUpperCase()}`,
       };
       payments.push(payment);
       transaction.create(db().doc(`members/${member.member_id}/payments/${paymentId}`), payment);

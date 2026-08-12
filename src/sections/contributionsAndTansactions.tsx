@@ -14,6 +14,7 @@ import {
   getMemberPayments,
 } from '@/lib/firebase/firestore';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { printStatement } from '@/lib/memberDocuments';
 
 interface ContributionsAndTransactionsProps
   extends React.ComponentPropsWithoutRef<'div'> {
@@ -29,6 +30,8 @@ const ContributionsAndTransactions = React.forwardRef<
   const [searchParams] = useSearchParams();
   const [contributions, setContributions] = useState<Contribution[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
+  const [statementFrom, setStatementFrom] = useState('');
+  const [statementTo, setStatementTo] = useState('');
   const tab = searchParams.get('tab') as MemberTab;
   const [currentTab] = useState<MemberTab>(tab || 'contributions');
 
@@ -70,6 +73,7 @@ const ContributionsAndTransactions = React.forwardRef<
           <RiSettings5Line className="size-6 shrink-0" aria-hidden="true" />
           Settings
         </div>
+        <div className="flex flex-wrap items-end gap-3 rounded border p-3"><label className="text-xs">Statement from<input className="mt-1 block rounded border p-2" type="date" value={statementFrom} onChange={(event) => setStatementFrom(event.target.value)} /></label><label className="text-xs">To<input className="mt-1 block rounded border p-2" type="date" value={statementTo} onChange={(event) => setStatementTo(event.target.value)} /></label><button type="button" className="rounded bg-guardsman-red-600 px-4 py-2 text-sm text-white" onClick={() => printStatement(member, contributions, payments, statementFrom, statementTo)}>Print statement</button></div>
         <Tabs defaultValue={currentTab}>
           <TabsList variant="line">
             <TabsTrigger
