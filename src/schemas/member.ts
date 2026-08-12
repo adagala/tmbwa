@@ -122,6 +122,7 @@ export const paymentSchema = paymentFormSchema.merge(
     action_by: z.string(),
     created_at: z.union([z.date(), FieldValueSchema, firebaseTimestampSchema]),
     receipt_number: z.string().optional(),
+    balance_direction: MemberBalanceTypeEnum.optional(),
   }),
 );
 
