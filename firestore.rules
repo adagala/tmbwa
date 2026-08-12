@@ -63,6 +63,11 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    match /audit_events/{eventId} {
+      allow read: if isAdministrator();
+      allow write: if false;
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }
