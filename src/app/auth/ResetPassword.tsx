@@ -37,9 +37,10 @@ export default function ResetPassword() {
       })
       .catch(() => {
         toast({
-          title: 'Error',
-          description: 'Invalid email or password',
-          variant: 'error',
+          title: 'Request received',
+          description:
+            'If an account exists for that email, a password reset link will be sent.',
+          variant: 'success',
           duration: 3000,
         });
       })
