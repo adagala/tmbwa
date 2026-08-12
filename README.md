@@ -11,13 +11,13 @@ TMBWA is the member and financial administration application for The Mid Bar Wel
 - Firestore Security Rules are the authorization boundary. UI visibility is not treated as authorization.
 - Firebase Hosting serves the application; Functions use Node.js 22.
 
-The client may update approved personal-profile fields. Payments, contributions, derived totals, audit events, command markers, and lifecycle status are server-owned.
+The client may update approved personal-profile fields. Administrator clients currently create and delete member documents directly. The application sends the member form plus an initial zero balance, but the current administrator create rule does not validate the payload; server triggers then establish derived fields and the Auth account. Payments, contributions, derived totals, audit events, command markers, and lifecycle status updates are server-owned after creation.
 
 ## Data model
 
 | Path | Purpose | Client writes |
 | --- | --- | --- |
-| `members/{id}` | Identity, membership status, account and contribution balances | Restricted profile fields only |
+| `members/{id}` | Identity, membership status, account and contribution balances | Owners: restricted profile fields. Administrators: create/delete and restricted non-financial updates |
 | `members/{id}/contributions/{month}` | Monthly charge, allocation, outstanding balance | Never |
 | `members/{id}/payments/{id}` | Payment/account transaction and receipt number | Never |
 | `monthly_stats/{month}` | Derived billed and collected totals | Never |
@@ -82,7 +82,7 @@ Rules tests require `java -version` to succeed. CI executes web checks, Function
 Read [AGENTS.md](./AGENTS.md) before making changes. In summary:
 
 1. Sync `develop`.
-2. Create an issue-scoped `feat/`, `fix/`, `security/`, `test/`, or `docs/` branch.
+2. Create an issue-scoped `feat/`, `fix/`, `security/`, `refactor/`, `test/`, `docs/`, or `chore/` branch.
 3. Run the relevant checks.
 4. Open a focused PR into `develop` with `Closes #<issue>`.
 5. Promote reviewed releases from `develop` to `main`.

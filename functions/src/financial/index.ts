@@ -394,15 +394,24 @@ export const transitionMemberStatus = onCall(async (request) => {
   const requestId = requiredString(data, 'requestId');
   const memberId = requiredString(data, 'memberId');
   const status = requiredString(data, 'status');
-  if (!Object.prototype.hasOwnProperty.call(lifecycleTransitions, status)) throw new HttpsError('invalid-argument', 'Unsupported member status.');
+  if (!Object.prototype.hasOwnProperty.call(lifecycleTransitions, status)) {
+    throw new HttpsError('invalid-argument', 'Unsupported member status.');
+  }
   const result = await db().runTransaction(async (transaction) => {
     const command = await readCommand(transaction, requestId);
     const memberRef = db().doc(`members/${memberId}`);
     const snapshot = await transaction.get(memberRef);
     if (!snapshot.exists) throw new HttpsError('not-found', 'Member not found.');
     const previousStatus = String(snapshot.data()?.status || 'active');
-    if (command.exists || previousStatus === status) return { requestId, status: previousStatus, duplicate: true };
-    if (!lifecycleTransitions[previousStatus]?.includes(status)) throw new HttpsError('failed-precondition', `Cannot transition from ${previousStatus} to ${status}.`);
+    if (command.exists || previousStatus === status) {
+      return { requestId, status: previousStatus, duplicate: true };
+    }
+    if (!lifecycleTransitions[previousStatus]?.includes(status)) {
+      throw new HttpsError(
+        'failed-precondition',
+        `Cannot transition from ${previousStatus} to ${status}.`,
+      );
+    }
     writeCommand(transaction, command.ref, 'transitionMemberStatus', actorId);
     transaction.update(memberRef, { status, statusUpdatedAt: admin.firestore.FieldValue.serverTimestamp(), statusUpdatedBy: actorId });
     writeAuditEvent(transaction, requestId, actorId, 'member.status_changed', memberId, memberId, { previousStatus, newStatus: status });
