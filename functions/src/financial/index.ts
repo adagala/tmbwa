@@ -1,0 +1,283 @@
+import * as admin from 'firebase-admin';
+import { HttpsError, onCall } from 'firebase-functions/v2/https';
+import { PAYMENT_STATUS } from '../types';
+import { MONTHLY_CONTRIBUTION } from '../utils';
+
+type CommandData = Record<string, unknown>;
+
+const db = () => admin.firestore();
+
+const requireAdministrator = (auth: { uid: string; token: Record<string, unknown> } | undefined) => {
+  if (!auth) throw new HttpsError('unauthenticated', 'Sign in is required.');
+  if (auth.token.role !== 'administrator') {
+    throw new HttpsError('permission-denied', 'Administrator access is required.');
+  }
+  return auth.uid;
+};
+
+const requiredString = (data: CommandData, key: string) => {
+  const value = data[key];
+  if (typeof value !== 'string' || !value.trim()) {
+    throw new HttpsError('invalid-argument', `${key} is required.`);
+  }
+  return value.trim();
+};
+
+const positiveNumber = (data: CommandData, key: string) => {
+  const value = data[key];
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    throw new HttpsError('invalid-argument', `${key} must be greater than zero.`);
+  }
+  return value;
+};
+
+const commandRef = (requestId: string) => db().doc(`financial_commands/${requestId}`);
+
+const assertNewCommand = async (
+  transaction: FirebaseFirestore.Transaction,
+  requestId: string,
+  type: string,
+  actorId: string,
+) => {
+  const ref = commandRef(requestId);
+  const snapshot = await transaction.get(ref);
+  if (snapshot.exists) return false;
+  transaction.create(ref, {
+    type,
+    actorId,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+  return true;
+};
+
+export const recordContributionPayment = onCall(async (request) => {
+  const actorId = requireAdministrator(request.auth);
+  const data = request.data as CommandData;
+  const requestId = requiredString(data, 'requestId');
+  const memberId = requiredString(data, 'memberId');
+  const contributionId = requiredString(data, 'contributionId');
+  const referenceNumber = requiredString(data, 'referenceNumber');
+  const amount = positiveNumber(data, 'amount');
+  const paymentDateMillis = positiveNumber(data, 'paymentDateMillis');
+
+  return db().runTransaction(async (transaction) => {
+    if (!(await assertNewCommand(transaction, requestId, 'recordContributionPayment', actorId))) {
+      return { requestId, duplicate: true };
+    }
+    const memberRef = db().doc(`members/${memberId}`);
+    const contributionRef = db().doc(`members/${memberId}/contributions/${contributionId}`);
+    const [memberSnapshot, contributionSnapshot] = await Promise.all([
+      transaction.get(memberRef),
+      transaction.get(contributionRef),
+    ]);
+    if (!memberSnapshot.exists || !contributionSnapshot.exists) {
+      throw new HttpsError('not-found', 'Member or contribution not found.');
+    }
+    const member = memberSnapshot.data()!;
+    const contribution = contributionSnapshot.data()!;
+    const outstanding = Number(contribution.balance ?? 0);
+    if (outstanding <= 0) throw new HttpsError('failed-precondition', 'Contribution is already paid.');
+
+    const contributionAmount = Math.min(amount, outstanding);
+    const paymentId = db().collection(`members/${memberId}/payments`).doc().id;
+    const payment = {
+      payment_id: paymentId,
+      referencenumber: referenceNumber,
+      amount,
+      paymentdate: admin.firestore.Timestamp.fromMillis(paymentDateMillis),
+      created_at: admin.firestore.FieldValue.serverTimestamp(),
+      member_id: memberId,
+      contribution_id: contributionId,
+      firstname: member.firstname,
+      lastname: member.lastname,
+      contribution_amount: contributionAmount,
+      payment_type: 'contribution',
+      action_by: actorId,
+      request_id: requestId,
+    };
+    transaction.create(db().doc(`members/${memberId}/payments/${paymentId}`), payment);
+    transaction.update(contributionRef, {
+      payments: admin.firestore.FieldValue.arrayUnion(payment),
+      balance: outstanding - contributionAmount,
+      paid: outstanding - contributionAmount === 0 ? PAYMENT_STATUS.PAID : PAYMENT_STATUS.PARTIAL,
+    });
+    transaction.update(memberRef, {
+      balance: admin.firestore.FieldValue.increment(amount),
+      contributionBalance: admin.firestore.FieldValue.increment(contributionAmount),
+    });
+    transaction.set(db().doc(`monthly_stats/${contributionId}`), {
+      contribution: admin.firestore.FieldValue.increment(contributionAmount),
+      month: contributionId,
+    }, { merge: true });
+    return { requestId, paymentId, contributionAmount, duplicate: false };
+  });
+});
+
+export const reverseContributionPayment = onCall(async (request) => {
+  const actorId = requireAdministrator(request.auth);
+  const data = request.data as CommandData;
+  const requestId = requiredString(data, 'requestId');
+  const memberId = requiredString(data, 'memberId');
+  const paymentId = requiredString(data, 'paymentId');
+
+  return db().runTransaction(async (transaction) => {
+    if (!(await assertNewCommand(transaction, requestId, 'reverseContributionPayment', actorId))) {
+      return { requestId, duplicate: true };
+    }
+    const paymentRef = db().doc(`members/${memberId}/payments/${paymentId}`);
+    const paymentSnapshot = await transaction.get(paymentRef);
+    if (!paymentSnapshot.exists) throw new HttpsError('not-found', 'Payment not found.');
+    const payment = paymentSnapshot.data()!;
+    const contributionId = String(payment.contribution_id || '');
+    if (!contributionId) throw new HttpsError('failed-precondition', 'Payment is not a contribution payment.');
+    const contributionRef = db().doc(`members/${memberId}/contributions/${contributionId}`);
+    const contributionSnapshot = await transaction.get(contributionRef);
+    if (!contributionSnapshot.exists) throw new HttpsError('not-found', 'Contribution not found.');
+    const contribution = contributionSnapshot.data()!;
+    const restoredBalance = Number(contribution.balance ?? 0) + Number(payment.contribution_amount ?? 0);
+    const status = restoredBalance >= Number(contribution.amount) ? PAYMENT_STATUS.UNPAID : PAYMENT_STATUS.PARTIAL;
+    transaction.delete(paymentRef);
+    transaction.update(contributionRef, {
+      payments: admin.firestore.FieldValue.arrayRemove(payment),
+      balance: restoredBalance,
+      paid: status,
+    });
+    transaction.update(db().doc(`members/${memberId}`), {
+      balance: admin.firestore.FieldValue.increment(-Number(payment.amount)),
+      contributionBalance: admin.firestore.FieldValue.increment(-Number(payment.contribution_amount)),
+    });
+    transaction.set(db().doc(`monthly_stats/${contributionId}`), {
+      contribution: admin.firestore.FieldValue.increment(-Number(payment.contribution_amount)),
+      month: contributionId,
+    }, { merge: true });
+    return { requestId, duplicate: false };
+  });
+});
+
+export const createContribution = onCall(async (request) => {
+  const actorId = requireAdministrator(request.auth);
+  const data = request.data as CommandData;
+  const requestId = requiredString(data, 'requestId');
+  const memberId = requiredString(data, 'memberId');
+  const month = requiredString(data, 'month');
+  if (!/^\d{4}-(0[1-9]|1[0-2])-01$/.test(month)) {
+    throw new HttpsError('invalid-argument', 'month must use YYYY-MM-01.');
+  }
+
+  return db().runTransaction(async (transaction) => {
+    if (!(await assertNewCommand(transaction, requestId, 'createContribution', actorId))) {
+      return { requestId, duplicate: true };
+    }
+    const memberRef = db().doc(`members/${memberId}`);
+    const contributionRef = db().doc(`members/${memberId}/contributions/${month}`);
+    const [memberSnapshot, contributionSnapshot] = await Promise.all([
+      transaction.get(memberRef),
+      transaction.get(contributionRef),
+    ]);
+    if (!memberSnapshot.exists) throw new HttpsError('not-found', 'Member not found.');
+    if (contributionSnapshot.exists) throw new HttpsError('already-exists', 'Contribution already exists.');
+    const member = memberSnapshot.data()!;
+    const balance = Number(member.balance ?? 0);
+    const applied = Math.min(Math.max(balance, 0), MONTHLY_CONTRIBUTION);
+    transaction.create(contributionRef, {
+      ...member,
+      member_id: memberId,
+      amount: MONTHLY_CONTRIBUTION,
+      balance: MONTHLY_CONTRIBUTION - applied,
+      paid: applied === MONTHLY_CONTRIBUTION ? PAYMENT_STATUS.PAID : applied > 0 ? PAYMENT_STATUS.PARTIAL : PAYMENT_STATUS.UNPAID,
+      payments: [],
+      createdat: admin.firestore.FieldValue.serverTimestamp(),
+      month,
+      action_by: actorId,
+      request_id: requestId,
+    });
+    transaction.update(memberRef, {
+      balance: admin.firestore.FieldValue.increment(-MONTHLY_CONTRIBUTION),
+      contributionBalance: admin.firestore.FieldValue.increment(applied),
+    });
+    transaction.set(db().doc(`monthly_stats/${month}`), {
+      amount: admin.firestore.FieldValue.increment(MONTHLY_CONTRIBUTION),
+      contribution: admin.firestore.FieldValue.increment(applied),
+      month,
+    }, { merge: true });
+    return { requestId, duplicate: false };
+  });
+});
+
+export const adjustMemberBalance = onCall(async (request) => {
+  const actorId = requireAdministrator(request.auth);
+  const data = request.data as CommandData;
+  const requestId = requiredString(data, 'requestId');
+  const memberId = requiredString(data, 'memberId');
+  const amount = positiveNumber(data, 'amount');
+  const type = requiredString(data, 'type');
+  if (type !== 'top_up' && type !== 'deduction') {
+    throw new HttpsError('invalid-argument', 'type must be top_up or deduction.');
+  }
+  const delta = type === 'top_up' ? amount : -amount;
+  return db().runTransaction(async (transaction) => {
+    if (!(await assertNewCommand(transaction, requestId, 'adjustMemberBalance', actorId))) {
+      return { requestId, duplicate: true };
+    }
+    const memberRef = db().doc(`members/${memberId}`);
+    const memberSnapshot = await transaction.get(memberRef);
+    if (!memberSnapshot.exists) throw new HttpsError('not-found', 'Member not found.');
+    const member = memberSnapshot.data()!;
+    const nextBalance = Number(member.balance ?? 0) + delta;
+    if (nextBalance < 0) throw new HttpsError('failed-precondition', 'Deduction exceeds account balance.');
+    const paymentId = db().collection(`members/${memberId}/payments`).doc().id;
+    transaction.update(memberRef, { balance: nextBalance });
+    transaction.create(db().doc(`members/${memberId}/payments/${paymentId}`), {
+      payment_id: paymentId,
+      referencenumber: type === 'top_up' ? 'ACCOUNT BALANCE TOP UP' : 'ACCOUNT BALANCE DEDUCTION',
+      amount,
+      paymentdate: admin.firestore.FieldValue.serverTimestamp(),
+      created_at: admin.firestore.FieldValue.serverTimestamp(),
+      member_id: memberId,
+      contribution_id: '',
+      firstname: member.firstname,
+      lastname: member.lastname,
+      contribution_amount: 0,
+      payment_type: 'account',
+      balance_direction: type,
+      action_by: actorId,
+      request_id: requestId,
+    });
+    return { requestId, paymentId, duplicate: false };
+  });
+});
+
+export const removeContribution = onCall(async (request) => {
+  const actorId = requireAdministrator(request.auth);
+  const data = request.data as CommandData;
+  const requestId = requiredString(data, 'requestId');
+  const memberId = requiredString(data, 'memberId');
+  const contributionId = requiredString(data, 'contributionId');
+  return db().runTransaction(async (transaction) => {
+    if (!(await assertNewCommand(transaction, requestId, 'removeContribution', actorId))) {
+      return { requestId, duplicate: true };
+    }
+    const contributionRef = db().doc(`members/${memberId}/contributions/${contributionId}`);
+    const contributionSnapshot = await transaction.get(contributionRef);
+    if (!contributionSnapshot.exists) throw new HttpsError('not-found', 'Contribution not found.');
+    const contribution = contributionSnapshot.data()!;
+    const payments = Array.isArray(contribution.payments) ? contribution.payments : [];
+    for (const payment of payments) {
+      if (payment && typeof payment.payment_id === 'string') {
+        transaction.delete(db().doc(`members/${memberId}/payments/${payment.payment_id}`));
+      }
+    }
+    const paidAmount = Number(contribution.amount ?? 0) - Number(contribution.balance ?? 0);
+    transaction.delete(contributionRef);
+    transaction.update(db().doc(`members/${memberId}`), {
+      contributionBalance: admin.firestore.FieldValue.increment(-paidAmount),
+    });
+    transaction.set(db().doc(`monthly_stats/${contributionId}`), {
+      amount: admin.firestore.FieldValue.increment(-Number(contribution.amount ?? 0)),
+      contribution: admin.firestore.FieldValue.increment(-paidAmount),
+      paymentsCount: admin.firestore.FieldValue.increment(-payments.length),
+      month: contributionId,
+    }, { merge: true });
+    return { requestId, duplicate: false };
+  });
+});

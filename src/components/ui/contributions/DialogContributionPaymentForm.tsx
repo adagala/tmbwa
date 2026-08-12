@@ -25,7 +25,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { paymentFormSchema } from '@/schemas/member';
 import { InputErrorMessage } from '../InputErrorMessage';
 import { RiAddLine, RiErrorWarningFill } from '@remixicon/react';
-import { addPayment } from '@/lib/firebase/firestore';
+import { addPayment } from '@/lib/firebase/financial';
 import { Callout } from '@/components/Callout';
 import useUser from '@/hooks/useUser';
 

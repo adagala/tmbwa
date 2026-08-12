@@ -30,7 +30,7 @@ import {
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { InputErrorMessage } from '../InputErrorMessage';
-import { addContribution } from '@/lib/firebase/firestore';
+import { addContribution } from '@/lib/firebase/financial';
 import { months, years } from '@/lib/utils';
 import useUser from '@/hooks/useUser';
 

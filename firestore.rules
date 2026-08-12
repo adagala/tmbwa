@@ -25,30 +25,42 @@ service cloud.firestore {
       ]);
     }
 
+    function administratorMemberFieldsOnly() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+        'firstname', 'lastname', 'email', 'role', 'membernumber', 'win',
+        'phonenumber', 'status', 'gender', 'isFeesPaid'
+      ]);
+    }
+
     match /members/{memberId} {
       allow get: if isAdministrator() || isOwner(memberId);
       allow list: if isAdministrator();
       allow create, delete: if isAdministrator();
-      allow update: if isAdministrator() ||
+      allow update: if (isAdministrator() && administratorMemberFieldsOnly()) ||
         (isOwner(memberId) && ownerProfileFieldsOnly());
 
       match /contributions/{contributionId} {
         allow read: if isAdministrator() || isOwner(memberId);
-        allow write: if isAdministrator();
+        allow write: if false;
       }
 
       match /payments/{paymentId} {
         allow read: if isAdministrator() || isOwner(memberId);
-        allow write: if isAdministrator();
+        allow write: if false;
       }
     }
 
     match /monthly_stats/{statId} {
-      allow read, write: if isAdministrator();
+      allow read: if isAdministrator();
+      allow write: if false;
     }
 
     match /stats/{statId} {
       allow read, write: if isAdministrator();
+    }
+
+    match /financial_commands/{commandId} {
+      allow read, write: if false;
     }
 
     match /{document=**} {
