@@ -70,11 +70,12 @@ service cloud.firestore {
 
     match /contribution_rates/{rateId} {
       allow read: if isAdministrator();
-      allow create, update: if isAdministrator() &&
+      allow create: if isAdministrator() &&
         request.resource.data.keys().hasOnly(['amount', 'effectiveFrom', 'updatedAt', 'updatedBy']) &&
         request.resource.data.amount is number && request.resource.data.amount > 0 &&
-        request.resource.data.effectiveFrom is string;
-      allow delete: if false;
+        request.resource.data.effectiveFrom is string &&
+        request.resource.data.effectiveFrom.matches('^\\d{4}-(0[1-9]|1[0-2])-01$');
+      allow update, delete: if false;
     }
 
     match /{document=**} {

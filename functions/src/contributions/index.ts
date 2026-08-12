@@ -29,12 +29,13 @@ const createForMember = async (member: MemberWithId, month: string, amount: numb
     const payments: Record<string, unknown>[] = [];
     if (applied > 0) {
       const paymentId = db().collection(`members/${member.member_id}/payments`).doc().id;
+      const createdAt = admin.firestore.Timestamp.now();
       const payment = {
         payment_id: paymentId,
         amount: applied,
         contribution_amount: applied,
-        paymentdate: admin.firestore.FieldValue.serverTimestamp(),
-        created_at: admin.firestore.FieldValue.serverTimestamp(),
+        paymentdate: createdAt,
+        created_at: createdAt,
         referencenumber: 'BALANCE B/F',
         contribution_id: month,
         firstname: freshMember.firstname,
@@ -79,25 +80,29 @@ export const generateMonthlyContributions = async (month = getCurrentMonth()) =>
       if (result.created) created += 1;
     }
   }
-  const contributionsSnapshot = await db().collectionGroup('contributions').where('month', '==', month).get();
-  const totals = contributionsSnapshot.docs.reduce((summary, item) => {
-    const contribution = item.data();
-    summary.billed += Number(contribution.amount ?? 0);
-    summary.collected += Number(contribution.amount ?? 0) - Number(contribution.balance ?? 0);
-    summary.payments += Array.isArray(contribution.payments) ? contribution.payments.length : 0;
-    return summary;
-  }, { billed: 0, collected: 0, payments: 0 });
-  await db().doc(`monthly_stats/${month}`).set({
-    amount: totals.billed,
-    contribution: totals.collected,
-    totalMembers: members.length,
-    month,
-    paymentsCount: totals.payments,
-    newMembers: 0,
-    generationStatus: 'complete',
-    generatedAt: admin.firestore.FieldValue.serverTimestamp(),
-  }, { merge: true });
-  return { month, amount, members: members.length, created, ...totals };
+  const totals = await db().runTransaction(async (transaction) => {
+    const contributionsQuery = db().collectionGroup('contributions').where('month', '==', month);
+    const contributionsSnapshot = await transaction.get(contributionsQuery);
+    const summary = contributionsSnapshot.docs.reduce((current, item) => {
+      const contribution = item.data();
+      current.billed += Number(contribution.amount ?? 0);
+      current.collected += Number(contribution.amount ?? 0) - Number(contribution.balance ?? 0);
+      current.payments += Array.isArray(contribution.payments) ? contribution.payments.length : 0;
+      return current;
+    }, { billed: 0, collected: 0, payments: 0 });
+    transaction.set(db().doc(`monthly_stats/${month}`), {
+      amount: summary.billed,
+      contribution: summary.collected,
+      totalMembers: contributionsSnapshot.size,
+      month,
+      paymentsCount: summary.payments,
+      newMembers: 0,
+      generationStatus: 'complete',
+      generatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+    return { ...summary, members: contributionsSnapshot.size };
+  });
+  return { month, amount, created, ...totals };
 };
 
 export const setMonthlyContributions = onSchedule({
