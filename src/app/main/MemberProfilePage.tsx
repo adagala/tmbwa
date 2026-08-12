@@ -10,6 +10,7 @@ import useUser from '@/hooks/useUser';
 import { Link, useParams } from 'react-router-dom';
 import { DialogUpdateMemberBalance } from '@/components/ui/members/DialogUpdateMemberBalance';
 import { ContributionsAndTransactions } from '@/sections/contributionsAndTansactions';
+import { DialogMemberStatus } from '@/components/ui/members/DialogMemberStatus';
 
 export default function MemberProfilePage() {
   const { role } = useUser();
@@ -68,6 +69,7 @@ export default function MemberProfilePage() {
             {member && role === 'administrator' ? (
               <>
                 <DialogUpdateMemberBalance member={member} />
+                <DialogMemberStatus member={member} />
                 <DialogMemberForm member={member} />
                 <DialogDeleteMember member={member} />
               </>

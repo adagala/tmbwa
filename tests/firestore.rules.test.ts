@@ -35,6 +35,7 @@ async function seed() {
       role: 'member',
       balance: 0,
       contributionBalance: 0,
+      status: 'active',
     });
     await setDoc(doc(db, 'members/member-b'), {
       firstname: 'Bob',
@@ -43,6 +44,7 @@ async function seed() {
       role: 'member',
       balance: 0,
       contributionBalance: 0,
+      status: 'active',
     });
     await setDoc(doc(db, 'members/member-a/contributions/2026-08-01'), {
       amount: 500,
@@ -72,6 +74,7 @@ describe('Firestore authorization', () => {
     }).firestore();
     await assertSucceeds(getDocs(collection(db, 'members')));
     await assertSucceeds(updateDoc(doc(db, 'members/member-a'), { role: 'administrator' }));
+    await assertFails(updateDoc(doc(db, 'members/member-a'), { status: 'suspended' }));
     await assertSucceeds(getDoc(doc(db, 'monthly_stats/2026-08-01')));
   });
 
@@ -118,6 +121,16 @@ describe('Firestore authorization', () => {
     }));
     await assertFails(updateDoc(doc(db, 'members/member-a'), { role: 'administrator' }));
     await assertFails(updateDoc(doc(db, 'members/member-a'), { balance: 100000 }));
+  });
+
+  it('denies an inactive owner even while an old token remains valid', async () => {
+    await seed();
+    await testEnv.withSecurityRulesDisabled(async (context) => updateDoc(doc(context.firestore(), 'members/member-a'), { status: 'suspended' }));
+    const db = testEnv.authenticatedContext('member-a', { role: 'member' }).firestore();
+    await assertFails(getDoc(doc(db, 'members/member-a')));
+    await assertFails(getDocs(collection(db, 'members/member-a/contributions')));
+    await assertFails(getDocs(collection(db, 'members/member-a/payments')));
+    await assertFails(updateDoc(doc(db, 'members/member-a'), { firstname: 'Still signed in' }));
   });
 
   it('denies all member financial and aggregate writes', async () => {

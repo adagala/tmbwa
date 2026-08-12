@@ -24,7 +24,7 @@ const Contributions = React.forwardRef<HTMLDivElement, ContributionsProps>(
             <RiWalletLine className="size-5 shrink-0" aria-hidden="true" />
             Contribution History
           </div>
-          {role === 'administrator' && (
+          {role === 'administrator' && member.status === 'active' && (
             <DialogAddContribution member={member} />
           )}
         </div>

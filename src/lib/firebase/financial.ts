@@ -55,3 +55,6 @@ export const updateMemberBalance = ({ member, balanceForm }: { uid: string; memb
     amount: balanceForm.amount,
     type: balanceForm.type,
   });
+
+export const transitionMemberStatus = ({ memberId, status }: { memberId: string; status: string }) =>
+  call('transitionMemberStatus', { memberId, status });
