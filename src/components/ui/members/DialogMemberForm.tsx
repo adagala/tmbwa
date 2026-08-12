@@ -101,9 +101,9 @@ export const DialogMemberForm = ({ member }: { member?: Member }) => {
       reset();
       toast({
         title: 'Success',
-        description: `Member has been successfully ${
-          member ? 'updated' : 'added'
-        }.`,
+        description: member
+          ? 'Member has been successfully updated.'
+          : 'Member added. Ask them to use Reset password on the sign-in page to securely create their password.',
         variant: 'success',
         duration: 3000,
       });

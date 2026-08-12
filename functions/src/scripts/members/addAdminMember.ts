@@ -2,6 +2,7 @@ import * as admin from 'firebase-admin';
 import { GENDER, Member, MonthlyStats, ROLE, Stats, STATUS } from '../../types';
 import {
   createIndex,
+  createBootstrapPassword,
   getCurrentMonth,
   MONTHLY_CONTRIBUTION,
 } from '../../utils';
@@ -59,7 +60,7 @@ const addAdminMember = async () => {
 
   await admin.auth().createUser({
     email: member.email,
-    password: member.phonenumber,
+    password: createBootstrapPassword(),
     displayName: `${member.firstname} ${member.lastname}`,
     phoneNumber: member.phonenumber,
     uid: memberId,

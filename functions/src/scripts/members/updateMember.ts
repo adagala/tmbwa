@@ -13,7 +13,7 @@ type TMember = Omit<
 >;
 
 // add other fields that you need to update for the member
-const member: Partial<TMember> & { uid: string; password?: string } = {
+const member: Partial<TMember> & { uid: string } = {
   uid: '',
 };
 
@@ -21,11 +21,7 @@ const member: Partial<TMember> & { uid: string; password?: string } = {
 const updateMember = async () => {
   console.log('Start updateMemberPassword ...!');
 
-  const { uid, password } = member;
-
-  if (password) {
-    await admin.auth().updateUser(uid, { password });
-  }
+  const { uid } = member;
 
   const memberRef = admin.firestore().doc(`members/${uid}`);
   memberRef.update(memberRef, member);

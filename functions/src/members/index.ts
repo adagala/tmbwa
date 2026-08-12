@@ -7,6 +7,7 @@ import {
 import { Member, MonthlyStats, Stats } from '../types';
 import {
   createIndex,
+  createBootstrapPassword,
   deleteCollection,
   getCurrentMonth,
   MONTHLY_CONTRIBUTION,
@@ -57,10 +58,11 @@ export const newMember = onDocumentCreated(
 
     await batch.commit();
 
-    // create account with default password as phone number
+    // The bootstrap credential is deliberately random and never disclosed.
+    // Members establish their own password through Firebase's reset flow.
     await admin.auth().createUser({
       email: member.email,
-      password: member.phonenumber,
+      password: createBootstrapPassword(),
       displayName: `${member.firstname} ${member.lastname}`,
       phoneNumber: member.phonenumber,
       uid,
