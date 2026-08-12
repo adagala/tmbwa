@@ -1,5 +1,4 @@
 import * as admin from 'firebase-admin';
-import * as serviceAccount from '../../../serviceAccount.json';
 import { GENDER, Member, MonthlyStats, ROLE, Stats, STATUS } from '../../types';
 import {
   createIndex,
@@ -7,9 +6,7 @@ import {
   MONTHLY_CONTRIBUTION,
 } from '../../utils';
 
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount as admin.ServiceAccount),
-});
+admin.initializeApp({ credential: admin.credential.applicationDefault() });
 
 const firstname = '';
 const lastname = '';
@@ -31,7 +28,7 @@ const member: Member = {
   win: '0',
 };
 
-// in functions directory use like:  ~ npm run build && node lib/src/scripts/members/addAdminMember.js
+// in functions directory use like:  ~ npm run build:scripts && node lib-scripts/scripts/members/addAdminMember.js
 const addAdminMember = async () => {
   console.log('Start addAdminMember ...!');
 

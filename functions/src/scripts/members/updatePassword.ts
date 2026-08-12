@@ -1,10 +1,7 @@
 import * as admin from 'firebase-admin';
-import * as serviceAccount from '../../../serviceAccount.json';
 import * as readline from 'readline';
 
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount as admin.ServiceAccount),
-});
+admin.initializeApp({ credential: admin.credential.applicationDefault() });
 
 const rl = readline.createInterface({
   input: process.stdin,
@@ -15,7 +12,7 @@ const askQuestion = (query: string): Promise<string> => {
   return new Promise((resolve) => rl.question(query, resolve));
 };
 
-// in functions directory use like:  ~ npm run build && node lib/src/scripts/members/updatePassword.js
+// in functions directory use like:  ~ npm run build:scripts && node lib-scripts/scripts/members/updatePassword.js
 const updatePassword = async () => {
   console.log('Start updatePassword ...!');
 
