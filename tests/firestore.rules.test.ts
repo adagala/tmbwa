@@ -6,7 +6,7 @@ import {
   assertSucceeds,
   initializeTestEnvironment,
 } from '@firebase/rules-unit-testing';
-import { collection, deleteDoc, doc, getDoc, getDocs, setDoc, updateDoc } from 'firebase/firestore';
+import { collection, collectionGroup, deleteDoc, doc, getDoc, getDocs, orderBy, query, setDoc, updateDoc, where } from 'firebase/firestore';
 
 const projectId = 'demo-tmbwa';
 let testEnv: RulesTestEnvironment;
@@ -35,6 +35,7 @@ async function seed() {
       role: 'member',
       balance: 0,
       contributionBalance: 0,
+      status: 'active',
     });
     await setDoc(doc(db, 'members/member-b'), {
       firstname: 'Bob',
@@ -43,13 +44,16 @@ async function seed() {
       role: 'member',
       balance: 0,
       contributionBalance: 0,
+      status: 'active',
     });
     await setDoc(doc(db, 'members/member-a/contributions/2026-08-01'), {
       amount: 500,
       balance: 500,
+      month: '2026-08-01',
     });
     await setDoc(doc(db, 'members/member-a/payments/payment-1'), {
       amount: 100,
+      paymentdate: new Date('2026-08-12T10:00:00+03:00'),
     });
     await setDoc(doc(db, 'monthly_stats/2026-08-01'), { amount: 1000 });
   });
@@ -82,6 +86,16 @@ describe('Firestore authorization', () => {
     await assertFails(updateDoc(doc(db, 'monthly_stats/2026-08-01'), { amount: 0 }));
   });
 
+  it('allows only administrators to run reporting collection-group queries', async () => {
+    await seed();
+    const adminDb = testEnv.authenticatedContext('admin', { role: 'administrator' }).firestore();
+    const memberDb = testEnv.authenticatedContext('member-a', { role: 'member' }).firestore();
+    await assertSucceeds(getDocs(query(collectionGroup(adminDb, 'contributions'), where('month', '==', '2026-08-01'), orderBy('month'))));
+    await assertSucceeds(getDocs(query(collectionGroup(adminDb, 'payments'), orderBy('paymentdate', 'desc'))));
+    await assertFails(getDocs(query(collectionGroup(memberDb, 'contributions'), orderBy('month'))));
+    await assertFails(getDocs(query(collectionGroup(memberDb, 'payments'), orderBy('paymentdate', 'desc'))));
+  });
+
   it('allows members to read their own profile and financial history', async () => {
     await seed();
     const db = testEnv.authenticatedContext('member-a', { role: 'member' }).firestore();
@@ -107,6 +121,16 @@ describe('Firestore authorization', () => {
     }));
     await assertFails(updateDoc(doc(db, 'members/member-a'), { role: 'administrator' }));
     await assertFails(updateDoc(doc(db, 'members/member-a'), { balance: 100000 }));
+  });
+
+  it('denies an inactive owner even while an old token remains valid', async () => {
+    await seed();
+    await testEnv.withSecurityRulesDisabled(async (context) => updateDoc(doc(context.firestore(), 'members/member-a'), { status: 'suspended' }));
+    const db = testEnv.authenticatedContext('member-a', { role: 'member' }).firestore();
+    await assertFails(getDoc(doc(db, 'members/member-a')));
+    await assertFails(getDocs(collection(db, 'members/member-a/contributions')));
+    await assertFails(getDocs(collection(db, 'members/member-a/payments')));
+    await assertFails(updateDoc(doc(db, 'members/member-a'), { firstname: 'Still signed in' }));
   });
 
   it('denies all member financial and aggregate writes', async () => {

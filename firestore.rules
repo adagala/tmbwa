@@ -14,6 +14,11 @@ service cloud.firestore {
       return signedIn() && request.auth.uid == memberId;
     }
 
+    function isActiveOwner(memberId) {
+      return isOwner(memberId) &&
+        get(/databases/$(database)/documents/members/$(memberId)).data.status == 'active';
+    }
+
     function ownerProfileFieldsOnly() {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
         'firstname',
@@ -33,21 +38,29 @@ service cloud.firestore {
     }
 
     match /members/{memberId} {
-      allow get: if isAdministrator() || isOwner(memberId);
+      allow get: if isAdministrator() || isActiveOwner(memberId);
       allow list: if isAdministrator();
       allow create, delete: if isAdministrator();
       allow update: if (isAdministrator() && administratorMemberFieldsOnly()) ||
-        (isOwner(memberId) && ownerProfileFieldsOnly());
+        (isActiveOwner(memberId) && ownerProfileFieldsOnly());
 
       match /contributions/{contributionId} {
-        allow read: if isAdministrator() || isOwner(memberId);
+        allow read: if isAdministrator() || isActiveOwner(memberId);
         allow write: if false;
       }
 
       match /payments/{paymentId} {
-        allow read: if isAdministrator() || isOwner(memberId);
+        allow read: if isAdministrator() || isActiveOwner(memberId);
         allow write: if false;
       }
+    }
+
+    match /{path=**}/contributions/{contributionId} {
+      allow read: if isAdministrator();
+    }
+
+    match /{path=**}/payments/{paymentId} {
+      allow read: if isAdministrator();
     }
 
     match /monthly_stats/{statId} {
