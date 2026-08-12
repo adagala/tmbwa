@@ -398,6 +398,12 @@ export const getRecentPayments = (cb: (data: Payment[]) => void) => {
   return unsubscribe;
 };
 
+export const getAllContributions = (cb: (data: Contribution[]) => void, onError?: (error: Error) => void) =>
+  onSnapshot(query(collectionGroup(db, 'contributions'), orderBy('month', 'desc')), (snapshot) => cb(snapshot.docs.map((item) => ({ contribution_id: item.id, ...item.data() }) as Contribution)), onError);
+
+export const getAllPayments = (cb: (data: Payment[]) => void, onError?: (error: Error) => void) =>
+  onSnapshot(query(collectionGroup(db, 'payments'), orderBy('paymentdate', 'desc')), (snapshot) => cb(snapshot.docs.map((item) => item.data() as Payment)), onError);
+
 export const addContribution = async ({
   uid,
   month,

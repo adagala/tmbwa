@@ -27,7 +27,8 @@ export default function OverviewPage() {
       month: 'short',
       year: '2-digit',
     }).format(new Date(stats.month)),
-    Contributions: stats.contribution,
+    Billed: stats.amount,
+    Collected: stats.contribution,
   }));
 
   useEffect(() => {
@@ -55,7 +56,7 @@ export default function OverviewPage() {
         <div className="flex-1 grid sm:grid-cols-1 gap-4">
           <Card className="mx-auto space-y-2 hover:bg-gray-50 dark:hover:bg-gray-900/60">
             <p className="text-tremor-default text-tremor-content dark:text-dark-tremor-content">
-              {currentMonth} amount
+              {currentMonth} collected
             </p>
             <p className="text-xl sm:text-2xl text-tremor-content-strong dark:text-dark-tremor-content-strong font-semibold">
               KES{' '}
@@ -123,10 +124,10 @@ export default function OverviewPage() {
           className="h-72"
           data={chartdata}
           index="date"
-          categories={['Contributions']}
+          categories={['Billed', 'Collected']}
           showLegend={true}
           xAxisLabel="Month of Year"
-          yAxisLabel="Contributions (KES)"
+          yAxisLabel="Amount (KES)"
         />
       </Card>
     </div>
