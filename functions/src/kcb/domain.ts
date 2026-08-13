@@ -1,4 +1,4 @@
-import { createVerify } from 'crypto';
+import { createVerify, timingSafeEqual } from 'crypto';
 
 export type KcbTillNotification = {
   messageId: string;
@@ -89,6 +89,29 @@ export const verifyKcbSignature = (rawBody: Buffer, signature: string, publicKey
   } catch {
     return false;
   }
+};
+
+export const secureTokenMatches = (provided: string, expected: string) => {
+  const providedBytes = Buffer.from(provided);
+  const expectedBytes = Buffer.from(expected);
+  return providedBytes.length === expectedBytes.length && timingSafeEqual(providedBytes, expectedBytes);
+};
+
+export const parseKcbTransactionDate = (value: string) => {
+  const stk = /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})$/.exec(value);
+  const till = /^(?:\w{3} )?(\w{3}) (\d{1,2}) (\d{2}):(\d{2}):(\d{2}) EAT (\d{4})$/.exec(value);
+  let date: Date;
+  if (stk) {
+    const [, year, month, day, hour, minute, second] = stk;
+    date = new Date(`${year}-${month}-${day}T${hour}:${minute}:${second}+03:00`);
+  } else if (till) {
+    const [, month, day, hour, minute, second, year] = till;
+    date = new Date(`${day} ${month} ${year} ${hour}:${minute}:${second} GMT+0300`);
+  } else {
+    throw new Error('Unsupported KCB transaction date.');
+  }
+  if (Number.isNaN(date.getTime())) throw new Error('Invalid KCB transaction date.');
+  return date;
 };
 
 export const acknowledgement = (

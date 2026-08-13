@@ -1,6 +1,9 @@
 import { generateKeyPairSync, createSign } from 'crypto';
 import { describe, expect, it } from 'vitest';
-import { acknowledgement, normalizeKenyanPhone, parseStkCallback, parseTillNotification, verifyKcbSignature } from '../functions/src/kcb/domain';
+import {
+  acknowledgement, normalizeKenyanPhone, parseKcbTransactionDate, parseStkCallback,
+  parseTillNotification, secureTokenMatches, verifyKcbSignature,
+} from '../functions/src/kcb/domain';
 
 const payload = {
   header: { messageID: 'message-1', originatorConversationID: 'conversation-1', channelCode: '202' },
@@ -62,5 +65,16 @@ describe('KCB Till notification contract', () => {
     } } })).toEqual({
       merchantRequestId: 'merchant-1', checkoutRequestId: 'checkout-1', resultCode: 1032, resultDescription: 'Cancelled',
     });
+  });
+
+  it('authenticates callback tokens without accepting partial matches', () => {
+    expect(secureTokenMatches('secret-token', 'secret-token')).toBe(true);
+    expect(secureTokenMatches('secret', 'secret-token')).toBe(false);
+  });
+
+  it('parses Till and STK timestamps in East Africa Time', () => {
+    expect(parseKcbTransactionDate('Mon May 19 13:30:54 EAT 2025').toISOString()).toBe('2025-05-19T10:30:54.000Z');
+    expect(parseKcbTransactionDate('20260813121212').toISOString()).toBe('2026-08-13T09:12:12.000Z');
+    expect(() => parseKcbTransactionDate('not-a-date')).toThrow();
   });
 });

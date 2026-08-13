@@ -33,11 +33,22 @@ export default function KcbReconciliationPage() {
     setSelectedMembers((current) => {
       const next = { ...current };
       payments.forEach((payment) => {
-        if (!next[payment.providerTransactionId] && payment.suggestedMemberId) next[payment.providerTransactionId] = payment.suggestedMemberId;
+        if (!next[payment.providerTransactionId] && payment.suggestedMemberId) {
+          next[payment.providerTransactionId] = payment.suggestedMemberId;
+          if (!contributions[payment.suggestedMemberId]) {
+            void getDocs(query(collection(db, `members/${payment.suggestedMemberId}/contributions`), orderBy('month', 'desc')))
+              .then((snapshot) => setContributions((current) => ({
+                ...current,
+                [payment.suggestedMemberId!]: snapshot.docs
+                  .map((item) => ({ id: item.id, month: String(item.data().month ?? item.id), balance: Number(item.data().balance ?? 0) }))
+                  .filter((item) => item.balance > 0),
+              })));
+          }
+        }
       });
       return next;
     });
-  }, [payments]);
+  }, [contributions, payments]);
 
   const memberNames = useMemo(() => new Map(members.map((member) => [member.member_id, `${member.firstname} ${member.lastname}`])), [members]);
 

@@ -1,9 +1,4 @@
 {
-  "indexes": [],
-  "fieldOverrides": [
-    {
-      "collectionGroup": "contributions",
-      "fieldPath": "month",
   "indexes": [
     {
       "collectionGroup": "kcb_payment_notifications",
@@ -12,7 +7,13 @@
         { "fieldPath": "status", "order": "ASCENDING" },
         { "fieldPath": "receivedAt", "order": "DESCENDING" }
       ]
-    },
+    }
+  ],
+  "fieldOverrides": [
+    {
+      "collectionGroup": "contributions",
+      "fieldPath": "month",
+      "indexes": [
         {
           "order": "ASCENDING",
           "queryScope": "COLLECTION_GROUP"

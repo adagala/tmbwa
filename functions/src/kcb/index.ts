@@ -5,7 +5,10 @@ import { HttpsError, onCall, onRequest } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions';
 import { PAYMENT_STATUS } from '../types';
 import { applyPayment } from '../financial/domain';
-import { acknowledgement, normalizeKenyanPhone, parseStkCallback, parseTillNotification, verifyKcbSignature } from './domain';
+import {
+  acknowledgement, normalizeKenyanPhone, parseKcbTransactionDate, parseStkCallback,
+  parseTillNotification, secureTokenMatches, verifyKcbSignature,
+} from './domain';
 
 type Data = Record<string, unknown>;
 
@@ -19,6 +22,7 @@ const stkUrl = defineString('KCB_STK_URL', { default: 'https://uat.buni.kcbgroup
 const stkCallbackUrl = defineString('KCB_STK_CALLBACK_URL');
 const orgShortCode = defineString('KCB_ORG_SHORTCODE', { default: '522533' });
 const routeCode = defineString('KCB_STK_ROUTE_CODE', { default: '207' });
+const stkCallbackToken = defineSecret('KCB_STK_CALLBACK_TOKEN');
 const db = () => admin.firestore();
 
 const requireAdministrator = (auth: { uid: string; token: Record<string, unknown> } | undefined) => {
@@ -115,7 +119,7 @@ export const reconcileKcbPayment = onCall(async (request) => {
       payment_id: paymentId,
       referencenumber: providerTransactionId,
       amount: Number(notification.amount),
-      paymentdate: admin.firestore.Timestamp.now(),
+      paymentdate: admin.firestore.Timestamp.fromDate(parseKcbTransactionDate(String(notification.transactionDate))),
       created_at: admin.firestore.Timestamp.now(),
       member_id: memberId,
       contribution_id: contributionId,
@@ -203,96 +207,106 @@ const bearerToken = async () => {
   return body.access_token;
 };
 
-export const requestKcbStkPush = onCall({ secrets: [consumerKey, consumerSecret] }, async (request) => {
-  if (!request.auth) {
-    throw new HttpsError('unauthenticated', 'Sign in is required.');
-  }
-  const data = request.data as Data;
-  const requestId = requiredString(data, 'requestId');
-  const memberId = requiredString(data, 'memberId');
-  const contributionId = requiredString(data, 'contributionId');
-  if (request.auth.uid !== memberId && request.auth.token.role !== 'administrator') {
-    throw new HttpsError('permission-denied', 'You cannot request payment for this member.');
-  }
-  const amount = Number(data.amount);
-  if (!Number.isInteger(amount) || amount <= 0) {
-    throw new HttpsError('invalid-argument', 'amount must be a positive whole number.');
-  }
-  const callbackUrl = stkCallbackUrl.value();
-  if (!callbackUrl.startsWith('https://')) {
-    throw new HttpsError('failed-precondition', 'KCB_STK_CALLBACK_URL must be a public HTTPS URL.');
-  }
-  const requestRef = db().doc(`kcb_stk_requests/${requestId}`);
-  const existing = await requestRef.get();
-  if (existing.exists) return { requestId, ...existing.data(), duplicate: true };
+export const requestKcbStkPush = onCall(
+  { secrets: [consumerKey, consumerSecret, stkCallbackToken] }, async (request) => {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Sign in is required.');
+    }
+    const data = request.data as Data;
+    const requestId = requiredString(data, 'requestId');
+    const memberId = requiredString(data, 'memberId');
+    const contributionId = requiredString(data, 'contributionId');
+    if (request.auth.uid !== memberId && request.auth.token.role !== 'administrator') {
+      throw new HttpsError('permission-denied', 'You cannot request payment for this member.');
+    }
+    const amount = Number(data.amount);
+    if (!Number.isInteger(amount) || amount <= 0) {
+      throw new HttpsError('invalid-argument', 'amount must be a positive whole number.');
+    }
+    const callbackUrl = new URL(stkCallbackUrl.value());
+    if (callbackUrl.protocol !== 'https:') {
+      throw new HttpsError('failed-precondition', 'KCB_STK_CALLBACK_URL must be a public HTTPS URL.');
+    }
+    callbackUrl.searchParams.set('token', stkCallbackToken.value());
+    const requestRef = db().doc(`kcb_stk_requests/${requestId}`);
+    const existing = await requestRef.get();
+    if (existing.exists) return { requestId, ...existing.data(), duplicate: true };
 
-  const [member, contribution] = await Promise.all([
-    db().doc(`members/${memberId}`).get(), db().doc(`members/${memberId}/contributions/${contributionId}`).get(),
-  ]);
-  if (!member.exists || !contribution.exists) {
-    throw new HttpsError('not-found', 'Member or contribution not found.');
-  }
-  if (amount > Number(contribution.data()?.balance ?? 0)) {
-    throw new HttpsError('invalid-argument', 'amount exceeds the contribution balance.');
-  }
-  let phone: string;
-  try {
-    phone = normalizeKenyanPhone(requiredString(member.data() as Data, 'phonenumber'));
-  } catch {
-    throw new HttpsError('failed-precondition', 'Member must have a valid Kenyan phone number.');
-  }
-  const invoiceNumber = `TMB${randomUUID().replace(/-/g, '').slice(0, 9)}`.toUpperCase();
-  const messageId = randomUUID().replace(/-/g, '').slice(0, 32);
+    const [member, contribution] = await Promise.all([
+      db().doc(`members/${memberId}`).get(), db().doc(`members/${memberId}/contributions/${contributionId}`).get(),
+    ]);
+    if (!member.exists || !contribution.exists) {
+      throw new HttpsError('not-found', 'Member or contribution not found.');
+    }
+    if (amount > Number(contribution.data()?.balance ?? 0)) {
+      throw new HttpsError('invalid-argument', 'amount exceeds the contribution balance.');
+    }
+    let phone: string;
+    try {
+      phone = normalizeKenyanPhone(requiredString(member.data() as Data, 'phonenumber'));
+    } catch {
+      throw new HttpsError('failed-precondition', 'Member must have a valid Kenyan phone number.');
+    }
+    const invoiceNumber = `TMB${randomUUID().replace(/-/g, '').slice(0, 9)}`.toUpperCase();
+    const messageId = randomUUID().replace(/-/g, '').slice(0, 32);
 
-  await requestRef.create({
-    requestId, memberId, contributionId, amount, phone, invoiceNumber, messageId, status: 'initiating',
-    requestedBy: request.auth.uid, createdAt: admin.firestore.FieldValue.serverTimestamp(),
-  });
-  try {
-    const token = await bearerToken();
-    const response = await fetch(stkUrl.value(), {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`, 'Content-Type': 'application/json',
-        routeCode: routeCode.value(), operation: 'STKPush', messageId,
-      },
-      body: JSON.stringify({
-        phoneNumber: phone.slice(1), amount: String(amount), invoiceNumber, sharedShortCode: true,
-        orgShortCode: orgShortCode.value(), orgPassKey: '', callbackUrl, transactionDescription: 'TMBWA payment',
-      }),
+    await requestRef.create({
+      requestId, memberId, contributionId, amount, phone, invoiceNumber, messageId, status: 'initiating',
+      requestedBy: request.auth.uid, createdAt: admin.firestore.FieldValue.serverTimestamp(),
     });
-    const body = await response.json() as {
+    try {
+      const token = await bearerToken();
+      const response = await fetch(stkUrl.value(), {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`, 'Content-Type': 'application/json',
+          routeCode: routeCode.value(), operation: 'STKPush', messageId,
+        },
+        body: JSON.stringify({
+          phoneNumber: phone.slice(1), amount: String(amount), invoiceNumber, sharedShortCode: true,
+          orgShortCode: orgShortCode.value(), orgPassKey: '', callbackUrl: callbackUrl.toString(),
+          transactionDescription: 'TMBWA payment',
+        }),
+      });
+      const body = await response.json() as {
       header?: { statusCode?: unknown; statusDescription?: unknown };
       response?: Record<string, unknown>;
     };
-    const accepted = response.ok && String(body.header?.statusCode) === '0' && Number(body.response?.ResponseCode) === 0;
-    const merchantRequestId = typeof body.response?.MerchantRequestID === 'string' ? body.response.MerchantRequestID : null;
-    const checkoutRequestId = typeof body.response?.CheckoutRequestID === 'string' ? body.response.CheckoutRequestID : null;
-    await requestRef.update({
-      status: accepted ? 'pending' : 'rejected', merchantRequestId, checkoutRequestId,
-      responseCode: body.response?.ResponseCode ?? null,
-      responseDescription: body.response?.ResponseDescription ?? body.header?.statusDescription ?? null,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
-    if (!accepted || !checkoutRequestId) {
-      throw new HttpsError('failed-precondition', 'KCB did not accept the STK request.');
+      const accepted = response.ok && String(body.header?.statusCode) === '0' && Number(body.response?.ResponseCode) === 0;
+      const merchantRequestId = typeof body.response?.MerchantRequestID === 'string' ? body.response.MerchantRequestID : null;
+      const checkoutRequestId = typeof body.response?.CheckoutRequestID === 'string' ? body.response.CheckoutRequestID : null;
+      await requestRef.update({
+        status: accepted ? 'pending' : 'rejected', merchantRequestId, checkoutRequestId,
+        responseCode: body.response?.ResponseCode ?? null,
+        responseDescription: body.response?.ResponseDescription ?? body.header?.statusDescription ?? null,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      if (!accepted || !checkoutRequestId) {
+        throw new HttpsError('failed-precondition', 'KCB did not accept the STK request.');
+      }
+      return { requestId, status: 'pending', merchantRequestId, checkoutRequestId, duplicate: false };
+    } catch (error) {
+      await requestRef.update({
+        status: 'failed',
+        failureCategory: error instanceof HttpsError ? 'provider_rejected' : 'provider_unavailable',
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      if (error instanceof HttpsError) throw error;
+      logger.error('KCB STK request failed.', { requestId, reason: (error as Error).message });
+      throw new HttpsError('unavailable', 'KCB payment request is temporarily unavailable.');
     }
-    return { requestId, status: 'pending', merchantRequestId, checkoutRequestId, duplicate: false };
-  } catch (error) {
-    await requestRef.update({
-      status: 'failed',
-      failureCategory: error instanceof HttpsError ? 'provider_rejected' : 'provider_unavailable',
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
-    if (error instanceof HttpsError) throw error;
-    logger.error('KCB STK request failed.', { requestId, reason: (error as Error).message });
-    throw new HttpsError('unavailable', 'KCB payment request is temporarily unavailable.');
-  }
-});
+  },
+);
 
-export const kcbStkCallback = onRequest(async (request, response) => {
+export const kcbStkCallback = onRequest({ secrets: [stkCallbackToken] }, async (request, response) => {
   if (request.method !== 'POST') {
     response.status(405).send('Method not allowed.'); return;
+  }
+  const suppliedToken = typeof request.query.token === 'string' ? request.query.token : '';
+  if (!secureTokenMatches(suppliedToken, stkCallbackToken.value())) {
+    logger.warn('Rejected unauthenticated KCB STK callback.');
+    response.status(401).json({ ResultCode: 1, ResultDesc: 'Unauthorized callback' });
+    return;
   }
   try {
     const callback = parseStkCallback(request.body);
