@@ -3,6 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "main": "functions/lib/src/index.js",
   "workspaces": [
     "packages/*",
     "functions"
@@ -11,7 +12,7 @@
     "node": "22.x"
   },
   "scripts": {
-    "dev": "vite",
+    "dev": "npm run build:shared && vite",
     "build:shared": "npm run build --workspace=packages/shared",
     "build": "npm run build:shared && tsc -b && vite build",
     "lint": "eslint src --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
