@@ -1,9 +1,4 @@
 {
-  "indexes": [],
-  "fieldOverrides": [
-    {
-      "collectionGroup": "contributions",
-      "fieldPath": "month",
   "indexes": [
     {
       "collectionGroup": "kcb_payment_notifications",
@@ -20,11 +15,21 @@
         { "fieldPath": "status", "order": "ASCENDING" },
         { "fieldPath": "nextAttemptAt", "order": "ASCENDING" }
       ]
+    }
+  ],
+  "fieldOverrides": [
+    {
+      "collectionGroup": "contributions",
+      "fieldPath": "month",
+      "indexes": [
+        { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }
+      ]
     },
-        {
-          "order": "ASCENDING",
-          "queryScope": "COLLECTION_GROUP"
-        }
+    {
+      "collectionGroup": "contributions",
+      "fieldPath": "balance",
+      "indexes": [
+        { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }
       ]
     }
   ]

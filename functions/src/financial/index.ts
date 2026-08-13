@@ -285,10 +285,13 @@ export const createContribution = onCall(async (request) => {
       amount: MONTHLY_CONTRIBUTION,
       appliedFromBalance: applied,
     });
-    transaction.create(db().doc(`notification_events/contribution-created-${memberId}-${month}`), {
-      type: 'contribution.created', memberId, contributionId: month,
-      amount: MONTHLY_CONTRIBUTION, createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
+    if (MONTHLY_CONTRIBUTION - applied > 0) {
+      transaction.create(db().doc(`notification_events/contribution-created-${requestId}`), {
+        type: 'contribution.created', memberId, contributionId: month,
+        amount: MONTHLY_CONTRIBUTION, balance: MONTHLY_CONTRIBUTION - applied,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    }
     return { requestId, duplicate: false };
   });
 });

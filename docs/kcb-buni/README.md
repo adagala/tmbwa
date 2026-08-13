@@ -30,6 +30,7 @@ Configure these with Firebase Secret Manager; never add their values to source c
 - `KCB_PUBLIC_KEY`
 - `KCB_CONSUMER_KEY`
 - `KCB_CONSUMER_SECRET`
+- `KCB_STK_CALLBACK_TOKEN` (a high-entropy random token embedded in the registered STK callback URL)
 
 The public key is not confidential, but storing it as managed configuration allows controlled rotation and avoids stale keys in deployments.
 
@@ -37,4 +38,4 @@ The public key is not confidential, but storing it as managed configuration allo
 
 Follow GitHub issue #25. In particular, obtain KCB's signing certificate, confirm the exact signed bytes, register the public callback URLs, deploy the Firestore index, verify callback retry/reversal behavior, and retain KCB's endpoint approval evidence.
 
-The current STK callback is correlated with a server-created pending request and always requires reconciliation. If KCB supplies an STK callback signature, mTLS, or allow-list contract, enforce it before production enablement.
+The STK callback requires the secret URL token, is correlated with a server-created pending request, and always requires reconciliation. Rotate the token by updating the secret and callback registration together. If KCB supplies a signature, mTLS, or allow-list contract, enforce it in addition to or instead of the URL token before production enablement.

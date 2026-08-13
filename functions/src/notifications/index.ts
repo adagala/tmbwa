@@ -101,18 +101,19 @@ export const retryNotificationDelivery = onCall(async (request) => {
 export const generateContributionReminders = onSchedule({ schedule: '0 9 * * *', timeZone: 'Africa/Nairobi' }, async () => {
   const today = new Date();
   const currentMonth = `${today.getUTCFullYear()}-${String(today.getUTCMonth() + 1).padStart(2, '0')}-01`;
+  const reminderDate = today.toLocaleDateString('en-CA', { timeZone: 'Africa/Nairobi' });
   const contributions = await db().collectionGroup('contributions').where('balance', '>', 0).get();
-  const batch = db().batch();
+  const writer = db().bulkWriter();
   contributions.docs.forEach((contribution) => {
     const memberId = contribution.ref.parent.parent?.id;
     const month = String(contribution.data().month ?? contribution.id);
     if (!memberId || month > currentMonth) return;
     const type = month < currentMonth ? 'contribution.arrears' : 'contribution.due';
-    const eventId = `${type.replace('.', '-')}-${memberId}-${month}`;
-    batch.set(db().doc(`notification_events/${eventId}`), {
+    const eventId = `${type.replace('.', '-')}-${memberId}-${month}-${reminderDate}`;
+    writer.set(db().doc(`notification_events/${eventId}`), {
       type, memberId, contributionId: month, balance: Number(contribution.data().balance),
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    }, { merge: true });
+    });
   });
-  await batch.commit();
+  await writer.close();
 });

@@ -55,6 +55,12 @@ async function seed() {
       amount: 100,
       paymentdate: new Date('2026-08-12T10:00:00+03:00'),
     });
+    await setDoc(doc(db, 'members/member-a/notifications/notification-1'), {
+      title: 'Payment received', body: 'Synthetic receipt', read: false,
+    });
+    await setDoc(doc(db, 'members/member-a/notification_preferences/default'), {
+      inAppEnabled: true,
+    });
     await setDoc(doc(db, 'monthly_stats/2026-08-01'), { amount: 1000 });
   });
 }
@@ -130,6 +136,10 @@ describe('Firestore authorization', () => {
     await assertFails(getDoc(doc(db, 'members/member-a')));
     await assertFails(getDocs(collection(db, 'members/member-a/contributions')));
     await assertFails(getDocs(collection(db, 'members/member-a/payments')));
+    await assertFails(getDocs(collection(db, 'members/member-a/notifications')));
+    await assertFails(getDoc(doc(db, 'members/member-a/notification_preferences/default')));
+    await assertFails(updateDoc(doc(db, 'members/member-a/notifications/notification-1'), { read: true }));
+    await assertFails(updateDoc(doc(db, 'members/member-a/notification_preferences/default'), { inAppEnabled: false }));
     await assertFails(updateDoc(doc(db, 'members/member-a'), { firstname: 'Still signed in' }));
   });
 
