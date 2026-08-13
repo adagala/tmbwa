@@ -1,45 +1,72 @@
-// schemas/memberSchema.ts
+// schemas/member.ts
 import { z } from 'zod';
 import { isMobilePhone } from 'validator';
 import { FieldValue } from 'firebase/firestore';
+import {
+  member_roles,
+  member_status,
+  genders,
+  contribution_status,
+  payment_type,
+  member_balance_type,
+  months,
+  StatusEnum,
+  RoleEnum,
+  GenderEnum,
+  ContributionStatusEnum,
+  PaymentTypeEnum,
+  MemberBalanceTypeEnum,
+  YearEnum,
+  MonthEnum,
+  firebaseTimestampSchema,
+  contributionFormSchema,
+  memberBalanceFormSchema,
+  monthlyStatsSchema,
+} from 'tmbwa-shared';
 
-export const member_roles = ['member', 'administrator'] as const;
-export const contribution_status = ['paid', 'unpaid', 'partial'] as const;
-export const genders = ['male', 'female'] as const;
-export const member_status = ['active', 'inactive', 'suspended', 'resigned', 'deceased'] as const;
-const months = [
-  '01',
-  '02',
-  '03',
-  '04',
-  '05',
-  '06',
-  '07',
-  '08',
-  '09',
-  '10',
-  '11',
-  '12',
-] as const;
-export const payment_type = ['contribution', 'account'] as const;
-export const member_balance_type = ['top_up', 'deduction'] as const;
+export {
+  member_roles,
+  member_status,
+  genders,
+  contribution_status,
+  payment_type,
+  member_balance_type,
+  months,
+  StatusEnum,
+  RoleEnum,
+  GenderEnum,
+  ContributionStatusEnum,
+  PaymentTypeEnum,
+  MemberBalanceTypeEnum,
+  YearEnum,
+  MonthEnum,
+  firebaseTimestampSchema,
+  contributionFormSchema,
+  memberBalanceFormSchema,
+  monthlyStatsSchema,
+};
 
-// Enums
-export const StatusEnum = z.enum(member_status);
-export const RoleEnum = z.enum(member_roles);
-export const GenderEnum = z.enum(genders);
-export const ContributionStatusEnum = z.enum(contribution_status);
-export const YearEnum = z.string().regex(/^\d{4}$/, 'Provide a valid year');
-export const MonthEnum = z.enum(months);
-export const PaymentTypeEnum = z.enum(payment_type);
-export const MemberBalanceTypeEnum = z.enum(member_balance_type);
+export type {
+  MemberStatus,
+  MemberRole,
+  Gender,
+  PaymentStatus,
+  PaymentType,
+  MemberBalanceType,
+  Year,
+  Month,
+  ContributionForm,
+  MemberBalanceForm,
+  MonthlyStats,
+  FirebaseTimestamp,
+} from 'tmbwa-shared';
 
 const FieldValueSchema = z.custom<FieldValue>(
   (value) => value instanceof FieldValue,
   { message: 'Invalid FieldValue' },
 );
 
-// Member Schema
+// Member form schema – extends the shared base with phone validation
 export const ownMemberFormSchema = z.object({
   firstname: z.string().min(1, 'First name cannot be empty'),
   lastname: z.string().min(1, 'Last name cannot be empty'),
@@ -69,19 +96,6 @@ export const memberFormSchema = ownMemberFormSchema.merge(
   }),
 );
 
-export const contributionFormSchema = z.object({
-  year: YearEnum,
-  month: MonthEnum,
-});
-
-export const memberBalanceFormSchema = z.object({
-  type: MemberBalanceTypeEnum,
-  amount: z
-    .string()
-    .transform((value) => parseFloat(value))
-    .refine((value) => value > 0, { message: 'Amount must be greater than 0' }),
-});
-
 // Complete Member Schema (includes fields not in the form)
 export const memberSchema = memberFormSchema.merge(
   z.object({
@@ -92,11 +106,6 @@ export const memberSchema = memberFormSchema.merge(
     contributionBalance: z.number(),
   }),
 );
-
-export const firebaseTimestampSchema = z.object({
-  seconds: z.number(),
-  nanoseconds: z.number(),
-});
 
 export const paymentFormSchema = z.object({
   referencenumber: z
@@ -138,31 +147,14 @@ export const memberContributionSchema = z.object({
 // Contribution Schema
 export const contributionSchema = memberSchema.merge(memberContributionSchema);
 
-export const monthlyStatsSchema = z.object({
-  amount: z.number(),
-  contribution: z.number(),
-  paymentsCount: z.number(),
-  month: z.string(),
-  newMembers: z.number(),
-  totalMembers: z.number(),
-});
-
 // TypeScript types from schemas
 export type Member = z.infer<typeof memberSchema>;
 export type MemberForm = z.infer<typeof memberFormSchema>;
 export type OwnMemberForm = z.infer<typeof ownMemberFormSchema>;
-export type ContributioForm = z.infer<typeof contributionFormSchema>;
 export type Payment = z.infer<typeof paymentSchema>;
 export type PaymentForm = z.infer<typeof paymentFormSchema>;
 export type MemberContribution = z.infer<typeof memberContributionSchema>;
 export type Contribution = z.infer<typeof contributionSchema>;
-export type Gender = z.infer<typeof GenderEnum>;
-export type Status = z.infer<typeof StatusEnum>;
 export type Role = z.infer<typeof RoleEnum>;
-export type Year = z.infer<typeof YearEnum>;
-export type Month = z.infer<typeof MonthEnum>;
-export type MemberBalanceType = z.infer<typeof MemberBalanceTypeEnum>;
-export type PaymentStatus = z.infer<typeof ContributionStatusEnum>;
-export type MonthlyStats = z.infer<typeof monthlyStatsSchema>;
-export type FirebaseTimestamp = z.infer<typeof firebaseTimestampSchema>;
-export type MemberBalanceForm = z.infer<typeof memberBalanceFormSchema>;
+export type Status = z.infer<typeof StatusEnum>;
+
