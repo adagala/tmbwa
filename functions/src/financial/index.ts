@@ -198,6 +198,12 @@ export const reverseContributionPayment = onCall(async (request) => {
       contributionAmount: Number(payment.contribution_amount),
       contributionId,
     });
+    transaction.create(db().doc(`notification_events/payment-reversed-${paymentId}`), {
+      type: 'payment.reversed', memberId, paymentId,
+      receiptNumber: payment.receipt_number ?? payment.referencenumber,
+      amount: Number(payment.amount), contributionId,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
     return { requestId, duplicate: false };
   });
 });
@@ -279,6 +285,13 @@ export const createContribution = onCall(async (request) => {
       amount: MONTHLY_CONTRIBUTION,
       appliedFromBalance: applied,
     });
+    if (MONTHLY_CONTRIBUTION - applied > 0) {
+      transaction.create(db().doc(`notification_events/contribution-created-${requestId}`), {
+        type: 'contribution.created', memberId, contributionId: month,
+        amount: MONTHLY_CONTRIBUTION, balance: MONTHLY_CONTRIBUTION - applied,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    }
     return { requestId, duplicate: false };
   });
 });

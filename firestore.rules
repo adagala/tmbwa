@@ -53,6 +53,22 @@ service cloud.firestore {
         allow read: if isAdministrator() || isActiveOwner(memberId);
         allow write: if false;
       }
+
+      match /notification_preferences/{preferenceId} {
+        allow read: if isAdministrator() || isActiveOwner(memberId);
+        allow create, update: if isActiveOwner(memberId) &&
+          request.resource.data.keys().hasOnly(['inAppEnabled', 'updatedAt']) &&
+          request.resource.data.inAppEnabled is bool;
+        allow delete: if false;
+      }
+
+      match /notifications/{notificationId} {
+        allow read: if isAdministrator() || isActiveOwner(memberId);
+        allow update: if isActiveOwner(memberId) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']) &&
+          request.resource.data.read is bool;
+        allow create, delete: if false;
+      }
     }
 
     match /{path=**}/contributions/{contributionId} {
@@ -96,6 +112,11 @@ service cloud.firestore {
     }
 
     match /notification_events/{eventId} {
+      allow read: if isAdministrator();
+      allow write: if false;
+    }
+
+    match /notification_deliveries/{deliveryId} {
       allow read: if isAdministrator();
       allow write: if false;
     }
