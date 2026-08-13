@@ -81,6 +81,25 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    match /kcb_payment_notifications/{notificationId} {
+      allow read: if isAdministrator();
+      allow write: if false;
+    }
+
+    match /kcb_notification_messages/{messageId} {
+      allow read, write: if false;
+    }
+
+    match /kcb_stk_requests/{requestId} {
+      allow read: if isAdministrator() || (signedIn() && resource.data.memberId == request.auth.uid);
+      allow write: if false;
+    }
+
+    match /notification_events/{eventId} {
+      allow read: if isAdministrator();
+      allow write: if false;
+    }
+
     match /contribution_rates/{rateId} {
       allow read: if isAdministrator();
       allow create: if isAdministrator() &&

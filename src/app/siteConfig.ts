@@ -6,6 +6,7 @@ import {
   RiSettings5Line,
   RiFileTextLine,
   RiHistoryLine,
+  RiBankCardLine,
 } from '@remixicon/react';
 
 export const siteConfig = {
@@ -48,5 +49,10 @@ export const navigation = [
     name: 'Audit trail',
     href: '/audit',
     icon: RiHistoryLine,
+  },
+  {
+    name: 'KCB reconciliation',
+    href: '/kcb-reconciliation',
+    icon: RiBankCardLine,
   },
 ] as const;

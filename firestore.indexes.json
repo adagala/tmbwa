@@ -4,7 +4,15 @@
     {
       "collectionGroup": "contributions",
       "fieldPath": "month",
-      "indexes": [
+  "indexes": [
+    {
+      "collectionGroup": "kcb_payment_notifications",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "receivedAt", "order": "DESCENDING" }
+      ]
+    },
         {
           "order": "ASCENDING",
           "queryScope": "COLLECTION_GROUP"
