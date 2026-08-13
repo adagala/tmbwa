@@ -13,6 +13,14 @@
         { "fieldPath": "receivedAt", "order": "DESCENDING" }
       ]
     },
+    {
+      "collectionGroup": "notification_deliveries",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "nextAttemptAt", "order": "ASCENDING" }
+      ]
+    },
         {
           "order": "ASCENDING",
           "queryScope": "COLLECTION_GROUP"
