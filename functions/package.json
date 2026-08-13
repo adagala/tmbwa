@@ -2,7 +2,7 @@
   "name": "functions",
   "scripts": {
     "lint": "eslint --ext .js,.ts .",
-    "prebuild": "npm run build --workspace=packages/shared",
+    "prebuild": "cd ../packages/shared && npm run build",
     "build": "tsc",
     "build:scripts": "tsc -p tsconfig.scripts.json",
     "build:watch": "tsc --watch",
