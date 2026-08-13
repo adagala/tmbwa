@@ -14,6 +14,7 @@ import PublicRoute from './PublicRoute';
 import ReportPage from '../app/main/ReportPage';
 import RoleLandingRoute from './RoleLandingRoute';
 import AuditPage from '../app/main/AuditPage';
+import KcbReconciliationPage from '../app/main/KcbReconciliationPage';
 
 export const router = createBrowserRouter([
   {
@@ -73,6 +74,10 @@ export const router = createBrowserRouter([
       {
         path: 'audit',
         element: <AuditPage />,
+      },
+      {
+        path: 'kcb-reconciliation',
+        element: <KcbReconciliationPage />,
       },
     ],
   },
