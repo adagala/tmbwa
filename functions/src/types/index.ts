@@ -1,9 +1,9 @@
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import {
-  member_roles,
-  member_status,
+  member_roles as memberRoles,
+  member_status as memberStatuses,
   genders,
-  contribution_status,
+  contribution_status as contributionStatuses,
   MemberRole,
   MemberStatus,
   Gender as SharedGender,
@@ -11,10 +11,13 @@ import {
 } from 'tmbwa-shared';
 
 export {
-  member_roles,
-  member_status,
+  // eslint-disable-next-line camelcase
+  memberRoles as member_roles,
+  // eslint-disable-next-line camelcase
+  memberStatuses as member_status,
   genders,
-  contribution_status,
+  // eslint-disable-next-line camelcase
+  contributionStatuses as contribution_status,
 };
 export type { MemberRole, MemberStatus };
 
@@ -110,7 +113,6 @@ export type MonthlyStats = {
   totalMembers: number | FieldValue;
 };
 
-export const roles = member_roles;
+export const roles = memberRoles;
 
 export const paymentStatus = ['paid', 'unpaid'] as const;
-
