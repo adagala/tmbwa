@@ -8,6 +8,12 @@ type CommandData = Record<string, unknown>;
 
 const db = () => admin.firestore();
 
+const documentData = (snapshot: FirebaseFirestore.DocumentSnapshot, label: string) => {
+  const data = snapshot.data();
+  if (!data) throw new HttpsError('not-found', `${label} not found.`);
+  return data;
+};
+
 const requireAdministrator = (auth: { uid: string; token: Record<string, unknown> } | undefined) => {
   if (!auth) throw new HttpsError('unauthenticated', 'Sign in is required.');
   if (auth.token.role !== 'administrator') {
@@ -100,8 +106,8 @@ export const recordContributionPayment = onCall(async (request) => {
     if (!memberSnapshot.exists || !contributionSnapshot.exists) {
       throw new HttpsError('not-found', 'Member or contribution not found.');
     }
-    const member = memberSnapshot.data()!;
-    const contribution = contributionSnapshot.data()!;
+    const member = documentData(memberSnapshot, 'Member');
+    const contribution = documentData(contributionSnapshot, 'Contribution');
     const outstanding = Number(contribution.balance ?? 0);
     if (outstanding <= 0) throw new HttpsError('failed-precondition', 'Contribution is already paid.');
 
@@ -166,13 +172,13 @@ export const reverseContributionPayment = onCall(async (request) => {
     const paymentRef = db().doc(`members/${memberId}/payments/${paymentId}`);
     const paymentSnapshot = await transaction.get(paymentRef);
     if (!paymentSnapshot.exists) throw new HttpsError('not-found', 'Payment not found.');
-    const payment = paymentSnapshot.data()!;
+    const payment = documentData(paymentSnapshot, 'Payment');
     const contributionId = String(payment.contribution_id || '');
     if (!contributionId) throw new HttpsError('failed-precondition', 'Payment is not a contribution payment.');
     const contributionRef = db().doc(`members/${memberId}/contributions/${contributionId}`);
     const contributionSnapshot = await transaction.get(contributionRef);
     if (!contributionSnapshot.exists) throw new HttpsError('not-found', 'Contribution not found.');
-    const contribution = contributionSnapshot.data()!;
+    const contribution = documentData(contributionSnapshot, 'Contribution');
     const reversal = reversePayment(
       Number(contribution.balance ?? 0),
       Number(payment.contribution_amount ?? 0),
@@ -231,7 +237,7 @@ export const createContribution = onCall(async (request) => {
     ]);
     if (!memberSnapshot.exists) throw new HttpsError('not-found', 'Member not found.');
     if (contributionSnapshot.exists) throw new HttpsError('already-exists', 'Contribution already exists.');
-    const member = memberSnapshot.data()!;
+    const member = documentData(memberSnapshot, 'Member');
     if (member.status !== 'active') throw new HttpsError('failed-precondition', 'Only active members can receive new contributions.');
     const balance = Number(member.balance ?? 0);
     const applied = Math.min(Math.max(balance, 0), MONTHLY_CONTRIBUTION);
@@ -314,7 +320,7 @@ export const adjustMemberBalance = onCall(async (request) => {
     const memberRef = db().doc(`members/${memberId}`);
     const memberSnapshot = await transaction.get(memberRef);
     if (!memberSnapshot.exists) throw new HttpsError('not-found', 'Member not found.');
-    const member = memberSnapshot.data()!;
+    const member = documentData(memberSnapshot, 'Member');
     let nextBalance: number;
     try {
       nextBalance = applyBalanceAdjustment(Number(member.balance ?? 0), amount, type);
@@ -365,7 +371,7 @@ export const removeContribution = onCall(async (request) => {
     const contributionRef = db().doc(`members/${memberId}/contributions/${contributionId}`);
     const contributionSnapshot = await transaction.get(contributionRef);
     if (!contributionSnapshot.exists) throw new HttpsError('not-found', 'Contribution not found.');
-    const contribution = contributionSnapshot.data()!;
+    const contribution = documentData(contributionSnapshot, 'Contribution');
     const payments = Array.isArray(contribution.payments) ? contribution.payments : [];
     for (const payment of payments) {
       if (payment && typeof payment.payment_id === 'string') {

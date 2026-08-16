@@ -1,15 +1,36 @@
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
+import {
+  member_roles as memberRoles,
+  member_status as memberStatuses,
+  genders,
+  contribution_status as contributionStatuses,
+  MemberRole,
+  MemberStatus,
+  Gender as SharedGender,
+  PaymentStatus as SharedPaymentStatus,
+} from 'tmbwa-shared';
+
+export {
+  // eslint-disable-next-line camelcase
+  memberRoles as member_roles,
+  // eslint-disable-next-line camelcase
+  memberStatuses as member_status,
+  genders,
+  // eslint-disable-next-line camelcase
+  contributionStatuses as contribution_status,
+};
+export type { MemberRole, MemberStatus };
 
 export interface Member {
   firstname: string;
   lastname: string;
   email: string;
-  role: ROLE;
+  role: MemberRole;
   membernumber: string;
   win: string;
   phonenumber: string;
-  status: STATUS;
-  gender: GENDER;
+  status: MemberStatus;
+  gender: SharedGender;
   createat: Timestamp;
   firstnameSearchableIndex: {
     [key: string]: boolean;
@@ -39,7 +60,7 @@ export type Payment = {
 export type PaymentWithId = Payment & { payment_id: string };
 
 export type MemberContribution = {
-  paid: PAYMENT_STATUS;
+  paid: SharedPaymentStatus;
   amount: number;
   balance: number;
   createdat: Date | Timestamp;
@@ -53,22 +74,26 @@ export type MemberContributionWithId = MemberContribution & {
 
 export type Contribution = MemberWithId & MemberContribution;
 
+/** @deprecated Use MemberStatus from tmbwa-shared */
 export enum STATUS {
   ACTIVE = 'active',
   INACTIVE = 'inactive',
   SUSPENDED = 'suspended',
 }
 
+/** @deprecated Use MemberRole from tmbwa-shared */
 export enum ROLE {
   MEMBER = 'member',
   ADMINISTRATOR = 'administrator',
 }
 
+/** @deprecated Use Gender from tmbwa-shared */
 export enum GENDER {
   MALE = 'male',
   FEMALE = 'female',
 }
 
+/** @deprecated Use PaymentStatus from tmbwa-shared */
 export enum PAYMENT_STATUS {
   PAID = 'paid',
   UNPAID = 'unpaid',
@@ -88,6 +113,6 @@ export type MonthlyStats = {
   totalMembers: number | FieldValue;
 };
 
-export const roles = ['member', 'administrator'] as const;
+export const roles = memberRoles;
 
 export const paymentStatus = ['paid', 'unpaid'] as const;

@@ -25,6 +25,12 @@ const routeCode = defineString('KCB_STK_ROUTE_CODE', { default: '207' });
 const stkCallbackToken = defineSecret('KCB_STK_CALLBACK_TOKEN');
 const db = () => admin.firestore();
 
+const documentData = (snapshot: FirebaseFirestore.DocumentSnapshot, label: string) => {
+  const data = snapshot.data();
+  if (!data) throw new HttpsError('not-found', `${label} not found.`);
+  return data;
+};
+
 const requireAdministrator = (auth: { uid: string; token: Record<string, unknown> } | undefined) => {
   if (!auth) throw new HttpsError('unauthenticated', 'Sign in is required.');
   if (auth.token.role !== 'administrator') throw new HttpsError('permission-denied', 'Administrator access is required.');
@@ -106,12 +112,12 @@ export const reconcileKcbPayment = onCall(async (request) => {
     if (command.exists) return { requestId, duplicate: true };
     if (!notificationSnapshot.exists) throw new HttpsError('not-found', 'KCB payment notification not found.');
     if (!memberSnapshot.exists || !contributionSnapshot.exists) throw new HttpsError('not-found', 'Member or contribution not found.');
-    const notification = notificationSnapshot.data()!;
+    const notification = documentData(notificationSnapshot, 'KCB payment notification');
     if (notification.status === 'reconciled') throw new HttpsError('already-exists', 'This provider payment is already reconciled.');
     if (notification.status !== 'unresolved') throw new HttpsError('failed-precondition', 'This notification cannot be reconciled.');
 
-    const member = memberSnapshot.data()!;
-    const contribution = contributionSnapshot.data()!;
+    const member = documentData(memberSnapshot, 'Member');
+    const contribution = documentData(contributionSnapshot, 'Contribution');
     const result = applyPayment(Number(notification.amount), Number(contribution.balance ?? 0));
     const paymentId = db().collection(`members/${memberId}/payments`).doc().id;
     const receiptNumber = `TMBWA-${paymentId.toUpperCase()}`;
@@ -320,7 +326,7 @@ export const kcbStkCallback = onRequest({ secrets: [stkCallbackToken] }, async (
     const requestRef = matches.docs[0].ref;
     await db().runTransaction(async (transaction) => {
       const snapshot = await transaction.get(requestRef);
-      const pending = snapshot.data()!;
+      const pending = documentData(snapshot, 'KCB STK request');
       if (pending.callbackReceivedAt) return;
       if (callback.merchantRequestId !== pending.merchantRequestId) throw new Error('STK callback correlation mismatch.');
       if (callback.resultCode !== 0) {

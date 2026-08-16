@@ -22,7 +22,7 @@ import {
 import { toast } from '@/hooks/useToast';
 import {
   Member,
-  ContributioForm,
+  ContributionForm,
   contributionFormSchema,
   Year,
   Month,
@@ -41,7 +41,7 @@ export const DialogAddContribution = ({ member }: { member: Member }) => {
   const [year, setYear] = React.useState<Year>();
   const [month, setMonth] = React.useState<Month>();
 
-  const values: ContributioForm | undefined = undefined;
+  const values: ContributionForm | undefined = undefined;
 
   const {
     register,
@@ -50,12 +50,12 @@ export const DialogAddContribution = ({ member }: { member: Member }) => {
     reset,
     setValue,
     trigger,
-  } = useForm<ContributioForm>({
+  } = useForm<ContributionForm>({
     resolver: zodResolver(contributionFormSchema),
     values,
   });
 
-  const onSubmit = async (data: ContributioForm) => {
+  const onSubmit = async (data: ContributionForm) => {
     setIsLoading(true);
 
     try {

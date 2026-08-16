@@ -1,0 +1,23 @@
+{
+  "name": "tmbwa-shared",
+  "version": "0.0.1",
+  "private": true,
+  "type": "commonjs",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc"
+  },
+  "engines": {
+    "node": "22.x"
+  },
+  "dependencies": {
+    "zod": "^3.23.8"
+  }
+}
