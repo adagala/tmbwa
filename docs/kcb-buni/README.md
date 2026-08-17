@@ -36,6 +36,16 @@ Configure these with Firebase Secret Manager; never add their values to source c
 
 The public key is not confidential. It is ordinary managed configuration and is not required for KCB Sandbox IPN testing.
 
+### Migrating an existing `KCB_PUBLIC_KEY` secret
+
+Before deploying this version to an environment that previously configured `KCB_PUBLIC_KEY` in Firebase Secret Manager, copy that public value into the new string parameter. Run:
+
+```bash
+firebase functions:secrets:access KCB_PUBLIC_KEY
+```
+
+Copy the complete public PEM into `functions/.env.<firebase-project-id>` as a quoted multiline `KCB_PUBLIC_KEY` value. Do not commit environment-specific configuration. Complete this migration before deploying; otherwise signed Till callbacks fail closed with HTTP 401. After the updated default codebase is deployed and callback verification is confirmed, the obsolete Secret Manager version can be removed according to the project's credential-retirement process.
+
 ## Before UAT or production
 
 Follow GitHub issue #25. In particular, confirm KCB's production callback-authentication contract, obtain a signing certificate only if that contract requires one, register the public callback URLs, deploy the Firestore index, verify callback retry/reversal behavior, and retain KCB's endpoint approval evidence. Production remains fail-closed: unsigned callbacks are accepted only when both `APP_ENV=development` and `KCB_DEV_MOCK_ENABLED=true`.
@@ -63,6 +73,8 @@ Deploy the normal callback and the development tools separately:
 firebase deploy --only functions:default:kcbTillNotification
 firebase deploy --only functions:development-tools
 ```
+
+The default Functions package deploy script intentionally selects `functions:default`. Never replace it with the broad `--only functions` selector, because that also deploys the development-tools codebase.
 
 Sign in as an administrator and use **KCB reconciliation → Development test payment**. The item appears unresolved and must use the normal reconciliation workflow.
 

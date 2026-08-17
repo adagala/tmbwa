@@ -133,13 +133,13 @@ export default function KcbReconciliationPage() {
 
   return <div className="flex flex-col gap-6">
     <div><h1 className="mt-6 text-xl font-bold text-guardsman-red-600">KCB payment reconciliation</h1>
-      <p className="mt-1 text-sm text-gray-600">Review signed Paybill notifications before they change a member balance.</p></div>
+      <p className="mt-1 text-sm text-gray-600">Review Paybill notifications before they change a member balance.</p></div>
     {error ? <p role="alert" className="rounded-md bg-red-50 p-3 text-sm text-red-700">{error}</p> : null}
     {devSimulatorEnabled ? <Card className="space-y-3 border-amber-300 bg-amber-50">
       <div>
         <h2 className="font-semibold text-amber-900">Development test payment</h2>
         <p className="text-sm text-amber-800">
-          Sends a signed synthetic payment through the deployed callback. It is disabled outside development.
+          Sends an unsigned KCB Sandbox-style payment through the deployed callback. It is disabled outside development.
         </p>
       </div>
       <div className="flex flex-wrap items-end gap-3">
@@ -163,7 +163,7 @@ export default function KcbReconciliationPage() {
           isLoading={busy === 'dev-simulator'}
           onClick={() => void sendDevelopmentTest()}
         >
-          Send signed test payment
+          Send Sandbox test payment
         </Button>
       </div>
       {testResult ? <p role="status" className="text-sm font-medium text-green-700">{testResult}</p> : null}
