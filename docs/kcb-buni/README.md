@@ -60,6 +60,17 @@ In the Firebase **development project only**, configure:
 - `KCB_TILL_CALLBACK_URL`: deployed HTTPS URL ending in `/kcbTillNotification`.
 - `KCB_DEV_ALLOWED_CALLBACK_ORIGIN`: exact HTTPS origin of that URL.
 
-Deploy `kcbTillNotification` and `sendKcbDevTillNotification`, sign in as an administrator, and use **KCB reconciliation → Development test payment**. The item appears unresolved and must use the normal reconciliation workflow.
+Set `VITE_APP_ENV=development` and `VITE_KCB_DEV_MOCK_ENABLED=true` in the development web build so the simulator control is visible.
 
-Never configure `KCB_DEV_PRIVATE_KEY` or enable the simulator in UAT or production. After testing, set `KCB_DEV_MOCK_ENABLED=false`, remove the private-key secret if it is no longer needed, and securely delete the temporary private-key file. Real KCB callbacks require KCB's environment-specific public key.
+The simulator lives in the separate Firebase `development-tools` codebase. Normal `functions:default` deployments for UAT and production neither discover the simulator nor bind `KCB_DEV_PRIVATE_KEY`.
+
+Deploy the normal callback and the development tools separately:
+
+```bash
+firebase deploy --only functions:default:kcbTillNotification
+firebase deploy --only functions:development-tools
+```
+
+Sign in as an administrator and use **KCB reconciliation → Development test payment**. The item appears unresolved and must use the normal reconciliation workflow.
+
+Never deploy the `development-tools` codebase, configure `KCB_DEV_PRIVATE_KEY`, or enable the client control in UAT or production. After testing, set both server and client enabled flags to `false`, remove the development-tools function and private-key secret if they are no longer needed, and securely delete the temporary private-key file. Real KCB callbacks require KCB's environment-specific public key.

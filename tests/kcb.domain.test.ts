@@ -9,7 +9,7 @@ import {
   devProviderTransactionId,
   signSyntheticPayload,
   validateDevSimulatorConfig,
-} from '../functions/src/kcb/devSimulator';
+} from '../functions-dev/src/devSimulator';
 
 const payload = {
   header: { messageID: 'message-1', originatorConversationID: 'conversation-1', channelCode: '202' },

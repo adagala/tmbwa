@@ -1,0 +1,23 @@
+{
+  "name": "functions-dev",
+  "private": true,
+  "main": "lib/src/index.js",
+  "engines": { "node": "22" },
+  "scripts": {
+    "lint": "eslint --ext .ts .",
+    "build": "tsc",
+    "deploy": "firebase deploy --only functions:development-tools"
+  },
+  "dependencies": {
+    "firebase-functions": "^6.0.1"
+  },
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^5.12.0",
+    "@typescript-eslint/parser": "^5.12.0",
+    "@types/node": "^20.14.9",
+    "eslint": "^8.9.0",
+    "eslint-config-google": "^0.14.0",
+    "eslint-plugin-import": "^2.25.4",
+    "typescript": "^4.9.0"
+  }
+}

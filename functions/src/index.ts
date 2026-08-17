@@ -23,7 +23,6 @@ export const reconcileKcbPayment = Kcb.reconcileKcbPayment;
 export const rejectKcbPayment = Kcb.rejectKcbPayment;
 export const requestKcbStkPush = Kcb.requestKcbStkPush;
 export const kcbStkCallback = Kcb.kcbStkCallback;
-export const sendKcbDevTillNotification = Kcb.sendKcbDevTillNotification;
 export const queueNotificationDeliveries = Notifications.queueNotificationDeliveries;
 export const processNotificationOutbox = Notifications.processNotificationOutbox;
 export const retryNotificationDelivery = Notifications.retryNotificationDelivery;

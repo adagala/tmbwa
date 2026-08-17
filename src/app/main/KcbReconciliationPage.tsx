@@ -20,6 +20,10 @@ import {
 
 type ContributionOption = { id: string; month: string; balance: number };
 
+const devSimulatorEnabled =
+  import.meta.env.VITE_APP_ENV === 'development' &&
+  import.meta.env.VITE_KCB_DEV_MOCK_ENABLED === 'true';
+
 export default function KcbReconciliationPage() {
   const { role } = useUser();
   const [payments, setPayments] = useState<KcbPaymentNotification[]>([]);
@@ -127,7 +131,7 @@ export default function KcbReconciliationPage() {
     <div><h1 className="mt-6 text-xl font-bold text-guardsman-red-600">KCB payment reconciliation</h1>
       <p className="mt-1 text-sm text-gray-600">Review signed Paybill notifications before they change a member balance.</p></div>
     {error ? <p role="alert" className="rounded-md bg-red-50 p-3 text-sm text-red-700">{error}</p> : null}
-    <Card className="space-y-3 border-amber-300 bg-amber-50">
+    {devSimulatorEnabled ? <Card className="space-y-3 border-amber-300 bg-amber-50">
       <div>
         <h2 className="font-semibold text-amber-900">Development test payment</h2>
         <p className="text-sm text-amber-800">
@@ -156,7 +160,7 @@ export default function KcbReconciliationPage() {
         </Button>
       </div>
       {testResult ? <p role="status" className="text-sm font-medium text-green-700">{testResult}</p> : null}
-    </Card>
+    </Card> : null}
     <div className="space-y-4">
       {payments.map((payment) => {
         const memberId = selectedMembers[payment.providerTransactionId] ?? '';
