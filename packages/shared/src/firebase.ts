@@ -8,6 +8,7 @@ import {
   PaymentTypeEnum,
   StatusEnum,
   auditEventDocumentSchema,
+  contributionDocumentSchema,
   firebaseTimestampSchema,
   kcbPaymentNotificationDocumentSchema,
   memberBaseSchema,
@@ -16,6 +17,7 @@ import {
   notificationDeliveryDocumentSchema,
   notificationPreferenceDocumentSchema,
   parseDocument,
+  paymentDocumentSchema,
 } from './index';
 
 const fieldValueSchema = z.custom<FieldValue>(
@@ -88,6 +90,31 @@ export const memberContributionSchema = z.object({
 
 export const contributionSchema = memberSchema.merge(memberContributionSchema);
 
+const persistedDateSchema = z.union([
+  z.date(),
+  z.instanceof(Timestamp),
+  firebaseTimestampSchema,
+]);
+
+const paymentReadSchema = paymentDocumentSchema.extend({
+  paymentdate: persistedDateSchema,
+  payment_type: PaymentTypeEnum.default(PaymentTypeEnum.Enum.contribution),
+  action_by: z.string().default(''),
+  created_at: persistedDateSchema.optional(),
+}).transform((payment) => ({
+  ...payment,
+  created_at: payment.created_at ?? payment.paymentdate,
+}));
+
+const contributionReadSchema = contributionDocumentSchema.extend({
+  member_id: z.string(),
+  datejoined: z.union([z.date(), z.instanceof(Timestamp)]).optional(),
+  createat: z.instanceof(Timestamp).optional(),
+  createdat: z.union([z.date(), z.instanceof(Timestamp)]).optional(),
+  action_by: z.string().default(''),
+  payments: z.array(paymentReadSchema).default([]),
+});
+
 export const kcbPaymentNotificationSchema = kcbPaymentNotificationDocumentSchema.extend({
   providerTransactionId: z.string(),
   receivedAt: z.instanceof(Timestamp).optional(),
@@ -109,10 +136,26 @@ export const auditEventSchema = auditEventDocumentSchema.extend({
 
 export const parseMemberDocument = (id: string, data: unknown) =>
   parseDocument(memberSchema, { member_id: id, ...(data as object) }, `members/${id}`);
-export const parseContributionDocument = (id: string, data: unknown) =>
-  parseDocument(contributionSchema, { contribution_id: id, ...(data as object) }, `contributions/${id}`);
+
+const normalizePaymentDocument = (id: string, data: unknown, path: string) => {
+  return parseDocument(
+    paymentReadSchema,
+    { payment_id: id, ...(data as object) },
+    path,
+  );
+};
+
+export const parseContributionDocument = (id: string, data: unknown) => {
+  const path = `contributions/${id}`;
+  return parseDocument(
+    contributionReadSchema,
+    { contribution_id: id, ...(data as object) },
+    path,
+  );
+};
+
 export const parsePaymentDocument = (id: string, data: unknown) =>
-  parseDocument(paymentSchema, { payment_id: id, ...(data as object) }, `payments/${id}`);
+  normalizePaymentDocument(id, data, `payments/${id}`);
 
 export type Member = z.infer<typeof memberSchema>;
 export type MemberForm = z.infer<typeof memberFormSchema>;

@@ -4,10 +4,15 @@ import {
   MEMBER_STATUS,
   contributionDocumentSchema,
   memberDocumentSchema,
+  monthlyStatsSchema,
   notificationDeliveryDocumentSchema,
   parseDocument,
   paymentDocumentSchema,
 } from 'tmbwa-shared';
+import {
+  parseContributionDocument,
+  parsePaymentDocument,
+} from 'tmbwa-shared/firebase';
 
 const member = {
   firstname: 'Amina',
@@ -67,5 +72,39 @@ describe('Firestore document schemas', () => {
       status: 'pending',
       attempts: -1,
     }).success).toBe(false);
+  });
+
+  it('normalizes legacy contribution and payment records on read', () => {
+    const legacyPayment = {
+      ...payment,
+      payment_type: undefined,
+      action_by: undefined,
+      created_at: undefined,
+    };
+    const parsedPayment = parsePaymentDocument('payment-1', legacyPayment);
+    const parsedContribution = parseContributionDocument('2026-08-01', {
+      ...member,
+      member_id: 'member-1',
+      paid: 'paid',
+      amount: 500,
+      balance: 0,
+      payments: [legacyPayment],
+      month: '2026-08-01',
+    });
+
+    expect(parsedPayment.payment_type).toBe('contribution');
+    expect(parsedPayment.action_by).toBe('');
+    expect(parsedPayment.created_at).toEqual(legacyPayment.paymentdate);
+    expect(parsedContribution.action_by).toBe('');
+    expect(parsedContribution.payments[0].payment_type).toBe('contribution');
+  });
+
+  it('defaults missing monthly statistics counters', () => {
+    expect(monthlyStatsSchema.parse({
+      amount: 500,
+      contribution: 250,
+      paymentsCount: 1,
+      month: '2026-08-01',
+    })).toMatchObject({ newMembers: 0, totalMembers: 0 });
   });
 });

@@ -121,8 +121,8 @@ export const monthlyStatsSchema = z.object({
   contribution: z.number(),
   paymentsCount: z.number(),
   month: z.string(),
-  newMembers: z.number(),
-  totalMembers: z.number(),
+  newMembers: z.number().default(0),
+  totalMembers: z.number().default(0),
 });
 
 const searchableIndexSchema = z.record(z.boolean());
