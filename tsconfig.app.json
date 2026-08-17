@@ -19,7 +19,8 @@
     "paths": {
       "@/*": ["./src/*"],
       "@/lib": ["./lib/*"],
-      "tmbwa-shared": ["./packages/shared/src/index.ts"]
+      "tmbwa-shared": ["./packages/shared/src/index.ts"],
+      "tmbwa-shared/*": ["./packages/shared/src/*"]
     },
 
     /* Linting */

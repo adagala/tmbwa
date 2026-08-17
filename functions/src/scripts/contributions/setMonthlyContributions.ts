@@ -5,9 +5,10 @@ import {
   MemberWithId,
   MonthlyStats,
   Payment,
-  PAYMENT_STATUS,
 } from '../../types';
-import { getCurrentMonth, MONTHLY_CONTRIBUTION } from '../../utils';
+import { MONTHLY_CONTRIBUTION, PAYMENT_STATUS } from 'tmbwa-shared';
+import { getCurrentMonth } from '../../utils';
+import { memberWithIdData } from '../../firestoreData';
 
 admin.initializeApp({ credential: admin.credential.applicationDefault() });
 
@@ -16,13 +17,7 @@ const setMonthlyContributions = async () => {
   // get all members
   const membersRef = admin.firestore().collection('members');
   const membersSnapshot = await membersRef.get();
-  const members = membersSnapshot.docs.map((member) => {
-    const _member = {
-      ...member.data(),
-      member_id: member.id,
-    } as MemberWithId;
-    return _member;
-  });
+  const members = membersSnapshot.docs.map(memberWithIdData) as MemberWithId[];
 
   const contributions: Partial<Contribution>[] = [];
 

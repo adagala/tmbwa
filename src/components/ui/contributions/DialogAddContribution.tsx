@@ -20,13 +20,13 @@ import {
   SelectValue,
 } from '@/components/Select';
 import { toast } from '@/hooks/useToast';
+import { Member } from 'tmbwa-shared/firebase';
 import {
-  Member,
   ContributionForm,
   contributionFormSchema,
   Year,
   Month,
-} from '@/schemas/member';
+} from 'tmbwa-shared';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { InputErrorMessage } from '../InputErrorMessage';

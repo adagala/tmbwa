@@ -1,5 +1,6 @@
 import { Card } from '@/components/Card';
-import { MonthlyStats, Payment } from '@/schemas/member';
+import { Payment } from 'tmbwa-shared/firebase';
+import { MonthlyStats } from 'tmbwa-shared';
 import { RiExchangeFundsLine, RiHome2Line } from '@remixicon/react';
 import { List, ListItem } from '@tremor/react';
 import { AreaChart } from '@/components/AreaChart';

@@ -3,9 +3,10 @@ import {
   Contribution,
   MemberWithId,
   Payment,
-  PAYMENT_STATUS,
 } from '../../types';
+import { PAYMENT_STATUS } from 'tmbwa-shared';
 import { arrayToChunks } from '../../utils';
+import { memberWithIdData } from '../../firestoreData';
 
 admin.initializeApp({ credential: admin.credential.applicationDefault() });
 
@@ -25,12 +26,7 @@ const updateAllMembers = async () => {
   ];
 
   const snapshot = await admin.firestore().collection('members').get();
-  const members = snapshot.docs.map((doc) => {
-    return {
-      member_id: doc.id,
-      ...doc.data(),
-    } as MemberWithId;
-  });
+  const members = snapshot.docs.map(memberWithIdData) as MemberWithId[];
 
   members.forEach((member) => {
     months.forEach((month) => {

@@ -14,12 +14,11 @@ import {
 } from "@/components/Select";
 import { InputErrorMessage } from "../InputErrorMessage";
 import {
-  Gender,
   Member,
   OwnMemberForm,
-  genders,
   ownMemberFormSchema,
-} from "@/schemas/member";
+} from "tmbwa-shared/firebase";
+import { Gender, genders } from "tmbwa-shared";
 import { updateMember } from "@/lib/firebase/firestore";
 
 export function UpdatePersonalDetails({ member }: { member: Member }) {

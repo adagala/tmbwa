@@ -16,12 +16,12 @@ import {
 } from '@/components/Select';
 import { Button } from '@/components/Button';
 import { DialogContributionDetails } from '@/components/ui/contributions/DialogContributionDetails';
+import { Contribution } from 'tmbwa-shared/firebase';
 import {
-  Contribution,
-  PaymentStatus,
   ContributionStatusEnum,
   contribution_status,
-} from '@/schemas/member';
+  PaymentStatus,
+} from 'tmbwa-shared';
 import { getMonthlyMembersContributions } from '@/lib/firebase/firestore';
 import { getMonth, months, years } from '@/lib/utils';
 import debounce from 'lodash.debounce';

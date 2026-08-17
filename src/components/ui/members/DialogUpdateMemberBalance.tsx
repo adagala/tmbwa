@@ -22,11 +22,13 @@ import {
 import { toast } from '@/hooks/useToast';
 import {
   Member,
+} from 'tmbwa-shared/firebase';
+import {
   member_balance_type,
   MemberBalanceForm,
   memberBalanceFormSchema,
   MemberBalanceType,
-} from '@/schemas/member';
+} from 'tmbwa-shared';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { InputErrorMessage } from '../InputErrorMessage';

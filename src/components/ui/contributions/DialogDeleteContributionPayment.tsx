@@ -12,7 +12,7 @@ import {
 } from '@/components/Dialog';
 import { useToast } from '@/hooks/useToast';
 import { deletePayment } from '@/lib/firebase/financial';
-import { Contribution, Payment } from '@/schemas/member';
+import { Contribution, Payment } from 'tmbwa-shared/firebase';
 import { getMonth } from '@/lib/utils';
 
 export const DialogDeleteContributionPayment = ({

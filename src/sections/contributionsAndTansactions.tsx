@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Payment, Member, Contribution } from '@/schemas/member';
+import { Payment, Member, Contribution } from 'tmbwa-shared/firebase';
 import {
   RiAccountBoxLine,
   RiSettings5Line,

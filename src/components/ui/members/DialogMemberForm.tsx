@@ -23,13 +23,10 @@ import {
 import { toast } from '@/hooks/useToast';
 import {
   Member,
-  genders,
   memberFormSchema,
-  member_roles,
-  Gender,
-  Role,
   MemberForm,
-} from '@/schemas/member';
+} from 'tmbwa-shared/firebase';
+import { genders, member_roles, Gender, MemberRole } from 'tmbwa-shared';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { InputErrorMessage } from '../InputErrorMessage';
@@ -43,7 +40,7 @@ import { Checkbox } from '@/components/Checkbox';
 export const DialogMemberForm = ({ member }: { member?: Member }) => {
   const [open, setOpen] = React.useState(false);
   const [isLoading, setIsLoading] = React.useState(false);
-  const [role, setRole] = React.useState<Role>();
+  const [role, setRole] = React.useState<MemberRole>();
   const [gender, setGender] = React.useState<Gender>();
   const [isFeesPaid, setIsFeesPaid] = React.useState(
     member?.isFeesPaid || false,
@@ -219,7 +216,7 @@ export const DialogMemberForm = ({ member }: { member?: Member }) => {
                         <Label htmlFor="role">Role</Label>
                         <Select
                           {...register('role')}
-                          onValueChange={(role: Role) => {
+                          onValueChange={(role: MemberRole) => {
                             setRole(role);
                             setValue('role', role);
                             trigger('role');

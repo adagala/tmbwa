@@ -6,7 +6,11 @@ import { Button } from '@/components/Button';
 import useUser from '@/hooks/useUser';
 import { db } from '@/lib/firebase/clientApp';
 import { KcbPaymentNotification, reconcileKcbPayment, rejectKcbPayment, subscribeToUnresolvedKcbPayments } from '@/lib/firebase/kcb';
-import { Member } from '@/schemas/member';
+import {
+  Member,
+  parseContributionDocument,
+  parseMemberDocument,
+} from 'tmbwa-shared/firebase';
 
 type ContributionOption = { id: string; month: string; balance: number };
 
@@ -24,7 +28,7 @@ export default function KcbReconciliationPage() {
     if (role !== 'administrator') return;
     const unsubscribe = subscribeToUnresolvedKcbPayments(setPayments);
     void getDocs(query(collection(db, 'members'), orderBy('firstname'))).then((snapshot) =>
-      setMembers(snapshot.docs.map((item) => ({ member_id: item.id, ...item.data() }) as Member)),
+      setMembers(snapshot.docs.map((item) => parseMemberDocument(item.id, item.data()))),
     );
     return unsubscribe;
   }, [role]);
@@ -40,7 +44,10 @@ export default function KcbReconciliationPage() {
               .then((snapshot) => setContributions((current) => ({
                 ...current,
                 [payment.suggestedMemberId!]: snapshot.docs
-                  .map((item) => ({ id: item.id, month: String(item.data().month ?? item.id), balance: Number(item.data().balance ?? 0) }))
+                  .map((item) => {
+                    const contribution = parseContributionDocument(item.id, item.data());
+                    return { id: item.id, month: contribution.month, balance: contribution.balance };
+                  })
                   .filter((item) => item.balance > 0),
               })));
           }
@@ -58,7 +65,10 @@ export default function KcbReconciliationPage() {
     if (!memberId || contributions[memberId]) return;
     const snapshot = await getDocs(query(collection(db, `members/${memberId}/contributions`), orderBy('month', 'desc')));
     setContributions((current) => ({ ...current, [memberId]: snapshot.docs
-      .map((item) => ({ id: item.id, month: String(item.data().month ?? item.id), balance: Number(item.data().balance ?? 0) }))
+      .map((item) => {
+        const contribution = parseContributionDocument(item.id, item.data());
+        return { id: item.id, month: contribution.month, balance: contribution.balance };
+      })
       .filter((item) => item.balance > 0),
     }));
   };

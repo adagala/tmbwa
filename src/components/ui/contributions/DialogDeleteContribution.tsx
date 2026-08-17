@@ -11,7 +11,7 @@ import {
   DialogTrigger,
 } from '@/components/Dialog';
 import { useToast } from '@/hooks/useToast';
-import { Contribution, Member } from '@/schemas/member';
+import { Contribution, Member } from 'tmbwa-shared/firebase';
 import { deleteContribution } from '@/lib/firebase/financial';
 
 export const DialogDeleteContribution = ({

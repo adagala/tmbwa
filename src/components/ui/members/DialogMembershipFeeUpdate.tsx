@@ -12,7 +12,7 @@ import {
 } from '@/components/Dialog';
 import { useToast } from '@/hooks/useToast';
 import { updateMembershipFees } from '@/lib/firebase/firestore';
-import { Member } from '@/schemas/member';
+import { Member } from 'tmbwa-shared/firebase';
 import { Badge } from '@/components/Badge';
 import { RiEdit2Line } from '@remixicon/react';
 

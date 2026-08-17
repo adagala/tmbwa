@@ -6,7 +6,7 @@ import { RiLock2Line } from '@remixicon/react';
 import { Card } from '@/components/Card';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { ResetPasswordSchema, resetPasswordSchema } from '@/schemas/user';
+import { ResetPasswordSchema, resetPasswordSchema } from 'tmbwa-shared';
 import { toast } from '@/hooks/useToast';
 import { InputErrorMessage } from '@/components/ui/InputErrorMessage';
 import { resetPassword } from '@/lib/firebase/auth';

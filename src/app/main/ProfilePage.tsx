@@ -1,5 +1,5 @@
 import { Profile } from '@/sections/profile';
-import { Member } from '@/schemas/member';
+import { Member } from 'tmbwa-shared/firebase';
 import { RiUserLine } from '@remixicon/react';
 import useUser from '@/hooks/useUser';
 import { useEffect, useState } from 'react';

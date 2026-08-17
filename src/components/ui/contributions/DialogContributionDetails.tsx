@@ -12,10 +12,9 @@ import {
 } from '@/components/Dialog';
 import {
   Contribution,
-  FirebaseTimestamp,
   Member,
-  ContributionStatusEnum,
-} from '@/schemas/member';
+} from 'tmbwa-shared/firebase';
+import { ContributionStatusEnum, FirebaseTimestamp } from 'tmbwa-shared';
 import { Badge } from '@/components/Badge';
 import { Label } from '@/components/Label';
 import { RiCoinsLine, RiSafe2Line, RiShoppingBag3Line } from '@remixicon/react';

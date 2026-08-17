@@ -6,7 +6,8 @@ import {
   RiShieldCheckLine,
   RiUserForbidLine,
 } from '@remixicon/react';
-import { Member, Role, member_roles } from '@/schemas/member';
+import { Member } from 'tmbwa-shared/firebase';
+import { member_roles, MemberRole } from 'tmbwa-shared';
 import { Input } from '@/components/Input';
 import {
   Select,
@@ -27,7 +28,7 @@ import { Card } from '@/components/Card';
 
 export default function MembersPage() {
   const { role } = useUser();
-  const [selectedRole, setSelectedRole] = React.useState<Role | ''>('');
+  const [selectedRole, setSelectedRole] = React.useState<MemberRole | ''>('');
   const [selectedFeeStatus, setSelectedFeeStatus] = React.useState('');
   const [searchValue, setSearchValue] = React.useState('');
   const [querySearch, setQuerySearch] = React.useState('');
@@ -118,8 +119,8 @@ export default function MembersPage() {
           <div className="flex-1 flex flex-col gap-2 sm:flex-row">
             <Select
               name="role"
-              value={selectedRole as Role}
-              onValueChange={(role: Role) => setSelectedRole(role)}
+              value={selectedRole as MemberRole}
+              onValueChange={(role: MemberRole) => setSelectedRole(role)}
             >
               <SelectTrigger id="role" name="role" className="capitalize">
                 <SelectValue placeholder="Role" />

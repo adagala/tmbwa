@@ -24,21 +24,34 @@ import {
   Member,
   Contribution,
   MemberForm,
-  MonthlyStats,
   OwnMemberForm,
-  Role,
   Payment,
+  contributionSchema,
+  memberFormSchema,
+  memberSchema,
+  ownMemberFormSchema,
+  paymentSchema,
+  parseContributionDocument,
+  parseMemberDocument,
+  parsePaymentDocument,
+} from 'tmbwa-shared/firebase';
+import {
   ContributionStatusEnum,
-  PaymentTypeEnum,
   MemberBalanceForm,
   MemberBalanceTypeEnum,
-} from '@/schemas/member';
-import { MONTHLY_CONTRIBUTION } from '../utils';
-import { PAYMENT_STATUS } from '../types';
+  MemberRole,
+  MEMBER_STATUS,
+  MonthlyStats,
+  MONTHLY_CONTRIBUTION,
+  PAYMENT_STATUS,
+  PaymentTypeEnum,
+  monthlyStatsSchema,
+  parseDocument,
+} from 'tmbwa-shared';
 import { User } from 'firebase/auth';
 
 type MemberFilters = {
-  role?: Role | '';
+  role?: MemberRole | '';
   memberName?: string;
 };
 
@@ -79,12 +92,9 @@ export const getMembers = (
     q,
     { includeMetadataChanges: true },
     (querySnapshot) => {
-      const results = querySnapshot.docs.map((doc) => {
-        return {
-          member_id: doc.id,
-          ...doc.data(),
-        } as Member;
-      });
+      const results = querySnapshot.docs.map((snapshot) =>
+        parseMemberDocument(snapshot.id, snapshot.data()),
+      );
       cb(results);
     },
   );
@@ -94,7 +104,7 @@ export const getMembers = (
 export const getMemberById = (
   memberId: string,
   cb: (data: Member | null) => void,
-  user?: { role: Role; user: User },
+  user?: { role: MemberRole; user: User },
 ) => {
   const memberRef = doc(db, 'members', memberId);
   const unsubscribe = onSnapshot(
@@ -102,10 +112,10 @@ export const getMemberById = (
     { includeMetadataChanges: true },
     async (memberSnapshot) => {
       if (memberSnapshot.exists()) {
-        const memberData = {
-          member_id: memberSnapshot.id,
-          ...memberSnapshot.data(),
-        } as Member;
+        const memberData = parseMemberDocument(
+          memberSnapshot.id,
+          memberSnapshot.data(),
+        );
         cb(memberData);
         if (user && memberData.role !== user.role) {
           await user.user.getIdToken(true);
@@ -132,7 +142,13 @@ export const memberEmailExists = async (email: string) => {
 
 export const addMember = (member: MemberForm) => {
   const membersRef = collection(db, 'members');
-  const newMember: Partial<Member> = { ...member, balance: 0 };
+  const form = memberFormSchema.parse(member);
+  const newMember = memberSchema.omit({ member_id: true }).parse({
+    ...form,
+    status: MEMBER_STATUS.ACTIVE,
+    balance: 0,
+    contributionBalance: 0,
+  });
   return addDoc(membersRef, newMember);
 };
 
@@ -141,7 +157,10 @@ export const updateMember = (
   member: MemberForm | OwnMemberForm,
 ) => {
   const memberRef = doc(db, 'members', memberId);
-  return updateDoc(memberRef, member);
+  const update = 'email' in member
+    ? memberFormSchema.parse(member)
+    : ownMemberFormSchema.parse(member);
+  return updateDoc(memberRef, update);
 };
 
 export const updateMembershipFees = (memberId: string, member: Member) => {
@@ -173,9 +192,9 @@ export const getMonthlyStats = (
     statsQuery,
     { includeMetadataChanges: true },
     (querySnapshot) => {
-      const stats = querySnapshot.docs.map((doc) => {
-        return doc.data() as MonthlyStats;
-      });
+      const stats = querySnapshot.docs.map((snapshot) =>
+        parseDocument(monthlyStatsSchema, snapshot.data(), snapshot.ref.path),
+      );
       cb(stats);
     },
   );
@@ -197,12 +216,9 @@ export const getMonthlyMembersContributions = (
     contributionsQuery,
     { includeMetadataChanges: true },
     (querySnapshot) => {
-      const contributions = querySnapshot.docs.map((doc) => {
-        return {
-          contribution_id: doc.id,
-          ...doc.data(),
-        } as Contribution;
-      });
+      const contributions = querySnapshot.docs.map((snapshot) =>
+        parseContributionDocument(snapshot.id, snapshot.data()),
+      );
       cb(contributions);
     },
   );
@@ -223,12 +239,9 @@ export const getMemberContributions = (
     memberContributionQuery,
     { includeMetadataChanges: true },
     (querySnapshot) => {
-      const contributions = querySnapshot.docs.map((doc) => {
-        return {
-          contribution_id: doc.id,
-          ...doc.data(),
-        } as Contribution;
-      });
+      const contributions = querySnapshot.docs.map((snapshot) =>
+        parseContributionDocument(snapshot.id, snapshot.data()),
+      );
       cb(contributions);
     },
   );
@@ -249,7 +262,9 @@ export const getMemberPayments = (
     memberPaymentsQuery,
     { includeMetadataChanges: true },
     (querySnapshot) => {
-      const payments = querySnapshot.docs.map((doc) => doc.data() as Payment);
+      const payments = querySnapshot.docs.map((snapshot) =>
+        parsePaymentDocument(snapshot.id, snapshot.data()),
+      );
       cb(payments);
     },
   );
@@ -279,7 +294,7 @@ export const addPayment = async ({
     payment_id: paymentId,
     contribution_amount: contributionAmount,
   };
-  batch.set(paymentRef, newPayment);
+  batch.set(paymentRef, paymentSchema.parse(newPayment));
 
   // update payments field in the contribution
   const contributionRef = doc(
@@ -389,9 +404,9 @@ export const getRecentPayments = (cb: (data: Payment[]) => void) => {
     q,
     { includeMetadataChanges: true },
     (querySnapshot) => {
-      const payments = querySnapshot.docs.map((doc) => {
-        return doc.data() as Payment;
-      });
+      const payments = querySnapshot.docs.map((snapshot) =>
+        parsePaymentDocument(snapshot.id, snapshot.data()),
+      );
       cb(payments);
     },
   );
@@ -399,10 +414,10 @@ export const getRecentPayments = (cb: (data: Payment[]) => void) => {
 };
 
 export const getAllContributions = (cb: (data: Contribution[]) => void, onError?: (error: Error) => void) =>
-  onSnapshot(query(collectionGroup(db, 'contributions'), orderBy('month', 'desc')), (snapshot) => cb(snapshot.docs.map((item) => ({ contribution_id: item.id, ...item.data() }) as Contribution)), onError);
+  onSnapshot(query(collectionGroup(db, 'contributions'), orderBy('month', 'desc')), (snapshot) => cb(snapshot.docs.map((item) => parseContributionDocument(item.id, item.data()))), onError);
 
 export const getAllPayments = (cb: (data: Payment[]) => void, onError?: (error: Error) => void) =>
-  onSnapshot(query(collectionGroup(db, 'payments'), orderBy('paymentdate', 'desc')), (snapshot) => cb(snapshot.docs.map((item) => item.data() as Payment)), onError);
+  onSnapshot(query(collectionGroup(db, 'payments'), orderBy('paymentdate', 'desc')), (snapshot) => cb(snapshot.docs.map((item) => parsePaymentDocument(item.id, item.data()))), onError);
 
 export const addContribution = async ({
   uid,
@@ -459,7 +474,7 @@ export const addContribution = async ({
       payment_type: PaymentTypeEnum.Enum.contribution,
       action_by: uid,
     };
-    payment = memberPayment;
+    payment = paymentSchema.parse(memberPayment);
     batch.set(paymentRef, payment, { merge: true });
   }
 
@@ -473,14 +488,12 @@ export const addContribution = async ({
         : contributionBalance === MONTHLY_CONTRIBUTION
           ? PAYMENT_STATUS.UNPAID
           : PAYMENT_STATUS.PARTIAL,
-    ...(payment?.payment_id && {
-      payments: arrayUnion(payment),
-    }),
+    payments: payment ? [payment] : [],
     createdat: serverTimestamp(),
     month,
     action_by: uid,
   };
-  batch.set(memberContributionRef, contribution, {
+  batch.set(memberContributionRef, contributionSchema.parse(contribution), {
     merge: true,
   });
 
@@ -609,7 +622,7 @@ export const updateMemberBalance = ({
     action_by: uid,
     created_at: serverTimestamp(),
   };
-  batch.set(paymentRef, payment, { merge: true });
+  batch.set(paymentRef, paymentSchema.parse(payment), { merge: true });
 
   return batch.commit();
 };

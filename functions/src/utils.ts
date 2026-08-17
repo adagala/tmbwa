@@ -1,7 +1,5 @@
 import * as admin from 'firebase-admin';
 import { randomBytes } from 'node:crypto';
-export const MONTHLY_CONTRIBUTION = 500;
-
 export const createBootstrapPassword = () => randomBytes(32).toString('base64url');
 
 export const getCurrentMonth = () => {

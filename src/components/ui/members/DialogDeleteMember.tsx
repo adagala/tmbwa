@@ -12,7 +12,7 @@ import {
 } from '@/components/Dialog';
 import { useToast } from '@/hooks/useToast';
 import { deleteMember } from '@/lib/firebase/firestore';
-import { Member } from '@/schemas/member';
+import { Member } from 'tmbwa-shared/firebase';
 import { useNavigate } from 'react-router-dom';
 
 export const DialogDeleteMember = ({ member }: { member: Member }) => {

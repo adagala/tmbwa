@@ -1,6 +1,22 @@
 {
   "indexes": [
     {
+      "collectionGroup": "members",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "role", "order": "ASCENDING" },
+        { "fieldPath": "firstname", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "contributions",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "month", "order": "ASCENDING" },
+        { "fieldPath": "firstname", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "kcb_payment_notifications",
       "queryScope": "COLLECTION",
       "fields": [
@@ -22,7 +38,8 @@
       "collectionGroup": "contributions",
       "fieldPath": "month",
       "indexes": [
-        { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }
+        { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" },
+        { "order": "DESCENDING", "queryScope": "COLLECTION_GROUP" }
       ]
     },
     {
@@ -30,6 +47,13 @@
       "fieldPath": "balance",
       "indexes": [
         { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }
+      ]
+    },
+    {
+      "collectionGroup": "payments",
+      "fieldPath": "paymentdate",
+      "indexes": [
+        { "order": "DESCENDING", "queryScope": "COLLECTION_GROUP" }
       ]
     }
   ]

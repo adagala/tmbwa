@@ -9,7 +9,7 @@
     "functions"
   ],
   "engines": {
-    "node": "22.x"
+    "node": "22"
   },
   "scripts": {
     "dev": "npm run build:shared && vite",
@@ -17,7 +17,7 @@
     "build": "npm run build:shared && tsc -b && vite build",
     "lint": "eslint src --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "test:rules": "firebase emulators:exec --config firebase.rules-test.json --only firestore --project demo-tmbwa \"vitest run tests/firestore.rules.test.ts\"",
-    "test:unit": "vitest run tests/financial.domain.test.ts tests/kcb.domain.test.ts tests/notifications.domain.test.ts",
+    "test:unit": "vitest run tests/financial.domain.test.ts tests/firestore.schemas.test.ts tests/kcb.domain.test.ts tests/notifications.domain.test.ts",
     "test": "npm run test:unit && npm run test:rules",
     "preview": "vite preview",
     "deploy": "tsc -b && vite build && firebase deploy --only hosting"

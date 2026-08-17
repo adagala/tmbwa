@@ -2,9 +2,8 @@ import React from 'react';
 import {
   Payment,
   Member,
-  PaymentTypeEnum,
-  FirebaseTimestamp,
-} from '@/schemas/member';
+} from 'tmbwa-shared/firebase';
+import { FirebaseTimestamp, PaymentTypeEnum } from 'tmbwa-shared';
 import { RiWalletLine } from '@remixicon/react';
 import { List, ListItem } from '@tremor/react';
 import { Badge } from '@/components/Badge';

@@ -6,7 +6,7 @@ import { RiLoginCircleLine } from '@remixicon/react';
 import { Card } from '@/components/Card';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { UserSchema, userSchema } from '@/schemas/user';
+import { UserSchema, userSchema } from 'tmbwa-shared';
 import { toast } from '@/hooks/useToast';
 import { InputErrorMessage } from '@/components/ui/InputErrorMessage';
 import { signInWithEmailAndPassword } from '@/lib/firebase/auth';

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { RiDownloadLine, RiFileTextLine } from '@remixicon/react';
 import { Card } from '@/components/Card';
-import { Contribution, Member, Payment } from '@/schemas/member';
+import { Contribution, Member, Payment } from 'tmbwa-shared/firebase';
 import { getAllContributions, getAllPayments, getMembers } from '@/lib/firebase/firestore';
 import { contributionCsv, downloadCsv, filterContributions, filterPayments, kenyaMoney, monthLabel, ReportFilters, summarize } from '@/lib/financialReporting';
 

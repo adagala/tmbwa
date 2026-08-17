@@ -1,10 +1,15 @@
 import * as admin from 'firebase-admin';
-import { GENDER, Member, MonthlyStats, ROLE, Stats, STATUS } from '../../types';
+import { Member, MonthlyStats, Stats } from '../../types';
+import {
+  GENDER,
+  MEMBER_ROLE,
+  MEMBER_STATUS,
+  MONTHLY_CONTRIBUTION,
+} from 'tmbwa-shared';
 import {
   createIndex,
   createBootstrapPassword,
   getCurrentMonth,
-  MONTHLY_CONTRIBUTION,
 } from '../../utils';
 
 admin.initializeApp({ credential: admin.credential.applicationDefault() });
@@ -23,8 +28,8 @@ const member: Member = {
   lastnameSearchableIndex: createIndex(lastname),
   membernumber: '00000/00',
   phonenumber: '+254720123456',
-  role: ROLE.ADMINISTRATOR,
-  status: STATUS.ACTIVE,
+  role: MEMBER_ROLE.ADMINISTRATOR,
+  status: MEMBER_STATUS.ACTIVE,
   isFeesPaid: false,
   win: '0',
 };

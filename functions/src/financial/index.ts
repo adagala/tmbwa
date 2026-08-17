@@ -1,18 +1,24 @@
 import * as admin from 'firebase-admin';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
-import { PAYMENT_STATUS } from '../types';
-import { MONTHLY_CONTRIBUTION } from '../utils';
+import {
+  MONTHLY_CONTRIBUTION,
+  PAYMENT_STATUS,
+  auditEventDocumentSchema,
+  contributionDocumentSchema,
+  notificationEventDocumentSchema,
+  paymentDocumentSchema,
+} from 'tmbwa-shared';
 import { applyBalanceAdjustment, applyPayment, reversePayment } from './domain';
+import {
+  contributionData,
+  memberData,
+  paymentData,
+  validateDocumentWrite,
+} from '../firestoreData';
 
 type CommandData = Record<string, unknown>;
 
 const db = () => admin.firestore();
-
-const documentData = (snapshot: FirebaseFirestore.DocumentSnapshot, label: string) => {
-  const data = snapshot.data();
-  if (!data) throw new HttpsError('not-found', `${label} not found.`);
-  return data;
-};
 
 const requireAdministrator = (auth: { uid: string; token: Record<string, unknown> } | undefined) => {
   if (!auth) throw new HttpsError('unauthenticated', 'Sign in is required.');
@@ -49,7 +55,8 @@ const writeAuditEvent = (
   targetId: string,
   changes: Record<string, unknown>,
 ) => {
-  transaction.create(db().doc(`audit_events/${requestId}`), {
+  const path = `audit_events/${requestId}`;
+  transaction.create(db().doc(path), validateDocumentWrite(auditEventDocumentSchema, {
     requestId,
     actorId,
     action,
@@ -57,7 +64,7 @@ const writeAuditEvent = (
     targetId,
     changes,
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
-  });
+  }, path));
 };
 
 const readCommand = async (
@@ -106,8 +113,8 @@ export const recordContributionPayment = onCall(async (request) => {
     if (!memberSnapshot.exists || !contributionSnapshot.exists) {
       throw new HttpsError('not-found', 'Member or contribution not found.');
     }
-    const member = documentData(memberSnapshot, 'Member');
-    const contribution = documentData(contributionSnapshot, 'Contribution');
+    const member = memberData(memberSnapshot);
+    const contribution = contributionData(contributionSnapshot);
     const outstanding = Number(contribution.balance ?? 0);
     if (outstanding <= 0) throw new HttpsError('failed-precondition', 'Contribution is already paid.');
 
@@ -133,7 +140,10 @@ export const recordContributionPayment = onCall(async (request) => {
       receipt_number: receiptNumber,
     };
     writeCommand(transaction, command.ref, 'recordContributionPayment', actorId);
-    transaction.create(db().doc(`members/${memberId}/payments/${paymentId}`), payment);
+    transaction.create(
+      db().doc(`members/${memberId}/payments/${paymentId}`),
+      validateDocumentWrite(paymentDocumentSchema, payment, `members/${memberId}/payments/${paymentId}`),
+    );
     transaction.update(contributionRef, {
       payments: admin.firestore.FieldValue.arrayUnion(payment),
       balance: paymentResult.remainingBalance,
@@ -172,13 +182,13 @@ export const reverseContributionPayment = onCall(async (request) => {
     const paymentRef = db().doc(`members/${memberId}/payments/${paymentId}`);
     const paymentSnapshot = await transaction.get(paymentRef);
     if (!paymentSnapshot.exists) throw new HttpsError('not-found', 'Payment not found.');
-    const payment = documentData(paymentSnapshot, 'Payment');
+    const payment = paymentData(paymentSnapshot);
     const contributionId = String(payment.contribution_id || '');
     if (!contributionId) throw new HttpsError('failed-precondition', 'Payment is not a contribution payment.');
     const contributionRef = db().doc(`members/${memberId}/contributions/${contributionId}`);
     const contributionSnapshot = await transaction.get(contributionRef);
     if (!contributionSnapshot.exists) throw new HttpsError('not-found', 'Contribution not found.');
-    const contribution = documentData(contributionSnapshot, 'Contribution');
+    const contribution = contributionData(contributionSnapshot);
     const reversal = reversePayment(
       Number(contribution.balance ?? 0),
       Number(payment.contribution_amount ?? 0),
@@ -204,12 +214,13 @@ export const reverseContributionPayment = onCall(async (request) => {
       contributionAmount: Number(payment.contribution_amount),
       contributionId,
     });
-    transaction.create(db().doc(`notification_events/payment-reversed-${paymentId}`), {
+    const notificationPath = `notification_events/payment-reversed-${paymentId}`;
+    transaction.create(db().doc(notificationPath), validateDocumentWrite(notificationEventDocumentSchema, {
       type: 'payment.reversed', memberId, paymentId,
       receiptNumber: payment.receipt_number ?? payment.referencenumber,
       amount: Number(payment.amount), contributionId,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
+    }, notificationPath));
     return { requestId, duplicate: false };
   });
 });
@@ -237,7 +248,7 @@ export const createContribution = onCall(async (request) => {
     ]);
     if (!memberSnapshot.exists) throw new HttpsError('not-found', 'Member not found.');
     if (contributionSnapshot.exists) throw new HttpsError('already-exists', 'Contribution already exists.');
-    const member = documentData(memberSnapshot, 'Member');
+    const member = memberData(memberSnapshot);
     if (member.status !== 'active') throw new HttpsError('failed-precondition', 'Only active members can receive new contributions.');
     const balance = Number(member.balance ?? 0);
     const applied = Math.min(Math.max(balance, 0), MONTHLY_CONTRIBUTION);
@@ -261,11 +272,16 @@ export const createContribution = onCall(async (request) => {
         request_id: requestId,
         receipt_number: `TMBWA-${paymentId.toUpperCase()}`,
       };
-      payments.push(payment);
-      transaction.create(db().doc(`members/${memberId}/payments/${paymentId}`), payment);
+      const validatedPayment = validateDocumentWrite(
+        paymentDocumentSchema,
+        payment,
+        `members/${memberId}/payments/${paymentId}`,
+      );
+      payments.push(validatedPayment);
+      transaction.create(db().doc(`members/${memberId}/payments/${paymentId}`), validatedPayment);
     }
     writeCommand(transaction, command.ref, 'createContribution', actorId);
-    transaction.create(contributionRef, {
+    transaction.create(contributionRef, validateDocumentWrite(contributionDocumentSchema, {
       ...member,
       member_id: memberId,
       amount: MONTHLY_CONTRIBUTION,
@@ -276,7 +292,8 @@ export const createContribution = onCall(async (request) => {
       month,
       action_by: actorId,
       request_id: requestId,
-    });
+      contribution_id: month,
+    }, contributionRef.path));
     transaction.update(memberRef, {
       balance: admin.firestore.FieldValue.increment(-MONTHLY_CONTRIBUTION),
       contributionBalance: admin.firestore.FieldValue.increment(applied),
@@ -292,11 +309,12 @@ export const createContribution = onCall(async (request) => {
       appliedFromBalance: applied,
     });
     if (MONTHLY_CONTRIBUTION - applied > 0) {
-      transaction.create(db().doc(`notification_events/contribution-created-${requestId}`), {
+      const notificationPath = `notification_events/contribution-created-${requestId}`;
+      transaction.create(db().doc(notificationPath), validateDocumentWrite(notificationEventDocumentSchema, {
         type: 'contribution.created', memberId, contributionId: month,
         amount: MONTHLY_CONTRIBUTION, balance: MONTHLY_CONTRIBUTION - applied,
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      });
+      }, notificationPath));
     }
     return { requestId, duplicate: false };
   });
@@ -320,7 +338,7 @@ export const adjustMemberBalance = onCall(async (request) => {
     const memberRef = db().doc(`members/${memberId}`);
     const memberSnapshot = await transaction.get(memberRef);
     if (!memberSnapshot.exists) throw new HttpsError('not-found', 'Member not found.');
-    const member = documentData(memberSnapshot, 'Member');
+    const member = memberData(memberSnapshot);
     let nextBalance: number;
     try {
       nextBalance = applyBalanceAdjustment(Number(member.balance ?? 0), amount, type);
@@ -330,7 +348,8 @@ export const adjustMemberBalance = onCall(async (request) => {
     const paymentId = db().collection(`members/${memberId}/payments`).doc().id;
     writeCommand(transaction, command.ref, 'adjustMemberBalance', actorId);
     transaction.update(memberRef, { balance: nextBalance });
-    transaction.create(db().doc(`members/${memberId}/payments/${paymentId}`), {
+    const paymentPath = `members/${memberId}/payments/${paymentId}`;
+    transaction.create(db().doc(paymentPath), validateDocumentWrite(paymentDocumentSchema, {
       payment_id: paymentId,
       referencenumber: type === 'top_up' ? 'ACCOUNT BALANCE TOP UP' : 'ACCOUNT BALANCE DEDUCTION',
       amount,
@@ -346,7 +365,7 @@ export const adjustMemberBalance = onCall(async (request) => {
       action_by: actorId,
       request_id: requestId,
       receipt_number: `TMBWA-${paymentId.toUpperCase()}`,
-    });
+    }, paymentPath));
     writeAuditEvent(transaction, requestId, actorId, 'balance.adjusted', memberId, paymentId, {
       amount,
       direction: type,
@@ -371,7 +390,7 @@ export const removeContribution = onCall(async (request) => {
     const contributionRef = db().doc(`members/${memberId}/contributions/${contributionId}`);
     const contributionSnapshot = await transaction.get(contributionRef);
     if (!contributionSnapshot.exists) throw new HttpsError('not-found', 'Contribution not found.');
-    const contribution = documentData(contributionSnapshot, 'Contribution');
+    const contribution = contributionData(contributionSnapshot);
     const payments = Array.isArray(contribution.payments) ? contribution.payments : [];
     for (const payment of payments) {
       if (payment && typeof payment.payment_id === 'string') {
@@ -421,7 +440,7 @@ export const transitionMemberStatus = onCall(async (request) => {
     const memberRef = db().doc(`members/${memberId}`);
     const snapshot = await transaction.get(memberRef);
     if (!snapshot.exists) throw new HttpsError('not-found', 'Member not found.');
-    const previousStatus = String(snapshot.data()?.status || 'active');
+    const previousStatus = memberData(snapshot).status;
     if (command.exists || previousStatus === status) {
       return { requestId, status: previousStatus, duplicate: true };
     }
