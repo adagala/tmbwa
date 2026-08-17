@@ -19,7 +19,7 @@
     "build": "tsc"
   },
   "engines": {
-    "node": "22.x"
+    "node": "22"
   },
   "dependencies": {
     "firebase": "^10.12.3",

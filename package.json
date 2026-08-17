@@ -9,7 +9,7 @@
     "functions"
   ],
   "engines": {
-    "node": "22.x"
+    "node": "22"
   },
   "scripts": {
     "dev": "npm run build:shared && vite",
