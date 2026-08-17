@@ -5,7 +5,13 @@ import { Card } from '@/components/Card';
 import { Button } from '@/components/Button';
 import useUser from '@/hooks/useUser';
 import { db } from '@/lib/firebase/clientApp';
-import { KcbPaymentNotification, reconcileKcbPayment, rejectKcbPayment, subscribeToUnresolvedKcbPayments } from '@/lib/firebase/kcb';
+import {
+  KcbPaymentNotification,
+  reconcileKcbPayment,
+  rejectKcbPayment,
+  sendKcbDevTillNotification,
+  subscribeToUnresolvedKcbPayments,
+} from '@/lib/firebase/kcb';
 import {
   Member,
   parseContributionDocument,
@@ -23,6 +29,8 @@ export default function KcbReconciliationPage() {
   const [contributions, setContributions] = useState<Record<string, ContributionOption[]>>({});
   const [busy, setBusy] = useState<string>();
   const [error, setError] = useState<string>();
+  const [testAmount, setTestAmount] = useState(100);
+  const [testResult, setTestResult] = useState<string>();
 
   useEffect(() => {
     if (role !== 'administrator') return;
@@ -92,12 +100,63 @@ export default function KcbReconciliationPage() {
     finally { setBusy(undefined); }
   };
 
+  const sendDevelopmentTest = async () => {
+    setBusy('dev-simulator');
+    setError(undefined);
+    setTestResult(undefined);
+    try {
+      const result = await sendKcbDevTillNotification(testAmount);
+      const data = result.data as { providerTransactionId?: string };
+      setTestResult(
+        `Synthetic payment ${data.providerTransactionId ?? ''} was accepted for reconciliation.`,
+      );
+    } catch (cause) {
+      setError(
+        cause instanceof Error ?
+          cause.message :
+          'Could not send the development test payment.',
+      );
+    } finally {
+      setBusy(undefined);
+    }
+  };
+
   if (role && role !== 'administrator') return <Navigate to="/profile" replace />;
 
   return <div className="flex flex-col gap-6">
     <div><h1 className="mt-6 text-xl font-bold text-guardsman-red-600">KCB payment reconciliation</h1>
       <p className="mt-1 text-sm text-gray-600">Review signed Paybill notifications before they change a member balance.</p></div>
     {error ? <p role="alert" className="rounded-md bg-red-50 p-3 text-sm text-red-700">{error}</p> : null}
+    <Card className="space-y-3 border-amber-300 bg-amber-50">
+      <div>
+        <h2 className="font-semibold text-amber-900">Development test payment</h2>
+        <p className="text-sm text-amber-800">
+          Sends a signed synthetic payment through the deployed callback. It is disabled outside development.
+        </p>
+      </div>
+      <div className="flex flex-wrap items-end gap-3">
+        <label className="text-sm font-medium text-amber-950">
+          Test amount (KES)
+          <input
+            type="number"
+            min="1"
+            max="10000"
+            step="1"
+            value={testAmount}
+            onChange={(event) => setTestAmount(Number(event.target.value))}
+            className="mt-1 block w-40 rounded-md border border-amber-400 bg-white px-3 py-2"
+          />
+        </label>
+        <Button
+          variant="secondary"
+          isLoading={busy === 'dev-simulator'}
+          onClick={() => void sendDevelopmentTest()}
+        >
+          Send signed test payment
+        </Button>
+      </div>
+      {testResult ? <p role="status" className="text-sm font-medium text-green-700">{testResult}</p> : null}
+    </Card>
     <div className="space-y-4">
       {payments.map((payment) => {
         const memberId = selectedMembers[payment.providerTransactionId] ?? '';
