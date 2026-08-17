@@ -24,13 +24,18 @@ import {
   parseKcbTransactionDate,
   parseStkCallback,
   parseTillNotification,
+  permitsUnsignedSandboxNotification,
   secureTokenMatches,
   verifyKcbSignature,
 } from './domain';
 
 type Data = Record<string, unknown>;
 
-const KCB_PUBLIC_KEY = defineSecret('KCB_PUBLIC_KEY');
+const KCB_PUBLIC_KEY = defineString('KCB_PUBLIC_KEY', { default: '' });
+const APP_ENV = defineString('APP_ENV', { default: 'production' });
+const KCB_DEV_MOCK_ENABLED = defineString('KCB_DEV_MOCK_ENABLED', {
+  default: 'false',
+});
 const KCB_SHARED_REFERENCE = defineString('KCB_SHARED_REFERENCE', {
   default: '7969138',
 });
@@ -77,7 +82,6 @@ const requiredString = (data: Data, key: string) => {
 };
 
 export const kcbTillNotification = onRequest(
-  { secrets: [KCB_PUBLIC_KEY] },
   async (request, response) => {
     if (request.method !== 'POST') {
       response
@@ -90,10 +94,13 @@ export const kcbTillNotification = onRequest(
     let messageId: string = transactionId;
     let conversationId: string | undefined;
     try {
+      const permitsUnsigned = permitsUnsignedSandboxNotification(
+        APP_ENV.value(), KCB_DEV_MOCK_ENABLED.value(),
+      );
       const signature = request.get('signature') || '';
-      if (
-        !verifyKcbSignature(request.rawBody, signature, KCB_PUBLIC_KEY.value())
-      ) {
+      if (!permitsUnsigned && !verifyKcbSignature(
+        request.rawBody, signature, KCB_PUBLIC_KEY.value(),
+      )) {
         logger.warn('Rejected KCB notification with an invalid signature.');
         response
           .status(401)

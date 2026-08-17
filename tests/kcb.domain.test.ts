@@ -2,8 +2,14 @@ import { generateKeyPairSync, createSign } from 'crypto';
 import { describe, expect, it } from 'vitest';
 import {
   acknowledgement, normalizeKenyanPhone, parseKcbTransactionDate, parseStkCallback,
-  parseTillNotification, secureTokenMatches, verifyKcbSignature,
+  parseTillNotification, permitsUnsignedSandboxNotification,
+  secureTokenMatches, verifyKcbSignature,
 } from '../functions/src/kcb/domain';
+import {
+  buildSyntheticTillPayload,
+  devProviderTransactionId,
+  validateDevSimulatorConfig,
+} from '../functions-dev/src/devSimulator';
 
 const payload = {
   header: { messageID: 'message-1', originatorConversationID: 'conversation-1', channelCode: '202' },
@@ -45,6 +51,13 @@ describe('KCB Till notification contract', () => {
     expect(verifyKcbSignature(Buffer.from(`${raw.toString()} `), signature, publicKey.export({ type: 'spki', format: 'pem' }).toString())).toBe(false);
   });
 
+  it('permits unsigned notifications only in explicitly enabled development', () => {
+    expect(permitsUnsignedSandboxNotification('development', 'true')).toBe(true);
+    expect(permitsUnsignedSandboxNotification('development', 'false')).toBe(false);
+    expect(permitsUnsignedSandboxNotification('production', 'true')).toBe(false);
+    expect(permitsUnsignedSandboxNotification('uat', 'true')).toBe(false);
+  });
+
   it('returns the documented acknowledgement shape', () => {
     expect(acknowledgement('m1', 'c1', 'ours-1', true, 'received')).toEqual({
       header: { messageID: 'm1', originatorConversationID: 'c1', statusCode: '0', statusMessage: 'received' },
@@ -77,4 +90,67 @@ describe('KCB Till notification contract', () => {
     expect(parseKcbTransactionDate('20260813121212').toISOString()).toBe('2026-08-13T09:12:12.000Z');
     expect(() => parseKcbTransactionDate('not-a-date')).toThrow();
   });
+});
+
+describe('deployed development KCB simulator', () => {
+  it('fails closed unless development is explicitly enabled', () => {
+    const valid = {
+      appEnvironment: 'development',
+      enabled: 'true',
+      callbackUrl: 'https://dev.example.test/kcbTillNotification',
+      allowedOrigin: 'https://dev.example.test',
+    };
+    expect(validateDevSimulatorConfig(valid)).toBe(valid.callbackUrl);
+    expect(() => validateDevSimulatorConfig({
+      ...valid,
+      appEnvironment: 'production',
+    })).toThrow();
+    expect(() => validateDevSimulatorConfig({
+      ...valid,
+      enabled: 'false',
+    })).toThrow();
+    expect(() => validateDevSimulatorConfig({
+      ...valid,
+      callbackUrl: 'https://evil.example/kcbTillNotification',
+    })).toThrow();
+    expect(() => validateDevSimulatorConfig({
+      ...valid,
+      callbackUrl: 'http://dev.example.test/kcbTillNotification',
+    })).toThrow();
+  });
+
+  it('creates deterministic, synthetic-only Till payloads', () => {
+    const now = new Date('2026-08-17T12:00:00Z');
+    const first = buildSyntheticTillPayload(
+      'request_12345678', 250, '7969138', now,
+    );
+    const second = buildSyntheticTillPayload(
+      'request_12345678', 250, '7969138', now,
+    );
+    expect(first.providerTransactionId).toBe(
+      devProviderTransactionId('request_12345678'),
+    );
+    expect(second.providerTransactionId).toBe(first.providerTransactionId);
+    expect(
+      first.payload.requestPayload.additionalData.notificationData,
+    ).toMatchObject({
+      debitMSISDN: '254700000001',
+      firstName: 'TMBWA',
+      lastName: 'TEST',
+      transactionAmt: '250',
+      businessKey: '7969138',
+    });
+    expect(parseTillNotification(first.payload)).toMatchObject({
+      providerTransactionId: first.providerTransactionId,
+      billReference: '7969138',
+      payerPhone: '+254700000001',
+      payerName: 'TMBWA DEV TEST',
+      amount: 250,
+      currency: 'KES',
+    });
+    expect(() => buildSyntheticTillPayload(
+      'request_12345678', 0, '7969138',
+    )).toThrow();
+  });
+
 });
