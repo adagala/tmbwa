@@ -27,8 +27,8 @@ export const reconcileKcbPayment = (data: { providerTransactionId: string; membe
 export const rejectKcbPayment = (providerTransactionId: string, reason: string) =>
   httpsCallable(functions, 'rejectKcbPayment')({ requestId: crypto.randomUUID(), providerTransactionId, reason });
 
-export const sendKcbDevTillNotification = (amount: number) =>
+export const sendKcbDevTillNotification = (amount: number, requestId: string) =>
   httpsCallable(functions, 'sendKcbDevTillNotification')({
-    requestId: crypto.randomUUID(),
+    requestId,
     amount,
   });

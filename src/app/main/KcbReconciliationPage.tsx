@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { collection, getDocs, orderBy, query } from 'firebase/firestore';
 import { Navigate } from 'react-router-dom';
 import { Card } from '@/components/Card';
@@ -35,6 +35,7 @@ export default function KcbReconciliationPage() {
   const [error, setError] = useState<string>();
   const [testAmount, setTestAmount] = useState(100);
   const [testResult, setTestResult] = useState<string>();
+  const pendingTestRequestId = useRef<string>();
 
   useEffect(() => {
     if (role !== 'administrator') return;
@@ -105,12 +106,15 @@ export default function KcbReconciliationPage() {
   };
 
   const sendDevelopmentTest = async () => {
+    const requestId = pendingTestRequestId.current ?? crypto.randomUUID();
+    pendingTestRequestId.current = requestId;
     setBusy('dev-simulator');
     setError(undefined);
     setTestResult(undefined);
     try {
-      const result = await sendKcbDevTillNotification(testAmount);
+      const result = await sendKcbDevTillNotification(testAmount, requestId);
       const data = result.data as { providerTransactionId?: string };
+      pendingTestRequestId.current = undefined;
       setTestResult(
         `Synthetic payment ${data.providerTransactionId ?? ''} was accepted for reconciliation.`,
       );
@@ -147,7 +151,10 @@ export default function KcbReconciliationPage() {
             max="10000"
             step="1"
             value={testAmount}
-            onChange={(event) => setTestAmount(Number(event.target.value))}
+            onChange={(event) => {
+              pendingTestRequestId.current = undefined;
+              setTestAmount(Number(event.target.value));
+            }}
             className="mt-1 block w-40 rounded-md border border-amber-400 bg-white px-3 py-2"
           />
         </label>
