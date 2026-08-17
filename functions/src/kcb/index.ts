@@ -457,7 +457,8 @@ export const sendKcbDevTillNotification = onCall(
     } catch (error) {
       throw new HttpsError('invalid-argument', (error as Error).message);
     }
-    const rawBody = Buffer.from(JSON.stringify(synthetic.payload));
+    const rawBodyText = JSON.stringify(synthetic.payload);
+    const rawBody = Buffer.from(rawBodyText, 'utf8');
     let signature: string;
     try {
       signature = signSyntheticPayload(rawBody, KCB_DEV_PRIVATE_KEY.value());
@@ -470,7 +471,7 @@ export const sendKcbDevTillNotification = onCall(
     const response = await fetch(callbackUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Signature: signature },
-      body: rawBody,
+      body: rawBodyText,
     });
     const responseBody = (await response.json()) as {
       header?: { statusCode?: unknown };
