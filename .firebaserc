@@ -1,6 +1,7 @@
 {
   "projects": {
-    "prod": "the-midbar-welfare"
+    "prod": "the-midbar-welfare",
+    "dev": "the-midbar-welfare-dev"
   },
   "targets": {},
   "etags": {},
