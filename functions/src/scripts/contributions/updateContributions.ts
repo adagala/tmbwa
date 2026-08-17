@@ -1,6 +1,7 @@
 import * as admin from 'firebase-admin';
 import { MemberContribution, MemberWithId } from '../../types';
 import { PAYMENT_STATUS } from 'tmbwa-shared';
+import { memberWithIdData } from '../../firestoreData';
 
 admin.initializeApp({ credential: admin.credential.applicationDefault() });
 
@@ -10,13 +11,7 @@ const updateContributions = async () => {
 
   const membersRef = admin.firestore().collection('members');
   const membersSnapshot = await membersRef.get();
-  const members = membersSnapshot.docs.map((member) => {
-    const _member = {
-      ...member.data(),
-      member_id: member.id,
-    } as MemberWithId;
-    return _member;
-  });
+  const members = membersSnapshot.docs.map(memberWithIdData) as MemberWithId[];
 
   const bacth = admin.firestore().batch();
 

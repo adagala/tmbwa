@@ -3,8 +3,21 @@ import { randomUUID } from 'crypto';
 import { defineSecret, defineString } from 'firebase-functions/params';
 import { HttpsError, onCall, onRequest } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions';
-import { PAYMENT_STATUS } from 'tmbwa-shared';
+import {
+  PAYMENT_STATUS,
+  auditEventDocumentSchema,
+  kcbPaymentNotificationDocumentSchema,
+  notificationEventDocumentSchema,
+  paymentDocumentSchema,
+} from 'tmbwa-shared';
 import { applyPayment } from '../financial/domain';
+import {
+  contributionData,
+  kcbPaymentNotificationData,
+  kcbStkRequestData,
+  memberData,
+  validateDocumentWrite,
+} from '../firestoreData';
 import {
   acknowledgement, normalizeKenyanPhone, parseKcbTransactionDate, parseStkCallback,
   parseTillNotification, secureTokenMatches, verifyKcbSignature,
@@ -24,12 +37,6 @@ const orgShortCode = defineString('KCB_ORG_SHORTCODE', { default: '522533' });
 const routeCode = defineString('KCB_STK_ROUTE_CODE', { default: '207' });
 const stkCallbackToken = defineSecret('KCB_STK_CALLBACK_TOKEN');
 const db = () => admin.firestore();
-
-const documentData = (snapshot: FirebaseFirestore.DocumentSnapshot, label: string) => {
-  const data = snapshot.data();
-  if (!data) throw new HttpsError('not-found', `${label} not found.`);
-  return data;
-};
 
 const requireAdministrator = (auth: { uid: string; token: Record<string, unknown> } | undefined) => {
   if (!auth) throw new HttpsError('unauthenticated', 'Sign in is required.');
@@ -72,7 +79,7 @@ export const kcbTillNotification = onRequest({ secrets: [publicKey] }, async (re
         db().collection('members').where('verifiedPhoneNormalized', '==', notification.payerPhone).limit(2),
       );
       const suggestedMemberId = matches.size === 1 ? matches.docs[0].id : null;
-      transaction.create(notificationRef, {
+      transaction.create(notificationRef, validateDocumentWrite(kcbPaymentNotificationDocumentSchema, {
         ...notification,
         status: 'unresolved',
         suggestedMemberId,
@@ -80,7 +87,7 @@ export const kcbTillNotification = onRequest({ secrets: [publicKey] }, async (re
         receivedAt: admin.firestore.FieldValue.serverTimestamp(),
         provider: 'kcb_buni',
         source: 'till_notification',
-      });
+      }, notificationRef.path));
       transaction.create(db().doc(`kcb_notification_messages/${notification.messageId}`), {
         providerTransactionId: notification.providerTransactionId,
         receivedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -112,12 +119,12 @@ export const reconcileKcbPayment = onCall(async (request) => {
     if (command.exists) return { requestId, duplicate: true };
     if (!notificationSnapshot.exists) throw new HttpsError('not-found', 'KCB payment notification not found.');
     if (!memberSnapshot.exists || !contributionSnapshot.exists) throw new HttpsError('not-found', 'Member or contribution not found.');
-    const notification = documentData(notificationSnapshot, 'KCB payment notification');
+    const notification = kcbPaymentNotificationData(notificationSnapshot);
     if (notification.status === 'reconciled') throw new HttpsError('already-exists', 'This provider payment is already reconciled.');
     if (notification.status !== 'unresolved') throw new HttpsError('failed-precondition', 'This notification cannot be reconciled.');
 
-    const member = documentData(memberSnapshot, 'Member');
-    const contribution = documentData(contributionSnapshot, 'Contribution');
+    const member = memberData(memberSnapshot);
+    const contribution = contributionData(contributionSnapshot);
     const result = applyPayment(Number(notification.amount), Number(contribution.balance ?? 0));
     const paymentId = db().collection(`members/${memberId}/payments`).doc().id;
     const receiptNumber = `TMBWA-${paymentId.toUpperCase()}`;
@@ -142,7 +149,10 @@ export const reconcileKcbPayment = onCall(async (request) => {
     };
 
     transaction.create(commandRef, { type: 'reconcileKcbPayment', actorId, createdAt: admin.firestore.FieldValue.serverTimestamp() });
-    transaction.create(db().doc(`members/${memberId}/payments/${paymentId}`), payment);
+    transaction.create(
+      db().doc(`members/${memberId}/payments/${paymentId}`),
+      validateDocumentWrite(paymentDocumentSchema, payment, `members/${memberId}/payments/${paymentId}`),
+    );
     transaction.update(contributionRef, {
       payments: admin.firestore.FieldValue.arrayUnion(payment),
       balance: result.remainingBalance,
@@ -159,15 +169,21 @@ export const reconcileKcbPayment = onCall(async (request) => {
       status: 'reconciled', memberId, contributionId, paymentId, receiptNumber,
       reconciledAt: admin.firestore.FieldValue.serverTimestamp(), reconciledBy: actorId,
     });
-    transaction.create(db().doc(`audit_events/${requestId}`), {
+    transaction.create(db().doc(`audit_events/${requestId}`), validateDocumentWrite(auditEventDocumentSchema, {
       requestId, actorId, action: 'kcb_payment.reconciled', memberId, targetId: paymentId,
       changes: { providerTransactionId, amount: notification.amount, contributionId, receiptNumber },
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
-    transaction.create(db().doc(`notification_events/payment-reconciled-${paymentId}`), {
-      type: 'payment.reconciled', memberId, paymentId, receiptNumber,
-      amount: notification.amount, source: 'kcb_buni', createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
+    }, `audit_events/${requestId}`));
+    const notificationEventPath = `notification_events/payment-reconciled-${paymentId}`;
+    transaction.create(db().doc(notificationEventPath), validateDocumentWrite(
+      notificationEventDocumentSchema,
+      {
+        type: 'payment.reconciled', memberId, paymentId, receiptNumber,
+        amount: notification.amount, source: 'kcb_buni',
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      },
+      notificationEventPath,
+    ));
     return { requestId, paymentId, receiptNumber, duplicate: false };
   });
 });
@@ -184,7 +200,7 @@ export const rejectKcbPayment = onCall(async (request) => {
     const [command, notification] = await Promise.all([transaction.get(commandRef), transaction.get(notificationRef)]);
     if (command.exists) return { requestId, duplicate: true };
     if (!notification.exists) throw new HttpsError('not-found', 'KCB payment notification not found.');
-    if (notification.data()?.status !== 'unresolved') {
+    if (kcbPaymentNotificationData(notification).status !== 'unresolved') {
       throw new HttpsError('failed-precondition', 'Only unresolved notifications can be rejected.');
     }
     transaction.create(commandRef, {
@@ -194,10 +210,10 @@ export const rejectKcbPayment = onCall(async (request) => {
       status: 'rejected', rejectionReason: reason, rejectedBy: actorId,
       rejectedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
-    transaction.create(db().doc(`audit_events/${requestId}`), {
+    transaction.create(db().doc(`audit_events/${requestId}`), validateDocumentWrite(auditEventDocumentSchema, {
       requestId, actorId, action: 'kcb_payment.rejected', memberId: '', targetId: providerTransactionId,
       changes: { reason }, createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
+    }, `audit_events/${requestId}`));
     return { requestId, duplicate: false };
   });
 });
@@ -236,7 +252,7 @@ export const requestKcbStkPush = onCall(
     callbackUrl.searchParams.set('token', stkCallbackToken.value());
     const requestRef = db().doc(`kcb_stk_requests/${requestId}`);
     const existing = await requestRef.get();
-    if (existing.exists) return { requestId, ...existing.data(), duplicate: true };
+    if (existing.exists) return { ...kcbStkRequestData(existing), duplicate: true };
 
     const [member, contribution] = await Promise.all([
       db().doc(`members/${memberId}`).get(), db().doc(`members/${memberId}/contributions/${contributionId}`).get(),
@@ -244,12 +260,13 @@ export const requestKcbStkPush = onCall(
     if (!member.exists || !contribution.exists) {
       throw new HttpsError('not-found', 'Member or contribution not found.');
     }
-    if (amount > Number(contribution.data()?.balance ?? 0)) {
+    const contributionRecord = contributionData(contribution);
+    if (amount > contributionRecord.balance) {
       throw new HttpsError('invalid-argument', 'amount exceeds the contribution balance.');
     }
     let phone: string;
     try {
-      phone = normalizeKenyanPhone(requiredString(member.data() as Data, 'phonenumber'));
+      phone = normalizeKenyanPhone(memberData(member).phonenumber);
     } catch {
       throw new HttpsError('failed-precondition', 'Member must have a valid Kenyan phone number.');
     }
@@ -326,7 +343,7 @@ export const kcbStkCallback = onRequest({ secrets: [stkCallbackToken] }, async (
     const requestRef = matches.docs[0].ref;
     await db().runTransaction(async (transaction) => {
       const snapshot = await transaction.get(requestRef);
-      const pending = documentData(snapshot, 'KCB STK request');
+      const pending = kcbStkRequestData(snapshot);
       if (pending.callbackReceivedAt) return;
       if (callback.merchantRequestId !== pending.merchantRequestId) throw new Error('STK callback correlation mismatch.');
       if (callback.resultCode !== 0) {
@@ -347,14 +364,14 @@ export const kcbStkCallback = onRequest({ secrets: [stkCallbackToken] }, async (
       const notificationRef = db().doc(`kcb_payment_notifications/${callback.receiptNumber}`);
       const existingNotification = await transaction.get(notificationRef);
       if (!existingNotification.exists) {
-        transaction.create(notificationRef, {
+        transaction.create(notificationRef, validateDocumentWrite(kcbPaymentNotificationDocumentSchema, {
           providerTransactionId: callback.receiptNumber, messageId: callback.checkoutRequestId,
           channelCode: 'stk', billReference: pending.invoiceNumber, payerPhone: callback.payerPhone,
           payerName: '', amount: callback.amount, currency: expectedCurrency.value(),
           transactionDate: callback.transactionDate, transactionType: 'MPESA_STK', status: 'unresolved',
           suggestedMemberId: pending.memberId, matchReason: 'authenticated_stk_request', provider: 'kcb_buni', source: 'stk_callback',
           stkRequestId: snapshot.id, receivedAt: admin.firestore.FieldValue.serverTimestamp(),
-        });
+        }, notificationRef.path));
       }
       transaction.update(requestRef, {
         status: 'succeeded_pending_reconciliation', providerTransactionId: callback.receiptNumber,

@@ -1,19 +1,11 @@
 import { useEffect, useState } from 'react';
-import { collection, limit, onSnapshot, orderBy, query, Timestamp } from 'firebase/firestore';
+import { collection, limit, onSnapshot, orderBy, query } from 'firebase/firestore';
 import { db } from '@/lib/firebase/clientApp';
 import { Card } from '@/components/Card';
 import useUser from '@/hooks/useUser';
 import { Navigate } from 'react-router-dom';
-
-type AuditEvent = {
-  requestId: string;
-  actorId: string;
-  action: string;
-  memberId: string;
-  targetId: string;
-  changes: Record<string, unknown>;
-  createdAt?: Timestamp;
-};
+import { AuditEvent, auditEventSchema } from 'tmbwa-shared/firebase';
+import { parseDocument } from 'tmbwa-shared';
 
 export default function AuditPage() {
   const { role } = useUser();
@@ -24,7 +16,9 @@ export default function AuditPage() {
     if (role !== 'administrator') return;
     return onSnapshot(
       query(collection(db, 'audit_events'), orderBy('createdAt', 'desc'), limit(pageSize)),
-      (snapshot) => setEvents(snapshot.docs.map((item) => item.data() as AuditEvent)),
+      (snapshot) => setEvents(snapshot.docs.map((item) =>
+        parseDocument(auditEventSchema, item.data(), item.ref.path),
+      )),
     );
   }, [pageSize, role]);
 

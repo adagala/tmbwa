@@ -1,8 +1,20 @@
 import * as admin from 'firebase-admin';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { MemberWithId } from '../types';
-import { MONTHLY_CONTRIBUTION, PAYMENT_STATUS } from 'tmbwa-shared';
+import {
+  MONTHLY_CONTRIBUTION,
+  PAYMENT_STATUS,
+  contributionRateDocumentSchema,
+  contributionDocumentSchema,
+  parseDocument,
+  paymentDocumentSchema,
+} from 'tmbwa-shared';
 import { arrayToChunks, getCurrentMonth } from '../utils';
+import {
+  contributionData,
+  memberWithIdData,
+  validateDocumentWrite,
+} from '../firestoreData';
 
 const db = () => admin.firestore();
 
@@ -12,7 +24,13 @@ const getContributionAmount = async (month: string) => {
     .orderBy('effectiveFrom', 'desc')
     .limit(1)
     .get();
-  const amount = configuration.empty ? MONTHLY_CONTRIBUTION : Number(configuration.docs[0].data().amount);
+  const amount = configuration.empty
+    ? MONTHLY_CONTRIBUTION
+    : parseDocument(
+      contributionRateDocumentSchema,
+      configuration.docs[0].data(),
+      configuration.docs[0].ref.path,
+    ).amount;
   if (!Number.isFinite(amount) || amount <= 0) throw new Error('Invalid monthly contribution configuration.');
   return amount;
 };
@@ -22,8 +40,9 @@ const createForMember = async (member: MemberWithId, month: string, amount: numb
     const contributionRef = db().doc(`members/${member.member_id}/contributions/${month}`);
     if ((await transaction.get(contributionRef)).exists) return { created: false, applied: 0, payment: false };
     const memberRef = db().doc(`members/${member.member_id}`);
-    const freshMember = (await transaction.get(memberRef)).data() as MemberWithId | undefined;
-    if (!freshMember || freshMember.status !== 'active') return { created: false, applied: 0, payment: false };
+    const freshMemberSnapshot = await transaction.get(memberRef);
+    const freshMember = memberWithIdData(freshMemberSnapshot);
+    if (freshMember.status !== 'active') return { created: false, applied: 0, payment: false };
     const accountBalance = Number(freshMember.balance ?? 0);
     const applied = Math.min(Math.max(accountBalance, 0), amount);
     const remaining = amount - applied;
@@ -47,10 +66,12 @@ const createForMember = async (member: MemberWithId, month: string, amount: numb
         request_id: `monthly:${month}:${member.member_id}`,
         receipt_number: `TMBWA-${paymentId.toUpperCase()}`,
       };
-      payments.push(payment);
-      transaction.create(db().doc(`members/${member.member_id}/payments/${paymentId}`), payment);
+      const paymentPath = `members/${member.member_id}/payments/${paymentId}`;
+      const validatedPayment = validateDocumentWrite(paymentDocumentSchema, payment, paymentPath);
+      payments.push(validatedPayment);
+      transaction.create(db().doc(paymentPath), validatedPayment);
     }
-    transaction.create(contributionRef, {
+    transaction.create(contributionRef, validateDocumentWrite(contributionDocumentSchema, {
       ...freshMember,
       member_id: member.member_id,
       amount,
@@ -60,7 +81,8 @@ const createForMember = async (member: MemberWithId, month: string, amount: numb
       createdat: admin.firestore.FieldValue.serverTimestamp(),
       month,
       action_by: 'system',
-    });
+      contribution_id: month,
+    }, contributionRef.path));
     transaction.update(memberRef, {
       balance: admin.firestore.FieldValue.increment(-amount),
       contributionBalance: admin.firestore.FieldValue.increment(applied),
@@ -71,10 +93,7 @@ const createForMember = async (member: MemberWithId, month: string, amount: numb
 export const generateMonthlyContributions = async (month = getCurrentMonth()) => {
   const amount = await getContributionAmount(month);
   const membersSnapshot = await db().collection('members').where('status', '==', 'active').get();
-  const members = membersSnapshot.docs.map((member) => ({
-    ...member.data(),
-    member_id: member.id,
-  }) as MemberWithId);
+  const members = membersSnapshot.docs.map(memberWithIdData) as MemberWithId[];
   let created = 0;
   for (const chunk of arrayToChunks(members, 50)) {
     const results = await Promise.all(chunk.map((member) => createForMember(member, month, amount)));
@@ -86,10 +105,10 @@ export const generateMonthlyContributions = async (month = getCurrentMonth()) =>
     const contributionsQuery = db().collectionGroup('contributions').where('month', '==', month);
     const contributionsSnapshot = await transaction.get(contributionsQuery);
     const summary = contributionsSnapshot.docs.reduce((current, item) => {
-      const contribution = item.data();
-      current.billed += Number(contribution.amount ?? 0);
-      current.collected += Number(contribution.amount ?? 0) - Number(contribution.balance ?? 0);
-      current.payments += Array.isArray(contribution.payments) ? contribution.payments.length : 0;
+      const contribution = contributionData(item);
+      current.billed += contribution.amount;
+      current.collected += contribution.amount - contribution.balance;
+      current.payments += contribution.payments.length;
       return current;
     }, { billed: 0, collected: 0, payments: 0 });
     transaction.set(db().doc(`monthly_stats/${month}`), {

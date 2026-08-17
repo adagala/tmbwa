@@ -11,16 +11,22 @@ import {
   deleteCollection,
   getCurrentMonth,
 } from '../utils';
-import { MONTHLY_CONTRIBUTION } from 'tmbwa-shared';
+import { MONTHLY_CONTRIBUTION, memberFormBaseSchema, parseDocument } from 'tmbwa-shared';
+import { memberData } from '../firestoreData';
 
 export const newMember = onDocumentCreated(
   'members/{memberId}',
   async (event) => {
-    const uid = event.data?.id;
+    const snapshot = event.data;
+    const uid = snapshot?.id;
 
-    if (!uid) return null;
+    if (!snapshot || !uid) return null;
 
-    const member = event.data?.data() as Member;
+    const member = parseDocument(
+      memberFormBaseSchema,
+      snapshot.data(),
+      snapshot.ref.path,
+    );
     const batch = admin.firestore().batch();
 
     // searcheable index
@@ -111,12 +117,13 @@ export const deleteMember = onDocumentDeleted(
 export const updateMember = onDocumentUpdated(
   'members/{memberId}',
   async (event) => {
-    const uid = event.data?.after.id;
+    const snapshots = event.data;
+    const uid = snapshots?.after.id;
 
-    if (!uid) return null;
+    if (!snapshots || !uid) return null;
 
-    const memberBefore = event.data?.before.data() as Member;
-    const memberAfter = event.data?.after.data() as Member;
+    const memberBefore = memberData(snapshots.before);
+    const memberAfter = memberData(snapshots.after);
 
     console.log(memberBefore.firstname, memberBefore.lastname);
 

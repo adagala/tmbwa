@@ -1,4 +1,4 @@
-import { FieldValue } from 'firebase/firestore';
+import { FieldValue, Timestamp } from 'firebase/firestore';
 import { isMobilePhone } from 'validator';
 import { z } from 'zod';
 
@@ -7,9 +7,15 @@ import {
   MemberBalanceTypeEnum,
   PaymentTypeEnum,
   StatusEnum,
+  auditEventDocumentSchema,
   firebaseTimestampSchema,
+  kcbPaymentNotificationDocumentSchema,
   memberBaseSchema,
   memberFormBaseSchema,
+  memberNotificationDocumentSchema,
+  notificationDeliveryDocumentSchema,
+  notificationPreferenceDocumentSchema,
+  parseDocument,
 } from './index';
 
 const fieldValueSchema = z.custom<FieldValue>(
@@ -35,7 +41,8 @@ export const memberSchema = memberFormSchema.merge(
   z.object({
     member_id: z.string().min(1, 'ID cannot be empty'),
     status: StatusEnum,
-    datejoined: z.date(),
+    datejoined: z.union([z.date(), z.instanceof(Timestamp)]).optional(),
+    createat: z.instanceof(Timestamp).optional(),
     balance: z.number(),
     contributionBalance: z.number(),
   }),
@@ -76,9 +83,36 @@ export const memberContributionSchema = z.object({
   payments: z.array(paymentSchema),
   month: z.string(),
   action_by: z.string(),
+  createdat: z.union([z.date(), z.instanceof(Timestamp), fieldValueSchema]).optional(),
 });
 
 export const contributionSchema = memberSchema.merge(memberContributionSchema);
+
+export const kcbPaymentNotificationSchema = kcbPaymentNotificationDocumentSchema.extend({
+  providerTransactionId: z.string(),
+  receivedAt: z.instanceof(Timestamp).optional(),
+});
+export const memberNotificationSchema = memberNotificationDocumentSchema.extend({
+  id: z.string(),
+  createdAt: z.instanceof(Timestamp).optional(),
+});
+export const notificationDeliverySchema = notificationDeliveryDocumentSchema.extend({
+  id: z.string(),
+  createdAt: z.instanceof(Timestamp).optional(),
+});
+export const notificationPreferenceSchema = notificationPreferenceDocumentSchema.extend({
+  updatedAt: z.union([z.instanceof(Timestamp), fieldValueSchema]).optional(),
+});
+export const auditEventSchema = auditEventDocumentSchema.extend({
+  createdAt: z.instanceof(Timestamp).optional(),
+});
+
+export const parseMemberDocument = (id: string, data: unknown) =>
+  parseDocument(memberSchema, { member_id: id, ...(data as object) }, `members/${id}`);
+export const parseContributionDocument = (id: string, data: unknown) =>
+  parseDocument(contributionSchema, { contribution_id: id, ...(data as object) }, `contributions/${id}`);
+export const parsePaymentDocument = (id: string, data: unknown) =>
+  parseDocument(paymentSchema, { payment_id: id, ...(data as object) }, `payments/${id}`);
 
 export type Member = z.infer<typeof memberSchema>;
 export type MemberForm = z.infer<typeof memberFormSchema>;
@@ -87,3 +121,7 @@ export type Payment = z.infer<typeof paymentSchema>;
 export type PaymentForm = z.infer<typeof paymentFormSchema>;
 export type MemberContribution = z.infer<typeof memberContributionSchema>;
 export type Contribution = z.infer<typeof contributionSchema>;
+export type KcbPaymentNotification = z.infer<typeof kcbPaymentNotificationSchema>;
+export type MemberNotification = z.infer<typeof memberNotificationSchema>;
+export type NotificationDelivery = z.infer<typeof notificationDeliverySchema>;
+export type AuditEvent = z.infer<typeof auditEventSchema>;
