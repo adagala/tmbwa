@@ -16,8 +16,8 @@ import {
   Contribution,
   Payment,
   PaymentForm,
-  PaymentTypeEnum,
 } from '@/schemas/member';
+import { PaymentTypeEnum } from 'tmbwa-shared';
 import { toast } from '@/hooks/useToast';
 import { DatePicker } from '@/components/DatePicker';
 import { useForm } from 'react-hook-form';

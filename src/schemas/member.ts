@@ -3,62 +3,13 @@ import { z } from 'zod';
 import { isMobilePhone } from 'validator';
 import { FieldValue } from 'firebase/firestore';
 import {
-  member_roles,
-  member_status,
-  genders,
-  contribution_status,
-  payment_type,
-  member_balance_type,
-  months,
   StatusEnum,
-  RoleEnum,
-  GenderEnum,
   ContributionStatusEnum,
   PaymentTypeEnum,
   MemberBalanceTypeEnum,
-  YearEnum,
-  MonthEnum,
   firebaseTimestampSchema,
-  contributionFormSchema,
-  memberBalanceFormSchema,
-  monthlyStatsSchema,
-} from 'tmbwa-shared';
-
-export {
-  member_roles,
-  member_status,
-  genders,
-  contribution_status,
-  payment_type,
-  member_balance_type,
-  months,
-  StatusEnum,
-  RoleEnum,
-  GenderEnum,
-  ContributionStatusEnum,
-  PaymentTypeEnum,
-  MemberBalanceTypeEnum,
-  YearEnum,
-  MonthEnum,
-  firebaseTimestampSchema,
-  contributionFormSchema,
-  memberBalanceFormSchema,
-  monthlyStatsSchema,
-};
-
-export type {
-  MemberStatus,
-  MemberRole,
-  Gender,
-  PaymentStatus,
-  PaymentType,
-  MemberBalanceType,
-  Year,
-  Month,
-  ContributionForm,
-  MemberBalanceForm,
-  MonthlyStats,
-  FirebaseTimestamp,
+  memberBaseSchema,
+  memberFormBaseSchema,
 } from 'tmbwa-shared';
 
 const FieldValueSchema = z.custom<FieldValue>(
@@ -67,14 +18,7 @@ const FieldValueSchema = z.custom<FieldValue>(
 );
 
 // Member form schema – extends the shared base with phone validation
-export const ownMemberFormSchema = z.object({
-  firstname: z.string().min(1, 'First name cannot be empty'),
-  lastname: z.string().min(1, 'Last name cannot be empty'),
-  membernumber: z
-    .string()
-    .min(1, 'Admission number cannot be empty')
-    .regex(/^\d{5}\/\d{2}$/, 'Admission number format required is 00000/24'),
-  win: z.string().min(1, 'Welfare Identification Number cannot be empty'),
+export const ownMemberFormSchema = memberBaseSchema.extend({
   phonenumber: z
     .string()
     .min(1, 'Phone number cannot be empty')
@@ -82,18 +26,10 @@ export const ownMemberFormSchema = z.object({
       (value) => isMobilePhone(value, ['en-KE'], { strictMode: true }),
       'Provide a valid phone number',
     ),
-  gender: GenderEnum,
 });
 
 export const memberFormSchema = ownMemberFormSchema.merge(
-  z.object({
-    email: z
-      .string()
-      .email('Invalid email address')
-      .min(1, 'Email cannot be empty'),
-    role: RoleEnum,
-    isFeesPaid: z.boolean().default(false),
-  }),
+  memberFormBaseSchema.pick({ email: true, role: true, isFeesPaid: true }),
 );
 
 // Complete Member Schema (includes fields not in the form)
@@ -155,6 +91,3 @@ export type Payment = z.infer<typeof paymentSchema>;
 export type PaymentForm = z.infer<typeof paymentFormSchema>;
 export type MemberContribution = z.infer<typeof memberContributionSchema>;
 export type Contribution = z.infer<typeof contributionSchema>;
-export type Role = z.infer<typeof RoleEnum>;
-export type Status = z.infer<typeof StatusEnum>;
-

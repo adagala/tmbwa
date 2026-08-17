@@ -24,21 +24,23 @@ import {
   Member,
   Contribution,
   MemberForm,
-  MonthlyStats,
   OwnMemberForm,
-  Role,
   Payment,
+} from '@/schemas/member';
+import {
   ContributionStatusEnum,
-  PaymentTypeEnum,
   MemberBalanceForm,
   MemberBalanceTypeEnum,
-} from '@/schemas/member';
-import { MONTHLY_CONTRIBUTION } from '../utils';
-import { PAYMENT_STATUS } from '../types';
+  MemberRole,
+  MonthlyStats,
+  MONTHLY_CONTRIBUTION,
+  PAYMENT_STATUS,
+  PaymentTypeEnum,
+} from 'tmbwa-shared';
 import { User } from 'firebase/auth';
 
 type MemberFilters = {
-  role?: Role | '';
+  role?: MemberRole | '';
   memberName?: string;
 };
 
@@ -94,7 +96,7 @@ export const getMembers = (
 export const getMemberById = (
   memberId: string,
   cb: (data: Member | null) => void,
-  user?: { role: Role; user: User },
+  user?: { role: MemberRole; user: User },
 ) => {
   const memberRef = doc(db, 'members', memberId);
   const unsubscribe = onSnapshot(

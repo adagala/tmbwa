@@ -1,7 +1,6 @@
 import * as admin from 'firebase-admin';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
-import { PAYMENT_STATUS } from '../types';
-import { MONTHLY_CONTRIBUTION } from '../utils';
+import { MONTHLY_CONTRIBUTION, PAYMENT_STATUS } from 'tmbwa-shared';
 import { applyBalanceAdjustment, applyPayment, reversePayment } from './domain';
 
 type CommandData = Record<string, unknown>;

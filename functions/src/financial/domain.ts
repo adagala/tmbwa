@@ -1,4 +1,4 @@
-import { PAYMENT_STATUS } from '../types';
+import { PAYMENT_STATUS } from 'tmbwa-shared';
 
 export const applyPayment = (amount: number, outstanding: number) => {
   if (!Number.isFinite(amount) || amount <= 0) throw new Error('Payment must be positive.');

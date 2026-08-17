@@ -74,5 +74,3 @@ export const months = [
   { label: 'November', value: '11' },
   { label: 'December', value: '12' },
 ] as const;
-
-export const MONTHLY_CONTRIBUTION = 500;

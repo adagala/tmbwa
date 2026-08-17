@@ -3,8 +3,8 @@ import {
   Contribution,
   MemberWithId,
   Payment,
-  PAYMENT_STATUS,
 } from '../../types';
+import { PAYMENT_STATUS } from 'tmbwa-shared';
 import { arrayToChunks } from '../../utils';
 
 admin.initializeApp({ credential: admin.credential.applicationDefault() });

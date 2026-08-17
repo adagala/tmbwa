@@ -1,6 +1,7 @@
 import { httpsCallable } from 'firebase/functions';
 import { functions } from './clientApp';
-import { Contribution, Member, MemberBalanceForm, Payment } from '@/schemas/member';
+import { Contribution, Member, Payment } from '@/schemas/member';
+import { MemberBalanceForm } from 'tmbwa-shared';
 
 const pendingRequests = new Map<string, string>();
 

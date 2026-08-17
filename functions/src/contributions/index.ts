@@ -1,7 +1,8 @@
 import * as admin from 'firebase-admin';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
-import { MemberWithId, PAYMENT_STATUS } from '../types';
-import { arrayToChunks, getCurrentMonth, MONTHLY_CONTRIBUTION } from '../utils';
+import { MemberWithId } from '../types';
+import { MONTHLY_CONTRIBUTION, PAYMENT_STATUS } from 'tmbwa-shared';
+import { arrayToChunks, getCurrentMonth } from '../utils';
 
 const db = () => admin.firestore();
 

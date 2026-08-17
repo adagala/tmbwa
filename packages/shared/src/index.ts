@@ -4,16 +4,42 @@ import { z } from 'zod';
 // Constants
 // ---------------------------------------------------------------------------
 
-export const member_roles = ['member', 'administrator'] as const;
-export const member_status = [
-  'active',
-  'inactive',
-  'suspended',
-  'resigned',
-  'deceased',
+export const MEMBER_ROLE = {
+  MEMBER: 'member',
+  ADMINISTRATOR: 'administrator',
+} as const;
+export const MEMBER_STATUS = {
+  ACTIVE: 'active',
+  INACTIVE: 'inactive',
+  SUSPENDED: 'suspended',
+  RESIGNED: 'resigned',
+  DECEASED: 'deceased',
+} as const;
+export const GENDER = { MALE: 'male', FEMALE: 'female' } as const;
+export const PAYMENT_STATUS = {
+  PAID: 'paid',
+  UNPAID: 'unpaid',
+  PARTIAL: 'partial',
+} as const;
+export const MONTHLY_CONTRIBUTION = 500;
+
+export const member_roles = [
+  MEMBER_ROLE.MEMBER,
+  MEMBER_ROLE.ADMINISTRATOR,
 ] as const;
-export const genders = ['male', 'female'] as const;
-export const contribution_status = ['paid', 'unpaid', 'partial'] as const;
+export const member_status = [
+  MEMBER_STATUS.ACTIVE,
+  MEMBER_STATUS.INACTIVE,
+  MEMBER_STATUS.SUSPENDED,
+  MEMBER_STATUS.RESIGNED,
+  MEMBER_STATUS.DECEASED,
+] as const;
+export const genders = [GENDER.MALE, GENDER.FEMALE] as const;
+export const contribution_status = [
+  PAYMENT_STATUS.PAID,
+  PAYMENT_STATUS.UNPAID,
+  PAYMENT_STATUS.PARTIAL,
+] as const;
 export const payment_type = ['contribution', 'account'] as const;
 export const member_balance_type = ['top_up', 'deduction'] as const;
 export const months = [

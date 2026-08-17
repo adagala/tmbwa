@@ -1,5 +1,6 @@
 import React from 'react';
-import { Contribution, Member, ContributionStatusEnum } from '@/schemas/member';
+import { Contribution, Member } from '@/schemas/member';
+import { ContributionStatusEnum } from 'tmbwa-shared';
 import { RiWalletLine, RiArrowRightSLine } from '@remixicon/react';
 import { List, ListItem } from '@tremor/react';
 import { DialogContributionDetails } from '@/components/ui/contributions/DialogContributionDetails';

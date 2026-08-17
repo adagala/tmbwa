@@ -10,8 +10,8 @@ import {
   createBootstrapPassword,
   deleteCollection,
   getCurrentMonth,
-  MONTHLY_CONTRIBUTION,
 } from '../utils';
+import { MONTHLY_CONTRIBUTION } from 'tmbwa-shared';
 
 export const newMember = onDocumentCreated(
   'members/{memberId}',

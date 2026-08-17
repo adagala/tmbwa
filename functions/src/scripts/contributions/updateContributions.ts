@@ -1,5 +1,6 @@
 import * as admin from 'firebase-admin';
-import { MemberContribution, MemberWithId, PAYMENT_STATUS } from '../../types';
+import { MemberContribution, MemberWithId } from '../../types';
+import { PAYMENT_STATUS } from 'tmbwa-shared';
 
 admin.initializeApp({ credential: admin.credential.applicationDefault() });
 

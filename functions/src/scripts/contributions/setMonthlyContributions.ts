@@ -5,9 +5,9 @@ import {
   MemberWithId,
   MonthlyStats,
   Payment,
-  PAYMENT_STATUS,
 } from '../../types';
-import { getCurrentMonth, MONTHLY_CONTRIBUTION } from '../../utils';
+import { MONTHLY_CONTRIBUTION, PAYMENT_STATUS } from 'tmbwa-shared';
+import { getCurrentMonth } from '../../utils';
 
 admin.initializeApp({ credential: admin.credential.applicationDefault() });
 
