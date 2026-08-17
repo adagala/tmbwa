@@ -2,12 +2,12 @@ import { generateKeyPairSync, createSign } from 'crypto';
 import { describe, expect, it } from 'vitest';
 import {
   acknowledgement, normalizeKenyanPhone, parseKcbTransactionDate, parseStkCallback,
-  parseTillNotification, secureTokenMatches, verifyKcbSignature,
+  parseTillNotification, permitsUnsignedSandboxNotification,
+  secureTokenMatches, verifyKcbSignature,
 } from '../functions/src/kcb/domain';
 import {
   buildSyntheticTillPayload,
   devProviderTransactionId,
-  signSyntheticPayload,
   validateDevSimulatorConfig,
 } from '../functions-dev/src/devSimulator';
 
@@ -49,6 +49,13 @@ describe('KCB Till notification contract', () => {
     const signature = signer.sign(privateKey, 'base64');
     expect(verifyKcbSignature(raw, signature, publicKey.export({ type: 'spki', format: 'pem' }).toString())).toBe(true);
     expect(verifyKcbSignature(Buffer.from(`${raw.toString()} `), signature, publicKey.export({ type: 'spki', format: 'pem' }).toString())).toBe(false);
+  });
+
+  it('permits unsigned notifications only in explicitly enabled development', () => {
+    expect(permitsUnsignedSandboxNotification('development', 'true')).toBe(true);
+    expect(permitsUnsignedSandboxNotification('development', 'false')).toBe(false);
+    expect(permitsUnsignedSandboxNotification('production', 'true')).toBe(false);
+    expect(permitsUnsignedSandboxNotification('uat', 'true')).toBe(false);
   });
 
   it('returns the documented acknowledgement shape', () => {
@@ -146,21 +153,4 @@ describe('deployed development KCB simulator', () => {
     )).toThrow();
   });
 
-  it('signs bytes accepted by the existing verifier', () => {
-    const { privateKey, publicKey } = generateKeyPairSync('rsa', {
-      modulusLength: 2048,
-    });
-    const raw = Buffer.from('{"synthetic":true}');
-    const signature = signSyntheticPayload(
-      raw,
-      privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),
-    );
-    const publicPem = publicKey.export({
-      type: 'spki', format: 'pem',
-    }).toString();
-    expect(verifyKcbSignature(raw, signature, publicPem)).toBe(true);
-    expect(verifyKcbSignature(
-      Buffer.from('{"synthetic":false}'), signature, publicPem,
-    )).toBe(false);
-  });
 });

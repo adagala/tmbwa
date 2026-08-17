@@ -1,15 +1,13 @@
-import { defineSecret, defineString } from 'firebase-functions/params';
+import { defineString } from 'firebase-functions/params';
 import { logger } from 'firebase-functions';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import {
   buildSyntheticTillPayload,
-  signSyntheticPayload,
   validateDevSimulatorConfig,
 } from './devSimulator';
 
 type Data = Record<string, unknown>;
 
-const KCB_DEV_PRIVATE_KEY = defineSecret('KCB_DEV_PRIVATE_KEY');
 const APP_ENV = defineString('APP_ENV', { default: 'production' });
 const KCB_DEV_MOCK_ENABLED = defineString('KCB_DEV_MOCK_ENABLED', {
   default: 'false',
@@ -41,7 +39,6 @@ const requiredString = (data: Data, key: string) => {
 };
 
 export const sendKcbDevTillNotification = onCall(
-  { secrets: [KCB_DEV_PRIVATE_KEY] },
   async (request) => {
     const actorId = requireAdministrator(request.auth);
     const data = request.data as Data;
@@ -67,17 +64,9 @@ export const sendKcbDevTillNotification = onCall(
       throw new HttpsError('invalid-argument', (error as Error).message);
     }
     const rawBodyText = JSON.stringify(synthetic.payload);
-    let signature: string;
-    try {
-      signature = signSyntheticPayload(
-        Buffer.from(rawBodyText, 'utf8'), KCB_DEV_PRIVATE_KEY.value(),
-      );
-    } catch {
-      throw new HttpsError('failed-precondition', 'The development signing key is invalid.');
-    }
     const response = await fetch(callbackUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Signature: signature },
+      headers: { 'Content-Type': 'application/json' },
       body: rawBodyText,
     });
     const responseBody = (await response.json()) as {

@@ -1,4 +1,4 @@
-import { createHash, createSign } from 'crypto';
+import { createHash } from 'crypto';
 
 type DevSimulatorConfig = {
   appEnvironment: string;
@@ -77,11 +77,4 @@ export const buildSyntheticTillPayload = (
       },
     },
   };
-};
-
-export const signSyntheticPayload = (rawBody: Buffer, privateKey: string) => {
-  const signer = createSign('RSA-SHA256');
-  signer.update(rawBody);
-  signer.end();
-  return signer.sign(privateKey.replace(/\\n/g, '\n'), 'base64');
 };

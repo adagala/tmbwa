@@ -91,6 +91,11 @@ export const verifyKcbSignature = (rawBody: Buffer, signature: string, publicKey
   }
 };
 
+export const permitsUnsignedSandboxNotification = (
+  appEnvironment: string,
+  sandboxIpnEnabled: string,
+) => appEnvironment === 'development' && sandboxIpnEnabled === 'true';
+
 export const secureTokenMatches = (provided: string, expected: string) => {
   const providedBytes = Buffer.from(provided);
   const expectedBytes = Buffer.from(expected);
