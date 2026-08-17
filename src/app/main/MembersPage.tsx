@@ -193,7 +193,7 @@ export default function MembersPage() {
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 mt-2">
                   {members.map((member) => (
-                    <Link to={member.member_id}>
+                    <Link key={member.member_id} to={member.member_id}>
                       <Card
                         key={member.member_id}
                         className="flex gap-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-900/60 dark:border-gray-800"
