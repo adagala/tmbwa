@@ -1,23 +1,22 @@
-// schemas/member.ts
-import { z } from 'zod';
-import { isMobilePhone } from 'validator';
 import { FieldValue } from 'firebase/firestore';
+import { isMobilePhone } from 'validator';
+import { z } from 'zod';
+
 import {
-  StatusEnum,
   ContributionStatusEnum,
-  PaymentTypeEnum,
   MemberBalanceTypeEnum,
+  PaymentTypeEnum,
+  StatusEnum,
   firebaseTimestampSchema,
   memberBaseSchema,
   memberFormBaseSchema,
-} from 'tmbwa-shared';
+} from './index';
 
-const FieldValueSchema = z.custom<FieldValue>(
+const fieldValueSchema = z.custom<FieldValue>(
   (value) => value instanceof FieldValue,
   { message: 'Invalid FieldValue' },
 );
 
-// Member form schema – extends the shared base with phone validation
 export const ownMemberFormSchema = memberBaseSchema.extend({
   phonenumber: z
     .string()
@@ -32,7 +31,6 @@ export const memberFormSchema = ownMemberFormSchema.merge(
   memberFormBaseSchema.pick({ email: true, role: true, isFeesPaid: true }),
 );
 
-// Complete Member Schema (includes fields not in the form)
 export const memberSchema = memberFormSchema.merge(
   z.object({
     member_id: z.string().min(1, 'ID cannot be empty'),
@@ -52,7 +50,7 @@ export const paymentFormSchema = z.object({
     .string()
     .transform((value) => parseFloat(value))
     .refine((value) => value > 0, { message: 'Amount must be greater than 0' }),
-  paymentdate: z.union([z.date(), firebaseTimestampSchema, FieldValueSchema]),
+  paymentdate: z.union([z.date(), firebaseTimestampSchema, fieldValueSchema]),
 });
 
 export const paymentSchema = paymentFormSchema.merge(
@@ -65,7 +63,7 @@ export const paymentSchema = paymentFormSchema.merge(
     contribution_amount: z.number(),
     payment_type: PaymentTypeEnum,
     action_by: z.string(),
-    created_at: z.union([z.date(), FieldValueSchema, firebaseTimestampSchema]),
+    created_at: z.union([z.date(), fieldValueSchema, firebaseTimestampSchema]),
     receipt_number: z.string().optional(),
     balance_direction: MemberBalanceTypeEnum.optional(),
   }),
@@ -80,10 +78,8 @@ export const memberContributionSchema = z.object({
   action_by: z.string(),
 });
 
-// Contribution Schema
 export const contributionSchema = memberSchema.merge(memberContributionSchema);
 
-// TypeScript types from schemas
 export type Member = z.infer<typeof memberSchema>;
 export type MemberForm = z.infer<typeof memberFormSchema>;
 export type OwnMemberForm = z.infer<typeof ownMemberFormSchema>;

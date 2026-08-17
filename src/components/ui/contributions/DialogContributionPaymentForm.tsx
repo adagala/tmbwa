@@ -16,13 +16,13 @@ import {
   Contribution,
   Payment,
   PaymentForm,
-} from '@/schemas/member';
+} from 'tmbwa-shared/firebase';
 import { PaymentTypeEnum } from 'tmbwa-shared';
 import { toast } from '@/hooks/useToast';
 import { DatePicker } from '@/components/DatePicker';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { paymentFormSchema } from '@/schemas/member';
+import { paymentFormSchema } from 'tmbwa-shared/firebase';
 import { InputErrorMessage } from '../InputErrorMessage';
 import { RiAddLine, RiErrorWarningFill } from '@remixicon/react';
 import { addPayment } from '@/lib/firebase/financial';

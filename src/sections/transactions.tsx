@@ -2,7 +2,7 @@ import React from 'react';
 import {
   Payment,
   Member,
-} from '@/schemas/member';
+} from 'tmbwa-shared/firebase';
 import { FirebaseTimestamp, PaymentTypeEnum } from 'tmbwa-shared';
 import { RiWalletLine } from '@remixicon/react';
 import { List, ListItem } from '@tremor/react';

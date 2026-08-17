@@ -1,4 +1,4 @@
-import { Contribution, Member, Payment } from '@/schemas/member';
+import { Contribution, Member, Payment } from 'tmbwa-shared/firebase';
 
 export type ReportFilters = { from: string; to: string; memberId: string; status: string; paymentType: string };
 export const kenyaMoney = new Intl.NumberFormat('en-KE', { style: 'currency', currency: 'KES', minimumFractionDigits: 2 });

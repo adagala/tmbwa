@@ -26,7 +26,7 @@ import {
   MemberForm,
   OwnMemberForm,
   Payment,
-} from '@/schemas/member';
+} from 'tmbwa-shared/firebase';
 import {
   ContributionStatusEnum,
   MemberBalanceForm,

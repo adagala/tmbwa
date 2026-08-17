@@ -6,7 +6,7 @@ import {
   RiShieldCheckLine,
   RiUserForbidLine,
 } from '@remixicon/react';
-import { Member } from '@/schemas/member';
+import { Member } from 'tmbwa-shared/firebase';
 import { member_roles, MemberRole } from 'tmbwa-shared';
 import { Input } from '@/components/Input';
 import {

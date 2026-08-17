@@ -16,7 +16,7 @@ import {
 } from '@/components/Select';
 import { Button } from '@/components/Button';
 import { DialogContributionDetails } from '@/components/ui/contributions/DialogContributionDetails';
-import { Contribution } from '@/schemas/member';
+import { Contribution } from 'tmbwa-shared/firebase';
 import {
   ContributionStatusEnum,
   contribution_status,

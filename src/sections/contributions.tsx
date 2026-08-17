@@ -1,5 +1,5 @@
 import React from 'react';
-import { Contribution, Member } from '@/schemas/member';
+import { Contribution, Member } from 'tmbwa-shared/firebase';
 import { ContributionStatusEnum } from 'tmbwa-shared';
 import { RiWalletLine, RiArrowRightSLine } from '@remixicon/react';
 import { List, ListItem } from '@tremor/react';

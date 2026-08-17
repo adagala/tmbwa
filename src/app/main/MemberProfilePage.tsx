@@ -1,5 +1,5 @@
 import { Profile } from '@/sections/profile';
-import { Member } from '@/schemas/member';
+import { Member } from 'tmbwa-shared/firebase';
 import { RiArrowLeftSLine, RiLoaderLine, RiUserLine } from '@remixicon/react';
 import { Button } from '@/components/Button';
 import { DialogDeleteMember } from '@/components/ui/members/DialogDeleteMember';

@@ -6,7 +6,7 @@ import { Button } from '@/components/Button';
 import useUser from '@/hooks/useUser';
 import { db } from '@/lib/firebase/clientApp';
 import { KcbPaymentNotification, reconcileKcbPayment, rejectKcbPayment, subscribeToUnresolvedKcbPayments } from '@/lib/firebase/kcb';
-import { Member } from '@/schemas/member';
+import { Member } from 'tmbwa-shared/firebase';
 
 type ContributionOption = { id: string; month: string; balance: number };
 

@@ -22,7 +22,7 @@ import {
 import { toast } from '@/hooks/useToast';
 import {
   Member,
-} from '@/schemas/member';
+} from 'tmbwa-shared/firebase';
 import {
   member_balance_type,
   MemberBalanceForm,

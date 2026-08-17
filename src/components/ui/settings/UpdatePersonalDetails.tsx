@@ -17,7 +17,7 @@ import {
   Member,
   OwnMemberForm,
   ownMemberFormSchema,
-} from "@/schemas/member";
+} from "tmbwa-shared/firebase";
 import { Gender, genders } from "tmbwa-shared";
 import { updateMember } from "@/lib/firebase/firestore";
 

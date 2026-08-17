@@ -1,4 +1,4 @@
-import { Contribution, Member, Payment } from '@/schemas/member';
+import { Contribution, Member, Payment } from 'tmbwa-shared/firebase';
 import { kenyaMoney, timestampDate } from './financialReporting';
 
 export const receiptNumber = (payment: Payment) => payment.receipt_number || `TMBWA-${payment.payment_id.toUpperCase()}`;

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Button } from '@/components/Button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/Dialog';
-import { Member } from '@/schemas/member';
+import { Member } from 'tmbwa-shared/firebase';
 import { member_status } from 'tmbwa-shared';
 import { transitionMemberStatus } from '@/lib/firebase/financial';
 import { toast } from '@/hooks/useToast';

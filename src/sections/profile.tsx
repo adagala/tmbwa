@@ -2,7 +2,7 @@ import { Badge } from '@/components/Badge';
 import { Tooltip } from '@/components/Tooltip';
 import { DialogMembershipFeeUpdate } from '@/components/ui/members/DialogMembershipFeeUpdate';
 import useUser from '@/hooks/useUser';
-import { Member } from '@/schemas/member';
+import { Member } from 'tmbwa-shared/firebase';
 import {
   RiArrowDownDoubleLine,
   RiArrowUpDoubleLine,

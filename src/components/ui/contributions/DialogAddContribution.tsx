@@ -20,7 +20,7 @@ import {
   SelectValue,
 } from '@/components/Select';
 import { toast } from '@/hooks/useToast';
-import { Member } from '@/schemas/member';
+import { Member } from 'tmbwa-shared/firebase';
 import {
   ContributionForm,
   contributionFormSchema,
