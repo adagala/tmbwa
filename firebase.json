@@ -20,10 +20,14 @@
         "firebase-debug.log",
         "firebase-debug.*.log",
         "*.local",
-        "src",
+        ".env",
+        ".env.*",
+        "serviceAccount*",
+        "functions-dev",
+        "tests",
+        "docs",
         "public",
-        ".vite",
-        "dist"
+        ".vite"
       ],
       "predeploy": [
         "npm --prefix functions run lint",
