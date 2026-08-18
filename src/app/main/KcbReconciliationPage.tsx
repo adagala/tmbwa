@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { FirebaseError } from 'firebase/app';
 import { collection, getDocs, orderBy, query } from 'firebase/firestore';
 import { Navigate } from 'react-router-dom';
 import { Card } from '@/components/Card';
@@ -6,19 +7,17 @@ import { Button } from '@/components/Button';
 import useUser from '@/hooks/useUser';
 import { db } from '@/lib/firebase/clientApp';
 import {
+  ContributionOption,
+  contributionOptionsFromDocuments,
+} from '@/lib/kcbReconciliation';
+import {
   KcbPaymentNotification,
   reconcileKcbPayment,
   rejectKcbPayment,
   sendKcbDevTillNotification,
   subscribeToUnresolvedKcbPayments,
 } from '@/lib/firebase/kcb';
-import {
-  Member,
-  parseContributionDocument,
-  parseMemberDocument,
-} from 'tmbwa-shared/firebase';
-
-type ContributionOption = { id: string; month: string; balance: number };
+import { Member, parseMemberDocument } from 'tmbwa-shared/firebase';
 
 const devSimulatorEnabled =
   import.meta.env.VITE_APP_ENV === 'development' &&
@@ -37,11 +36,95 @@ export default function KcbReconciliationPage() {
   const [contributions, setContributions] = useState<
     Record<string, ContributionOption[]>
   >({});
+  const [contributionLoadStatus, setContributionLoadStatus] = useState<
+    Record<string, 'loading' | 'loaded' | 'error'>
+  >({});
+  const [contributionWarnings, setContributionWarnings] = useState<
+    Record<string, number>
+  >({});
+  const [contributionErrors, setContributionErrors] = useState<
+    Record<string, string>
+  >({});
+  const contributionRequests = useRef<Record<string, Promise<void>>>({});
+  const loadedContributionMembers = useRef(new Set<string>());
   const [busy, setBusy] = useState<string>();
   const [error, setError] = useState<string>();
   const [testAmount, setTestAmount] = useState(100);
   const [testResult, setTestResult] = useState<string>();
   const pendingTestRequestId = useRef<string>();
+
+  const loadMemberContributions = useCallback((memberId: string) => {
+    if (!memberId || loadedContributionMembers.current.has(memberId)) {
+      return Promise.resolve();
+    }
+    const pendingRequest = contributionRequests.current[memberId];
+    if (pendingRequest) return pendingRequest;
+
+    setContributionLoadStatus((current) => ({
+      ...current,
+      [memberId]: 'loading',
+    }));
+    setContributionWarnings((current) => ({
+      ...current,
+      [memberId]: 0,
+    }));
+    setContributionErrors((current) => ({
+      ...current,
+      [memberId]: '',
+    }));
+
+    const request = getDocs(collection(db, `members/${memberId}/contributions`))
+      .then((snapshot) => {
+        const { options, invalidDocumentCount } =
+          contributionOptionsFromDocuments(
+            snapshot.docs.map((item) => ({
+              id: item.id,
+              data: item.data(),
+            })),
+          );
+        loadedContributionMembers.current.add(memberId);
+        setContributions((current) => ({
+          ...current,
+          [memberId]: options,
+        }));
+        setContributionWarnings((current) => ({
+          ...current,
+          [memberId]: invalidDocumentCount,
+        }));
+        setContributionLoadStatus((current) => ({
+          ...current,
+          [memberId]: 'loaded',
+        }));
+      })
+      .catch((cause: unknown) => {
+        const errorCode =
+          cause instanceof FirebaseError ? cause.code : 'unknown';
+        const message =
+          cause instanceof FirebaseError && cause.code === 'permission-denied'
+            ? 'Your session is not authorized to read member contributions. Sign out and sign in again.'
+            : cause instanceof FirebaseError && cause.code === 'unavailable'
+              ? 'Firestore is temporarily unavailable. Check your connection and retry.'
+              : `Firestore could not load this member’s contributions (${errorCode}).`;
+        console.error(
+          'Could not load KCB reconciliation contributions.',
+          errorCode,
+        );
+        setContributionErrors((current) => ({
+          ...current,
+          [memberId]: message,
+        }));
+        setContributionLoadStatus((current) => ({
+          ...current,
+          [memberId]: 'error',
+        }));
+      })
+      .finally(() => {
+        delete contributionRequests.current[memberId];
+      });
+
+    contributionRequests.current[memberId] = request;
+    return request;
+  }, []);
 
   useEffect(() => {
     if (role !== 'administrator') return;
@@ -58,44 +141,27 @@ export default function KcbReconciliationPage() {
   }, [role]);
 
   useEffect(() => {
+    const suggestions = payments.flatMap((payment) =>
+      payment.suggestedMemberId
+        ? [
+            {
+              paymentId: payment.providerTransactionId,
+              memberId: payment.suggestedMemberId,
+            },
+          ]
+        : [],
+    );
     setSelectedMembers((current) => {
       const next = { ...current };
-      payments.forEach((payment) => {
-        if (!next[payment.providerTransactionId] && payment.suggestedMemberId) {
-          next[payment.providerTransactionId] = payment.suggestedMemberId;
-          if (!contributions[payment.suggestedMemberId]) {
-            void getDocs(
-              query(
-                collection(
-                  db,
-                  `members/${payment.suggestedMemberId}/contributions`,
-                ),
-                orderBy('month', 'desc'),
-              ),
-            ).then((snapshot) =>
-              setContributions((current) => ({
-                ...current,
-                [payment.suggestedMemberId!]: snapshot.docs
-                  .map((item) => {
-                    const contribution = parseContributionDocument(
-                      item.id,
-                      item.data(),
-                    );
-                    return {
-                      id: item.id,
-                      month: contribution.month,
-                      balance: contribution.balance,
-                    };
-                  })
-                  .filter((item) => item.balance > 0),
-              })),
-            );
-          }
-        }
+      suggestions.forEach(({ paymentId, memberId }) => {
+        if (!next[paymentId]) next[paymentId] = memberId;
       });
       return next;
     });
-  }, [contributions, payments]);
+    suggestions.forEach(({ memberId }) => {
+      void loadMemberContributions(memberId);
+    });
+  }, [loadMemberContributions, payments]);
 
   const memberNames = useMemo(
     () =>
@@ -111,26 +177,7 @@ export default function KcbReconciliationPage() {
   const loadContributions = async (paymentId: string, memberId: string) => {
     setSelectedMembers((current) => ({ ...current, [paymentId]: memberId }));
     setSelectedContributions((current) => ({ ...current, [paymentId]: '' }));
-    if (!memberId || contributions[memberId]) return;
-    const snapshot = await getDocs(
-      query(
-        collection(db, `members/${memberId}/contributions`),
-        orderBy('month', 'desc'),
-      ),
-    );
-    setContributions((current) => ({
-      ...current,
-      [memberId]: snapshot.docs
-        .map((item) => {
-          const contribution = parseContributionDocument(item.id, item.data());
-          return {
-            id: item.id,
-            month: contribution.month,
-            balance: contribution.balance,
-          };
-        })
-        .filter((item) => item.balance > 0),
-    }));
+    await loadMemberContributions(memberId);
   };
 
   const reconcile = async (payment: KcbPaymentNotification) => {
@@ -261,6 +308,12 @@ export default function KcbReconciliationPage() {
       <div className="space-y-4">
         {payments.map((payment) => {
           const memberId = selectedMembers[payment.providerTransactionId] ?? '';
+          const contributionStatus = memberId
+            ? contributionLoadStatus[memberId]
+            : undefined;
+          const contributionOptions = memberId
+            ? (contributions[memberId] ?? [])
+            : [];
           return (
             <Card key={payment.providerTransactionId} className="space-y-4">
               <div className="grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
@@ -321,7 +374,11 @@ export default function KcbReconciliationPage() {
                     value={
                       selectedContributions[payment.providerTransactionId] ?? ''
                     }
-                    disabled={!memberId}
+                    disabled={
+                      !memberId ||
+                      contributionStatus === 'loading' ||
+                      contributionStatus === 'error'
+                    }
                     onChange={(event) =>
                       setSelectedContributions((current) => ({
                         ...current,
@@ -329,14 +386,42 @@ export default function KcbReconciliationPage() {
                       }))
                     }
                   >
-                    <option value="">Choose unpaid contribution</option>
-                    {(contributions[memberId] ?? []).map((item) => (
+                    <option value="">
+                      {contributionStatus === 'loading'
+                        ? 'Loading unpaid contributions...'
+                        : contributionStatus === 'error'
+                          ? 'Could not load contributions'
+                          : contributionStatus === 'loaded' &&
+                              contributionOptions.length === 0
+                            ? 'No unpaid contributions'
+                            : 'Choose unpaid contribution'}
+                    </option>
+                    {contributionOptions.map((item) => (
                       <option key={item.id} value={item.id}>
                         {item.month} — KES{' '}
                         {item.balance.toLocaleString('en-KE')} outstanding
                       </option>
                     ))}
                   </select>
+                  {contributionStatus === 'error' ? (
+                    <span className="mt-1 block text-xs text-red-700">
+                      {contributionErrors[memberId]}
+                      <button
+                        type="button"
+                        className="ml-2 font-semibold underline"
+                        onClick={() => void loadMemberContributions(memberId)}
+                      >
+                        Retry
+                      </button>
+                    </span>
+                  ) : null}
+                  {(contributionWarnings[memberId] ?? 0) > 0 ? (
+                    <span className="mt-1 block text-xs text-amber-700">
+                      {contributionWarnings[memberId]} invalid contribution
+                      {contributionWarnings[memberId] === 1 ? '' : 's'} could
+                      not be shown.
+                    </span>
+                  ) : null}
                 </label>
               </div>
               <div className="flex gap-2">
