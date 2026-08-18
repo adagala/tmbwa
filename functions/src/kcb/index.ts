@@ -14,6 +14,7 @@ import {
 import {
   PaymentAllocation,
   paymentAllocations,
+  reservableLegacyKcbCredit,
   validatePaymentAllocations,
 } from '../financial/domain';
 import {
@@ -300,6 +301,7 @@ export const reconcileKcbPayment = onCall(async (request) => {
         amount: item.amount,
       })),
       unallocated_amount: allocationResult.unallocatedAmount,
+      credit_reserved: true,
       payment_source: 'kcb_buni',
       provider_transaction_id: providerTransactionId,
       payer_phone: notification.payerPhone,
@@ -344,12 +346,16 @@ export const reconcileKcbPayment = onCall(async (request) => {
       contributionBalance: admin.firestore.FieldValue.increment(
         allocationResult.allocatedAmount,
       ),
+      reservedKcbCredit: admin.firestore.FieldValue.increment(
+        allocationResult.unallocatedAmount,
+      ),
     });
     transaction.update(notificationRef, {
       status: 'reconciled',
       memberId,
       allocations,
       unallocatedAmount: allocationResult.unallocatedAmount,
+      creditReserved: true,
       paymentId,
       receiptNumber,
       reconciledAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -421,24 +427,40 @@ export const allocateKcbPaymentCredit = onCall(async (request) => {
     }
     const paymentRef = db().doc(`members/${notification.memberId}/payments/${notification.paymentId}`);
     const memberRef = db().doc(`members/${notification.memberId}`);
+    const allContributionsQuery = db().collection(`members/${notification.memberId}/contributions`);
     const contributionRefs = allocations.map(({ contributionId }) =>
       db().doc(`members/${notification.memberId}/contributions/${contributionId}`));
-    const [paymentSnapshot, ...contributionSnapshots] = await Promise.all([
+    const [paymentSnapshot, memberSnapshot, allContributionsSnapshot,
+      ...contributionSnapshots] = await Promise.all([
       transaction.get(paymentRef),
+      transaction.get(memberRef),
+      transaction.get(allContributionsQuery),
       ...contributionRefs.map((ref) => transaction.get(ref)),
     ]);
-    if (!paymentSnapshot.exists || contributionSnapshots.some((item) => !item.exists)) {
+    if (!paymentSnapshot.exists || !memberSnapshot.exists || contributionSnapshots.some((item) => !item.exists)) {
       throw new HttpsError('not-found', 'Payment or contribution not found.');
     }
     const payment = paymentData(paymentSnapshot);
-    const available = unallocatedPaymentAmount(
+    const derivedAvailable = unallocatedPaymentAmount(
       Number(payment.amount),
       Number(payment.contribution_amount),
       notification.unallocatedAmount,
     );
-    const existingContributionIds = new Set(
-      paymentAllocations(payment).map((item) => item.contributionId),
+    const member = memberData(memberSnapshot);
+    const creditWasReserved = payment.credit_reserved === true;
+    const outstandingTotal = allContributionsSnapshot.docs.reduce(
+      (sum, snapshot) => sum + Math.max(Number(contributionData(snapshot).balance), 0), 0,
     );
+    const available = creditWasReserved
+      ? derivedAvailable
+      : reservableLegacyKcbCredit(
+        derivedAvailable,
+        Number(member.balance),
+        outstandingTotal,
+        Number(member.reservedKcbCredit ?? 0),
+      );
+    const existingAllocations = paymentAllocations(payment);
+    const existingContributionIds = new Set(existingAllocations.map((item) => item.contributionId));
     if (allocations.some((item) => existingContributionIds.has(item.contributionId))) {
       throw new HttpsError(
         'invalid-argument',
@@ -455,6 +477,9 @@ export const allocateKcbPaymentCredit = onCall(async (request) => {
       throw new HttpsError('invalid-argument', (cause as Error).message);
     }
     const storedAllocations = allocations.map((item) => ({
+      contribution_id: item.contributionId, amount: item.amount,
+    }));
+    const storedExistingAllocations = existingAllocations.map((item) => ({
       contribution_id: item.contributionId, amount: item.amount,
     }));
     allocations.forEach((allocation, index) => {
@@ -480,18 +505,25 @@ export const allocateKcbPaymentCredit = onCall(async (request) => {
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     });
     transaction.update(paymentRef, {
-      allocations: admin.firestore.FieldValue.arrayUnion(...storedAllocations),
+      allocations: admin.firestore.FieldValue.arrayUnion(
+        ...storedExistingAllocations, ...storedAllocations,
+      ),
       contribution_amount: admin.firestore.FieldValue.increment(result.allocatedAmount),
       contribution_id: payment.contribution_id || allocations[0].contributionId,
       payment_type: 'contribution',
       unallocated_amount: result.unallocatedAmount,
+      credit_reserved: true,
     });
     transaction.update(memberRef, {
       contributionBalance: admin.firestore.FieldValue.increment(result.allocatedAmount),
+      reservedKcbCredit: admin.firestore.FieldValue.increment(
+        creditWasReserved ? -result.allocatedAmount : result.unallocatedAmount,
+      ),
     });
     transaction.update(notificationRef, {
       allocations: admin.firestore.FieldValue.arrayUnion(...allocations),
       unallocatedAmount: result.unallocatedAmount,
+      creditReserved: true,
       creditAllocatedAt: admin.firestore.FieldValue.serverTimestamp(),
       creditAllocatedBy: actorId,
     });

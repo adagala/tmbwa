@@ -2,6 +2,23 @@ import { PAYMENT_STATUS } from 'tmbwa-shared';
 
 export type PaymentAllocation = { contributionId: string; amount: number };
 
+export const availableUnreservedBalance = (balance: number, reservedCredit: number) => {
+  if (!Number.isFinite(balance) || !Number.isFinite(reservedCredit) || reservedCredit < 0) {
+    throw new Error('Invalid account balance.');
+  }
+  return Math.max(balance - reservedCredit, 0);
+};
+
+export const reservableLegacyKcbCredit = (
+  receiptCredit: number,
+  memberBalance: number,
+  outstandingContributions: number,
+  alreadyReserved: number,
+) => Math.min(
+  receiptCredit,
+  Math.max(memberBalance + outstandingContributions - alreadyReserved, 0),
+);
+
 export const validatePaymentAllocations = (
   receiptAmount: number,
   allocations: PaymentAllocation[],

@@ -140,6 +140,7 @@ export const memberDocumentSchema = memberFormBaseSchema.extend({
   status: StatusEnum,
   balance: z.number(),
   contributionBalance: z.number(),
+  reservedKcbCredit: z.number().nonnegative().default(0),
   firstnameSearchableIndex: searchableIndexSchema.optional(),
   lastnameSearchableIndex: searchableIndexSchema.optional(),
   createat: z.unknown().optional(),
@@ -169,6 +170,7 @@ export const paymentDocumentSchema = z.object({
     amount: z.number().positive(),
   })).optional(),
   unallocated_amount: z.number().nonnegative().optional(),
+  credit_reserved: z.boolean().optional(),
 }).passthrough();
 
 export const contributionDocumentSchema = memberDocumentSchema.extend({
@@ -206,6 +208,7 @@ export const kcbPaymentNotificationDocumentSchema = z.object({
     amount: z.number().positive(),
   })).default([]),
   unallocatedAmount: z.number().nonnegative().optional(),
+  creditReserved: z.boolean().optional(),
 }).passthrough();
 
 export const kcbStkRequestDocumentSchema = z.object({

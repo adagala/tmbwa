@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   applyBalanceAdjustment,
+  availableUnreservedBalance,
   applyPayment,
   paymentAllocations,
   requiresReceiptReversalBeforeContributionRemoval,
+  reservableLegacyKcbCredit,
   reversePayment,
   validatePaymentAllocations,
 } from '../functions/src/financial/domain';
@@ -48,6 +50,17 @@ describe('financial invariants', () => {
     expect(applyBalanceAdjustment(500, 200, 'deduction')).toBe(300);
     expect(applyBalanceAdjustment(500, 200, 'top_up')).toBe(700);
     expect(() => applyBalanceAdjustment(100, 200, 'deduction')).toThrow();
+  });
+
+  it('keeps reserved KCB credit unavailable to generic balance operations', () => {
+    expect(availableUnreservedBalance(100, 600)).toBe(0);
+    expect(availableUnreservedBalance(700, 600)).toBe(100);
+  });
+
+  it('caps legacy KCB credit at funds that have not already been consumed', () => {
+    expect(reservableLegacyKcbCredit(600, 100, 500, 0)).toBe(600);
+    expect(reservableLegacyKcbCredit(600, -400, 900, 0)).toBe(500);
+    expect(reservableLegacyKcbCredit(600, 100, 500, 200)).toBe(400);
   });
 
   it('validates explicit multi-contribution allocations and credit', () => {

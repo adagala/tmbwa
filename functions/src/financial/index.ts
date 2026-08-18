@@ -10,6 +10,7 @@ import {
 } from 'tmbwa-shared';
 import {
   applyBalanceAdjustment,
+  availableUnreservedBalance,
   applyPayment,
   paymentAllocations,
   requiresReceiptReversalBeforeContributionRemoval,
@@ -232,6 +233,11 @@ export const reverseContributionPayment = onCall(async (request) => {
       contributionBalance: admin.firestore.FieldValue.increment(
         -allocations.reduce((sum, item) => sum + item.amount, 0),
       ),
+      ...(payment.credit_reserved === true ? {
+        reservedKcbCredit: admin.firestore.FieldValue.increment(
+          -Number(payment.unallocated_amount ?? 0),
+        ),
+      } : {}),
     });
     if (typeof payment.provider_transaction_id === 'string') {
       transaction.update(
@@ -286,7 +292,10 @@ export const createContribution = onCall(async (request) => {
     const member = memberData(memberSnapshot);
     if (member.status !== 'active') throw new HttpsError('failed-precondition', 'Only active members can receive new contributions.');
     const balance = Number(member.balance ?? 0);
-    const applied = Math.min(Math.max(balance, 0), MONTHLY_CONTRIBUTION);
+    const applied = Math.min(
+      availableUnreservedBalance(balance, Number(member.reservedKcbCredit ?? 0)),
+      MONTHLY_CONTRIBUTION,
+    );
     const payments: Record<string, unknown>[] = [];
     if (applied > 0) {
       const paymentId = db().collection(`members/${memberId}/payments`).doc().id;
@@ -374,6 +383,14 @@ export const adjustMemberBalance = onCall(async (request) => {
     const memberSnapshot = await transaction.get(memberRef);
     if (!memberSnapshot.exists) throw new HttpsError('not-found', 'Member not found.');
     const member = memberData(memberSnapshot);
+    if (type === 'deduction' && amount > availableUnreservedBalance(
+      Number(member.balance ?? 0), Number(member.reservedKcbCredit ?? 0),
+    )) {
+      throw new HttpsError(
+        'failed-precondition',
+        'Deduction exceeds the unreserved account balance.',
+      );
+    }
     let nextBalance: number;
     try {
       nextBalance = applyBalanceAdjustment(Number(member.balance ?? 0), amount, type);
