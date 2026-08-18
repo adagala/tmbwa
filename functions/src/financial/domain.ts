@@ -19,6 +19,13 @@ export const reservableLegacyKcbCredit = (
   Math.max(memberBalance + outstandingContributions - alreadyReserved, 0),
 );
 
+export const recoverableOutstandingBalance = (
+  contributions: Array<{ balance?: unknown }>,
+) => contributions.reduce((sum, contribution) => {
+  const balance = Number(contribution.balance);
+  return sum + (Number.isFinite(balance) && balance > 0 ? balance : 0);
+}, 0);
+
 export const validatePaymentAllocations = (
   receiptAmount: number,
   allocations: PaymentAllocation[],

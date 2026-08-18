@@ -4,6 +4,7 @@ import {
   availableUnreservedBalance,
   applyPayment,
   paymentAllocations,
+  recoverableOutstandingBalance,
   requiresReceiptReversalBeforeContributionRemoval,
   reservableLegacyKcbCredit,
   reversePayment,
@@ -61,6 +62,18 @@ describe('financial invariants', () => {
     expect(reservableLegacyKcbCredit(600, 100, 500, 0)).toBe(600);
     expect(reservableLegacyKcbCredit(600, -400, 900, 0)).toBe(500);
     expect(reservableLegacyKcbCredit(600, 100, 500, 200)).toBe(400);
+  });
+
+  it('ignores malformed unrelated balances when reconstructing legacy credit', () => {
+    expect(
+      recoverableOutstandingBalance([
+        { balance: 500 },
+        { balance: '400' },
+        { balance: 'invalid' },
+        {},
+        { balance: -100 },
+      ]),
+    ).toBe(900);
   });
 
   it('validates explicit multi-contribution allocations and credit', () => {

@@ -14,6 +14,7 @@ import {
 import {
   PaymentAllocation,
   paymentAllocations,
+  recoverableOutstandingBalance,
   reservableLegacyKcbCredit,
   validatePaymentAllocations,
 } from '../financial/domain';
@@ -427,14 +428,11 @@ export const allocateKcbPaymentCredit = onCall(async (request) => {
     }
     const paymentRef = db().doc(`members/${notification.memberId}/payments/${notification.paymentId}`);
     const memberRef = db().doc(`members/${notification.memberId}`);
-    const allContributionsQuery = db().collection(`members/${notification.memberId}/contributions`);
     const contributionRefs = allocations.map(({ contributionId }) =>
       db().doc(`members/${notification.memberId}/contributions/${contributionId}`));
-    const [paymentSnapshot, memberSnapshot, allContributionsSnapshot,
-      ...contributionSnapshots] = await Promise.all([
+    const [paymentSnapshot, memberSnapshot, ...contributionSnapshots] = await Promise.all([
       transaction.get(paymentRef),
       transaction.get(memberRef),
-      transaction.get(allContributionsQuery),
       ...contributionRefs.map((ref) => transaction.get(ref)),
     ]);
     if (!paymentSnapshot.exists || !memberSnapshot.exists || contributionSnapshots.some((item) => !item.exists)) {
@@ -448,9 +446,13 @@ export const allocateKcbPaymentCredit = onCall(async (request) => {
     );
     const member = memberData(memberSnapshot);
     const creditWasReserved = payment.credit_reserved === true;
-    const outstandingTotal = allContributionsSnapshot.docs.reduce(
-      (sum, snapshot) => sum + Math.max(Number(contributionData(snapshot).balance), 0), 0,
-    );
+    const outstandingTotal = creditWasReserved
+      ? 0
+      : recoverableOutstandingBalance(
+        (await transaction.get(
+          db().collection(`members/${notification.memberId}/contributions`),
+        )).docs.map((snapshot) => snapshot.data()),
+      );
     const available = creditWasReserved
       ? derivedAvailable
       : reservableLegacyKcbCredit(
