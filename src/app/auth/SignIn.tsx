@@ -29,7 +29,9 @@ export default function LogIn() {
     signInWithEmailAndPassword(data)
       .then(async (credential) => {
         const token = await credential.user.getIdTokenResult();
-        navigate(token.claims.role === 'administrator' ? '/overview' : '/profile');
+        navigate(
+          token.claims.role === 'administrator' ? '/overview' : '/profile',
+        );
       })
       .catch(() => {
         toast({

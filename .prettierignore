@@ -1,0 +1,10 @@
+node_modules
+dist
+.firebase
+functions
+functions-dev
+packages
+public
+docs/kcb-buni
+firebase-debug.log
+firestore-debug.log

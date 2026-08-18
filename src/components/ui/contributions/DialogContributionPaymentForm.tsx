@@ -12,11 +12,7 @@ import {
 } from '@/components/Dialog';
 import { Input } from '@/components/Input';
 import { Label } from '@/components/Label';
-import {
-  Contribution,
-  Payment,
-  PaymentForm,
-} from 'tmbwa-shared/firebase';
+import { Contribution, Payment, PaymentForm } from 'tmbwa-shared/firebase';
 import { PaymentTypeEnum } from 'tmbwa-shared';
 import { toast } from '@/hooks/useToast';
 import { DatePicker } from '@/components/DatePicker';

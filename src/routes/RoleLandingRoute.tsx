@@ -13,5 +13,10 @@ export default function RoleLandingRoute() {
     return <Navigate to="/auth/signin" replace />;
   }
 
-  return <Navigate to={role === 'administrator' ? '/overview' : '/profile'} replace />;
+  return (
+    <Navigate
+      to={role === 'administrator' ? '/overview' : '/profile'}
+      replace
+    />
+  );
 }

@@ -53,7 +53,8 @@ export const DialogDeleteContribution = ({
                 } catch (error: any) {
                   toast({
                     title: 'Error',
-                    description: error?.message || 'Error deleting contribution',
+                    description:
+                      error?.message || 'Error deleting contribution',
                     variant: 'error',
                     duration: 3000,
                   });

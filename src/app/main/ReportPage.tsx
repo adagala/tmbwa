@@ -2,18 +2,254 @@ import { useEffect, useMemo, useState } from 'react';
 import { RiDownloadLine, RiFileTextLine } from '@remixicon/react';
 import { Card } from '@/components/Card';
 import { Contribution, Member, Payment } from 'tmbwa-shared/firebase';
-import { getAllContributions, getAllPayments, getMembers } from '@/lib/firebase/firestore';
-import { contributionCsv, downloadCsv, filterContributions, filterPayments, kenyaMoney, monthLabel, ReportFilters, summarize } from '@/lib/financialReporting';
+import {
+  getAllContributions,
+  getAllPayments,
+  getMembers,
+} from '@/lib/firebase/firestore';
+import {
+  contributionCsv,
+  downloadCsv,
+  filterContributions,
+  filterPayments,
+  kenyaMoney,
+  monthLabel,
+  ReportFilters,
+  summarize,
+} from '@/lib/financialReporting';
 
-const initialFilters: ReportFilters = { from: '', to: '', memberId: '', status: '', paymentType: '' };
+const initialFilters: ReportFilters = {
+  from: '',
+  to: '',
+  memberId: '',
+  status: '',
+  paymentType: '',
+};
 export default function ReportPage() {
-  const [contributions, setContributions] = useState<Contribution[]>([]); const [payments, setPayments] = useState<Payment[]>([]); const [members, setMembers] = useState<Member[]>([]);
-  const [filters, setFilters] = useState(initialFilters); const [loading, setLoading] = useState(true); const [error, setError] = useState('');
-  useEffect(() => { let loaded = 0; const done = () => { loaded += 1; if (loaded === 3) setLoading(false); }; const fail = (reason: Error) => { setError(reason.message); setLoading(false); }; const stops = [getAllContributions((items) => { setContributions(items); done(); }, fail), getAllPayments((items) => { setPayments(items); done(); }, fail), getMembers((items) => { setMembers(items); done(); })]; return () => stops.forEach((stop) => stop()); }, []);
-  const visibleContributions = useMemo(() => filterContributions(contributions, filters), [contributions, filters]); const visiblePayments = useMemo(() => filterPayments(payments, filters), [payments, filters]); const visibleMembers = useMemo(() => filters.memberId ? members.filter((member) => member.member_id === filters.memberId) : members, [filters.memberId, members]); const summary = useMemo(() => summarize(visibleContributions, visiblePayments, visibleMembers), [visibleContributions, visiblePayments, visibleMembers]);
-  const months = useMemo(() => Object.values(visibleContributions.reduce<Record<string, { month: string; billed: number; collected: number }>>((all, item) => { const row = all[item.month] ?? { month: item.month, billed: 0, collected: 0 }; row.billed += item.amount; row.collected += item.amount - item.balance; all[item.month] = row; return all; }, {})).sort((a, b) => b.month.localeCompare(a.month)), [visibleContributions]);
-  const set = (key: keyof ReportFilters) => (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setFilters((current) => ({ ...current, [key]: event.target.value }));
-  return <div className="flex flex-col gap-6"><h1 className="mt-6 flex items-center gap-2 text-xl font-bold text-guardsman-red-600"><RiFileTextLine /> Financial report</h1><p className="text-sm text-gray-600">Billed is the amount charged. Collected is the amount applied to charges. Outstanding is billed less collected; account credit is held separately.</p>
-    <Card className="grid gap-3 md:grid-cols-5"><label className="text-sm">From month<input type="month" value={filters.from} onChange={set('from')} className="mt-1 w-full rounded border p-2" /></label><label className="text-sm">To month<input type="month" value={filters.to} onChange={set('to')} className="mt-1 w-full rounded border p-2" /></label><label className="text-sm">Member<select value={filters.memberId} onChange={set('memberId')} className="mt-1 w-full rounded border p-2"><option value="">All members</option>{members.map((member) => <option key={member.member_id} value={member.member_id}>{member.firstname} {member.lastname}</option>)}</select></label><label className="text-sm">Charge status<select value={filters.status} onChange={set('status')} className="mt-1 w-full rounded border p-2"><option value="">All statuses</option><option value="paid">Paid</option><option value="partial">Partial</option><option value="unpaid">Unpaid</option></select></label><label className="text-sm">Payment type<select value={filters.paymentType} onChange={set('paymentType')} className="mt-1 w-full rounded border p-2"><option value="">All types</option><option value="contribution">Contribution</option><option value="account">Account</option></select></label></Card>
-    {error ? <Card className="text-red-700">Unable to load reporting data: {error}</Card> : null}{loading ? <p className="text-sm text-gray-500">Loading financial report…</p> : null}{!loading && !error ? <><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{[['Billed', kenyaMoney.format(summary.billed)], ['Collected', kenyaMoney.format(summary.collected)], ['Outstanding', kenyaMoney.format(summary.outstanding)], ['Account credit', kenyaMoney.format(summary.accountCredit)], ['Collection rate', `${(summary.collectionRate * 100).toFixed(1)}%`], ['Payments', summary.payments], ['Active members', summary.activeMembers]].map(([label, value]) => <Card key={label} className="space-y-1"><p className="text-sm text-gray-500">{label}</p><p className="text-xl font-semibold">{value}</p></Card>)}</div><div className="flex justify-end"><button type="button" className="flex items-center gap-2 rounded bg-guardsman-red-600 px-4 py-2 text-sm font-semibold text-white" onClick={() => downloadCsv(contributionCsv(visibleContributions), `tmbwa-financial-report-${filters.from || 'all'}-${filters.to || 'all'}.csv`)}><RiDownloadLine className="size-4" />Export CSV</button></div>{months.length === 0 ? <Card className="text-sm text-gray-500">No financial records match these filters.</Card> : <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead><tr className="border-b"><th className="p-3">Month</th><th className="p-3">Billed</th><th className="p-3">Collected</th><th className="p-3">Outstanding</th></tr></thead><tbody>{months.map((row) => <tr key={row.month} className="border-b"><td className="p-3 font-medium">{monthLabel(row.month)}</td><td className="p-3">{kenyaMoney.format(row.billed)}</td><td className="p-3">{kenyaMoney.format(row.collected)}</td><td className="p-3">{kenyaMoney.format(row.billed - row.collected)}</td></tr>)}</tbody></table></div>}</> : null}</div>;
+  const [contributions, setContributions] = useState<Contribution[]>([]);
+  const [payments, setPayments] = useState<Payment[]>([]);
+  const [members, setMembers] = useState<Member[]>([]);
+  const [filters, setFilters] = useState(initialFilters);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    let loaded = 0;
+    const done = () => {
+      loaded += 1;
+      if (loaded === 3) setLoading(false);
+    };
+    const fail = (reason: Error) => {
+      setError(reason.message);
+      setLoading(false);
+    };
+    const stops = [
+      getAllContributions((items) => {
+        setContributions(items);
+        done();
+      }, fail),
+      getAllPayments((items) => {
+        setPayments(items);
+        done();
+      }, fail),
+      getMembers((items) => {
+        setMembers(items);
+        done();
+      }),
+    ];
+    return () => stops.forEach((stop) => stop());
+  }, []);
+  const visibleContributions = useMemo(
+    () => filterContributions(contributions, filters),
+    [contributions, filters],
+  );
+  const visiblePayments = useMemo(
+    () => filterPayments(payments, filters),
+    [payments, filters],
+  );
+  const visibleMembers = useMemo(
+    () =>
+      filters.memberId
+        ? members.filter((member) => member.member_id === filters.memberId)
+        : members,
+    [filters.memberId, members],
+  );
+  const summary = useMemo(
+    () => summarize(visibleContributions, visiblePayments, visibleMembers),
+    [visibleContributions, visiblePayments, visibleMembers],
+  );
+  const months = useMemo(
+    () =>
+      Object.values(
+        visibleContributions.reduce<
+          Record<string, { month: string; billed: number; collected: number }>
+        >((all, item) => {
+          const row = all[item.month] ?? {
+            month: item.month,
+            billed: 0,
+            collected: 0,
+          };
+          row.billed += item.amount;
+          row.collected += item.amount - item.balance;
+          all[item.month] = row;
+          return all;
+        }, {}),
+      ).sort((a, b) => b.month.localeCompare(a.month)),
+    [visibleContributions],
+  );
+  const set =
+    (key: keyof ReportFilters) =>
+    (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+      setFilters((current) => ({ ...current, [key]: event.target.value }));
+  return (
+    <div className="flex flex-col gap-6">
+      <h1 className="mt-6 flex items-center gap-2 text-xl font-bold text-guardsman-red-600">
+        <RiFileTextLine /> Financial report
+      </h1>
+      <p className="text-sm text-gray-600">
+        Billed is the amount charged. Collected is the amount applied to
+        charges. Outstanding is billed less collected; account credit is held
+        separately.
+      </p>
+      <Card className="grid gap-3 md:grid-cols-5">
+        <label className="text-sm">
+          From month
+          <input
+            type="month"
+            value={filters.from}
+            onChange={set('from')}
+            className="mt-1 w-full rounded border p-2"
+          />
+        </label>
+        <label className="text-sm">
+          To month
+          <input
+            type="month"
+            value={filters.to}
+            onChange={set('to')}
+            className="mt-1 w-full rounded border p-2"
+          />
+        </label>
+        <label className="text-sm">
+          Member
+          <select
+            value={filters.memberId}
+            onChange={set('memberId')}
+            className="mt-1 w-full rounded border p-2"
+          >
+            <option value="">All members</option>
+            {members.map((member) => (
+              <option key={member.member_id} value={member.member_id}>
+                {member.firstname} {member.lastname}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="text-sm">
+          Charge status
+          <select
+            value={filters.status}
+            onChange={set('status')}
+            className="mt-1 w-full rounded border p-2"
+          >
+            <option value="">All statuses</option>
+            <option value="paid">Paid</option>
+            <option value="partial">Partial</option>
+            <option value="unpaid">Unpaid</option>
+          </select>
+        </label>
+        <label className="text-sm">
+          Payment type
+          <select
+            value={filters.paymentType}
+            onChange={set('paymentType')}
+            className="mt-1 w-full rounded border p-2"
+          >
+            <option value="">All types</option>
+            <option value="contribution">Contribution</option>
+            <option value="account">Account</option>
+          </select>
+        </label>
+      </Card>
+      {error ? (
+        <Card className="text-red-700">
+          Unable to load reporting data: {error}
+        </Card>
+      ) : null}
+      {loading ? (
+        <p className="text-sm text-gray-500">Loading financial report…</p>
+      ) : null}
+      {!loading && !error ? (
+        <>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {[
+              ['Billed', kenyaMoney.format(summary.billed)],
+              ['Collected', kenyaMoney.format(summary.collected)],
+              ['Outstanding', kenyaMoney.format(summary.outstanding)],
+              ['Account credit', kenyaMoney.format(summary.accountCredit)],
+              [
+                'Collection rate',
+                `${(summary.collectionRate * 100).toFixed(1)}%`,
+              ],
+              ['Payments', summary.payments],
+              ['Active members', summary.activeMembers],
+            ].map(([label, value]) => (
+              <Card key={label} className="space-y-1">
+                <p className="text-sm text-gray-500">{label}</p>
+                <p className="text-xl font-semibold">{value}</p>
+              </Card>
+            ))}
+          </div>
+          <div className="flex justify-end">
+            <button
+              type="button"
+              className="flex items-center gap-2 rounded bg-guardsman-red-600 px-4 py-2 text-sm font-semibold text-white"
+              onClick={() =>
+                downloadCsv(
+                  contributionCsv(visibleContributions),
+                  `tmbwa-financial-report-${filters.from || 'all'}-${filters.to || 'all'}.csv`,
+                )
+              }
+            >
+              <RiDownloadLine className="size-4" />
+              Export CSV
+            </button>
+          </div>
+          {months.length === 0 ? (
+            <Card className="text-sm text-gray-500">
+              No financial records match these filters.
+            </Card>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead>
+                  <tr className="border-b">
+                    <th className="p-3">Month</th>
+                    <th className="p-3">Billed</th>
+                    <th className="p-3">Collected</th>
+                    <th className="p-3">Outstanding</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {months.map((row) => (
+                    <tr key={row.month} className="border-b">
+                      <td className="p-3 font-medium">
+                        {monthLabel(row.month)}
+                      </td>
+                      <td className="p-3">{kenyaMoney.format(row.billed)}</td>
+                      <td className="p-3">
+                        {kenyaMoney.format(row.collected)}
+                      </td>
+                      <td className="p-3">
+                        {kenyaMoney.format(row.billed - row.collected)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      ) : null}
+    </div>
+  );
 }
