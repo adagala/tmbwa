@@ -16,9 +16,10 @@ import { Badge } from '@/components/Badge';
 import { Label } from '@/components/Label';
 import { RiCoinsLine, RiSafe2Line, RiShoppingBag3Line } from '@remixicon/react';
 import { DialogDeleteContributionPayment } from './DialogDeleteContributionPayment';
-import { DialogContributionPaymentForm } from './DialogContributionPaymentForm';
+import { DialogLegacyContributionCorrection } from './DialogLegacyContributionCorrection';
 import useUser from '@/hooks/useUser';
 import { DialogDeleteContribution } from './DialogDeleteContribution';
+import { DialogReverseLegacyCorrection } from './DialogReverseLegacyCorrection';
 
 export const DialogContributionDetails = ({
   contribution,
@@ -33,6 +34,11 @@ export const DialogContributionDetails = ({
 }) => {
   const { role } = useUser();
   const payments = contribution?.payments || [];
+  const reversedCorrectionIds = new Set(
+    contribution.legacy_corrections
+      .filter((correction) => correction.type === 'reversal')
+      .map((correction) => correction.correctionId),
+  );
   return (
     <>
       <div className="flex justify-center">
@@ -123,8 +129,8 @@ export const DialogContributionDetails = ({
                     />
                     Payment details
                   </div>
-                  {role === 'administrator' && contribution.paid !== 'paid' ? (
-                    <DialogContributionPaymentForm
+                  {role === 'administrator' ? (
+                    <DialogLegacyContributionCorrection
                       contribution={contribution}
                     />
                   ) : (
@@ -193,6 +199,46 @@ export const DialogContributionDetails = ({
                     </div>
                   </div>
                 )}
+
+                {contribution.legacy_corrections.length > 0 ? (
+                  <div className="space-y-2 border-t border-gray-200 pt-4 dark:border-gray-800">
+                    <div className="font-medium text-gray-900 dark:text-gray-100">
+                      Legacy correction history
+                    </div>
+                    {contribution.legacy_corrections.map(
+                      (correction, index) => (
+                        <div
+                          key={`${correction.correctionId}-${correction.type}-${index}`}
+                          className="rounded-md bg-amber-50 p-3 text-sm text-amber-950"
+                        >
+                          <div className="font-medium capitalize">
+                            {correction.type === 'reversal'
+                              ? 'Correction reversed'
+                              : 'Legacy correction'}
+                          </div>
+                          <div>{correction.reason}</div>
+                          <div>
+                            Financial delta: {correction.delta > 0 ? '+' : ''}
+                            KES {correction.delta}
+                          </div>
+                          <div className="text-xs">
+                            Reference: {correction.correctionId}
+                          </div>
+                          {role === 'administrator' &&
+                          correction.type === 'correction' &&
+                          !reversedCorrectionIds.has(
+                            correction.correctionId,
+                          ) ? (
+                            <DialogReverseLegacyCorrection
+                              memberId={contribution.member_id}
+                              correctionId={correction.correctionId}
+                            />
+                          ) : null}
+                        </div>
+                      ),
+                    )}
+                  </div>
+                ) : null}
               </DialogDescription>
             </DialogHeader>
             <DialogFooter className="mt-6">

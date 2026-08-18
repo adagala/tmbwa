@@ -9,10 +9,14 @@ import {
   paymentDocumentSchema,
 } from 'tmbwa-shared';
 import {
-  applyBalanceAdjustment,
   availableUnreservedBalance,
-  applyPayment,
   paymentAllocations,
+  legacyContributionCorrection,
+  correctedPaidAmountValue,
+  canReverseLegacyCorrection,
+  hasLegacyCorrectionHistory,
+  hasLinkedPaymentHistory,
+  legacyInventoryCursor,
   requiresReceiptReversalBeforeContributionRemoval,
   reversePayment,
 } from './domain';
@@ -41,14 +45,6 @@ const requiredString = (data: CommandData, key: string) => {
     throw new HttpsError('invalid-argument', `${key} is required.`);
   }
   return value.trim();
-};
-
-const positiveNumber = (data: CommandData, key: string) => {
-  const value = data[key];
-  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
-    throw new HttpsError('invalid-argument', `${key} must be greater than zero.`);
-  }
-  return value;
 };
 
 const commandRef = (requestId: string) => db().doc(`financial_commands/${requestId}`);
@@ -97,81 +93,11 @@ const writeCommand = (
 };
 
 export const recordContributionPayment = onCall(async (request) => {
-  const actorId = requireAdministrator(request.auth);
-  const data = request.data as CommandData;
-  const requestId = requiredString(data, 'requestId');
-  const memberId = requiredString(data, 'memberId');
-  const contributionId = requiredString(data, 'contributionId');
-  const referenceNumber = requiredString(data, 'referenceNumber');
-  const amount = positiveNumber(data, 'amount');
-  const paymentDateMillis = positiveNumber(data, 'paymentDateMillis');
-
-  return db().runTransaction(async (transaction) => {
-    const command = await readCommand(transaction, requestId);
-    if (command.exists) {
-      return { requestId, duplicate: true };
-    }
-    const memberRef = db().doc(`members/${memberId}`);
-    const contributionRef = db().doc(`members/${memberId}/contributions/${contributionId}`);
-    const [memberSnapshot, contributionSnapshot] = await Promise.all([
-      transaction.get(memberRef),
-      transaction.get(contributionRef),
-    ]);
-    if (!memberSnapshot.exists || !contributionSnapshot.exists) {
-      throw new HttpsError('not-found', 'Member or contribution not found.');
-    }
-    const member = memberData(memberSnapshot);
-    const contribution = contributionData(contributionSnapshot);
-    const outstanding = Number(contribution.balance ?? 0);
-    if (outstanding <= 0) throw new HttpsError('failed-precondition', 'Contribution is already paid.');
-
-    const paymentResult = applyPayment(amount, outstanding);
-    const { contributionAmount } = paymentResult;
-    const paymentId = db().collection(`members/${memberId}/payments`).doc().id;
-    const receiptNumber = `TMBWA-${paymentId.toUpperCase()}`;
-    const createdAt = admin.firestore.Timestamp.now();
-    const payment = {
-      payment_id: paymentId,
-      referencenumber: referenceNumber,
-      amount,
-      paymentdate: admin.firestore.Timestamp.fromMillis(paymentDateMillis),
-      created_at: createdAt,
-      member_id: memberId,
-      contribution_id: contributionId,
-      firstname: member.firstname,
-      lastname: member.lastname,
-      contribution_amount: contributionAmount,
-      payment_type: 'contribution',
-      action_by: actorId,
-      request_id: requestId,
-      receipt_number: receiptNumber,
-    };
-    writeCommand(transaction, command.ref, 'recordContributionPayment', actorId);
-    transaction.create(
-      db().doc(`members/${memberId}/payments/${paymentId}`),
-      validateDocumentWrite(paymentDocumentSchema, payment, `members/${memberId}/payments/${paymentId}`),
-    );
-    transaction.update(contributionRef, {
-      payments: admin.firestore.FieldValue.arrayUnion(payment),
-      balance: paymentResult.remainingBalance,
-      paid: paymentResult.status,
-    });
-    transaction.update(memberRef, {
-      balance: admin.firestore.FieldValue.increment(amount),
-      contributionBalance: admin.firestore.FieldValue.increment(contributionAmount),
-    });
-    transaction.set(db().doc(`monthly_stats/${contributionId}`), {
-      contribution: admin.firestore.FieldValue.increment(contributionAmount),
-      month: contributionId,
-    }, { merge: true });
-    writeAuditEvent(transaction, requestId, actorId, 'payment.recorded', memberId, paymentId, {
-      amount,
-      contributionAmount,
-      contributionId,
-      referenceNumber,
-    });
-    return { requestId, paymentId, receiptNumber, contributionAmount, duplicate: false };
-  });
+  requireAdministrator(request.auth);
+  throw new HttpsError(
+    'failed-precondition',
+    'Manual payments are retired. Reconcile payments through KCB.',
+  );
 });
 
 export const reverseContributionPayment = onCall(async (request) => {
@@ -365,67 +291,221 @@ export const createContribution = onCall(async (request) => {
 });
 
 export const adjustMemberBalance = onCall(async (request) => {
+  requireAdministrator(request.auth);
+  throw new HttpsError(
+    'failed-precondition',
+    'Manual balance adjustments are retired. Use KCB reconciliation or a legacy correction.',
+  );
+});
+
+export const correctLegacyContribution = onCall(async (request) => {
   const actorId = requireAdministrator(request.auth);
   const data = request.data as CommandData;
   const requestId = requiredString(data, 'requestId');
   const memberId = requiredString(data, 'memberId');
-  const amount = positiveNumber(data, 'amount');
-  const type = requiredString(data, 'type');
-  if (type !== 'top_up' && type !== 'deduction') {
-    throw new HttpsError('invalid-argument', 'type must be top_up or deduction.');
+  const contributionId = requiredString(data, 'contributionId');
+  const reason = requiredString(data, 'reason');
+  let correctedPaidAmount: number;
+  try {
+    correctedPaidAmount = correctedPaidAmountValue(data.correctedPaidAmount);
+  } catch (error) {
+    throw new HttpsError('invalid-argument', (error as Error).message);
   }
+  if (contributionId > new Date().toISOString().slice(0, 7) + '-01') {
+    throw new HttpsError('invalid-argument', 'Future contributions cannot be corrected.');
+  }
+  const reference = typeof data.reference === 'string' ? data.reference.trim() : '';
+  const notes = typeof data.notes === 'string' ? data.notes.trim() : '';
+  const originalPaymentDateMillis = typeof data.originalPaymentDateMillis === 'number'
+    ? data.originalPaymentDateMillis : undefined;
+
   return db().runTransaction(async (transaction) => {
     const command = await readCommand(transaction, requestId);
-    if (command.exists) {
-      return { requestId, duplicate: true };
-    }
+    if (command.exists) return { requestId, duplicate: true };
     const memberRef = db().doc(`members/${memberId}`);
-    const memberSnapshot = await transaction.get(memberRef);
-    if (!memberSnapshot.exists) throw new HttpsError('not-found', 'Member not found.');
-    const member = memberData(memberSnapshot);
-    if (type === 'deduction' && amount > availableUnreservedBalance(
-      Number(member.balance ?? 0), Number(member.reservedKcbCredit ?? 0),
+    const contributionRef = db().doc(`members/${memberId}/contributions/${contributionId}`);
+    const [memberSnapshot, contributionSnapshot] = await Promise.all([
+      transaction.get(memberRef), transaction.get(contributionRef),
+    ]);
+    if (!memberSnapshot.exists || !contributionSnapshot.exists) {
+      throw new HttpsError('not-found', 'Member or contribution not found.');
+    }
+    memberData(memberSnapshot);
+    const contribution = contributionData(contributionSnapshot);
+    if (hasLinkedPaymentHistory(contribution.payments)) {
+      throw new HttpsError(
+        'failed-precondition',
+        'A payment is linked to this contribution. Reverse that receipt before applying a legacy correction.',
+      );
+    }
+    let correction: ReturnType<typeof legacyContributionCorrection>;
+    try {
+      correction = legacyContributionCorrection(
+        Number(contribution.amount), Number(contribution.balance), correctedPaidAmount,
+      );
+    } catch (error) {
+      throw new HttpsError('invalid-argument', (error as Error).message);
+    }
+    if (correction.delta === 0) {
+      throw new HttpsError('failed-precondition', 'The contribution already has this paid amount.');
+    }
+    const correctionRef = db().doc(`members/${memberId}/legacy_corrections/${requestId}`);
+    const correctionRecord = {
+      correctionId: requestId,
+      memberId,
+      contributionId,
+      source: 'legacy_correction',
+      reason,
+      reference: reference || null,
+      notes: notes || null,
+      originalPaymentDate: originalPaymentDateMillis
+        ? admin.firestore.Timestamp.fromMillis(originalPaymentDateMillis) : null,
+      before: { balance: Number(contribution.balance), paid: contribution.paid,
+        paidAmount: correction.currentPaidAmount },
+      after: { balance: correction.correctedBalance, paid: correction.status,
+        paidAmount: correction.correctedPaidAmount },
+      delta: correction.delta,
+      previousCorrectionId: contribution.active_legacy_correction_id ?? null,
+      reversed: false,
+      actorId,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
+    writeCommand(transaction, command.ref, 'correctLegacyContribution', actorId);
+    transaction.create(correctionRef, correctionRecord);
+    transaction.update(contributionRef, {
+      balance: correction.correctedBalance,
+      paid: correction.status,
+      active_legacy_correction_id: requestId,
+      legacy_corrections: admin.firestore.FieldValue.arrayUnion({
+        correctionId: requestId, delta: correction.delta, reason,
+        source: 'legacy_correction', actorId,
+        createdAt: admin.firestore.Timestamp.now(), reversed: false, type: 'correction',
+      }),
+    });
+    transaction.update(memberRef, {
+      balance: admin.firestore.FieldValue.increment(correction.delta),
+      contributionBalance: admin.firestore.FieldValue.increment(correction.delta),
+    });
+    transaction.set(db().doc(`monthly_stats/${contributionId}`), {
+      contribution: admin.firestore.FieldValue.increment(correction.delta),
+      month: contributionId,
+    }, { merge: true });
+    writeAuditEvent(transaction, requestId, actorId, 'legacy_contribution.corrected',
+      memberId, contributionId, correctionRecord);
+    return { requestId, correctionId: requestId, delta: correction.delta, duplicate: false };
+  });
+});
+
+export const reverseLegacyContributionCorrection = onCall(async (request) => {
+  const actorId = requireAdministrator(request.auth);
+  const data = request.data as CommandData;
+  const requestId = requiredString(data, 'requestId');
+  const memberId = requiredString(data, 'memberId');
+  const correctionId = requiredString(data, 'correctionId');
+  const reason = requiredString(data, 'reason');
+  return db().runTransaction(async (transaction) => {
+    const command = await readCommand(transaction, requestId);
+    if (command.exists) return { requestId, duplicate: true };
+    const correctionRef = db().doc(`members/${memberId}/legacy_corrections/${correctionId}`);
+    const correctionSnapshot = await transaction.get(correctionRef);
+    if (!correctionSnapshot.exists) throw new HttpsError('not-found', 'Legacy correction not found.');
+    const correction = correctionSnapshot.data() as {
+      reversed?: boolean;
+      contributionId?: unknown;
+      delta?: unknown;
+      previousCorrectionId?: unknown;
+      before?: { balance?: unknown; paid?: unknown };
+      after?: { balance?: unknown };
+    };
+    if (correction.reversed) throw new HttpsError('failed-precondition', 'Correction is already reversed.');
+    const contributionId = String(correction.contributionId);
+    const contributionRef = db().doc(`members/${memberId}/contributions/${contributionId}`);
+    const contributionSnapshot = await transaction.get(contributionRef);
+    if (!contributionSnapshot.exists) throw new HttpsError('not-found', 'Contribution not found.');
+    const contribution = contributionData(contributionSnapshot);
+    if (!correction.before || !correction.after || !canReverseLegacyCorrection(
+      contribution.active_legacy_correction_id,
+      correctionId,
+      Number(contribution.balance),
+      Number(correction.after.balance),
     )) {
       throw new HttpsError(
         'failed-precondition',
-        'Deduction exceeds the unreserved account balance.',
+        'This is not the latest active correction. Reverse newer corrections first.',
       );
     }
-    let nextBalance: number;
-    try {
-      nextBalance = applyBalanceAdjustment(Number(member.balance ?? 0), amount, type);
-    } catch (error) {
-      throw new HttpsError('failed-precondition', (error as Error).message);
-    }
-    const paymentId = db().collection(`members/${memberId}/payments`).doc().id;
-    writeCommand(transaction, command.ref, 'adjustMemberBalance', actorId);
-    transaction.update(memberRef, { balance: nextBalance });
-    const paymentPath = `members/${memberId}/payments/${paymentId}`;
-    transaction.create(db().doc(paymentPath), validateDocumentWrite(paymentDocumentSchema, {
-      payment_id: paymentId,
-      referencenumber: type === 'top_up' ? 'ACCOUNT BALANCE TOP UP' : 'ACCOUNT BALANCE DEDUCTION',
-      amount,
-      paymentdate: admin.firestore.FieldValue.serverTimestamp(),
-      created_at: admin.firestore.FieldValue.serverTimestamp(),
-      member_id: memberId,
-      contribution_id: '',
-      firstname: member.firstname,
-      lastname: member.lastname,
-      contribution_amount: 0,
-      payment_type: 'account',
-      balance_direction: type,
-      action_by: actorId,
-      request_id: requestId,
-      receipt_number: `TMBWA-${paymentId.toUpperCase()}`,
-    }, paymentPath));
-    writeAuditEvent(transaction, requestId, actorId, 'balance.adjusted', memberId, paymentId, {
-      amount,
-      direction: type,
-      previousBalance: Number(member.balance ?? 0),
-      newBalance: nextBalance,
+    const delta = Number(correction.delta);
+    writeCommand(transaction, command.ref, 'reverseLegacyContributionCorrection', actorId);
+    transaction.update(correctionRef, { reversed: true, reversedBy: actorId, reversalReason: reason,
+      reversedAt: admin.firestore.FieldValue.serverTimestamp(), reversalRequestId: requestId });
+    transaction.update(contributionRef, {
+      balance: Number(correction.before.balance),
+      paid: String(correction.before.paid),
+      active_legacy_correction_id: typeof correction.previousCorrectionId === 'string'
+        ? correction.previousCorrectionId : admin.firestore.FieldValue.delete(),
+      legacy_corrections: admin.firestore.FieldValue.arrayUnion({
+        correctionId, delta: -delta, reason,
+        source: 'legacy_correction', actorId,
+        createdAt: admin.firestore.Timestamp.now(), reversed: true, type: 'reversal',
+      }),
     });
-    return { requestId, paymentId, duplicate: false };
+    transaction.update(db().doc(`members/${memberId}`), {
+      balance: admin.firestore.FieldValue.increment(-delta),
+      contributionBalance: admin.firestore.FieldValue.increment(-delta),
+    });
+    transaction.set(db().doc(`monthly_stats/${contributionId}`), {
+      contribution: admin.firestore.FieldValue.increment(-delta), month: contributionId,
+    }, { merge: true });
+    writeAuditEvent(transaction, requestId, actorId, 'legacy_contribution.correction_reversed',
+      memberId, contributionId, { correctionId, reason, delta: -delta });
+    return { requestId, correctionId, duplicate: false };
   });
+});
+
+export const listLegacyContributionInventory = onCall(async (request) => {
+  requireAdministrator(request.auth);
+  const data = request.data as CommandData | undefined;
+  const requestedLimit = Number(data?.limit ?? 200);
+  const limit = Math.min(Math.max(Number.isInteger(requestedLimit) ? requestedLimit : 200, 1), 500);
+  let cursor: string | undefined;
+  try {
+    cursor = legacyInventoryCursor(data?.cursor);
+  } catch (error) {
+    throw new HttpsError('invalid-argument', (error as Error).message);
+  }
+  let query: FirebaseFirestore.Query = db().collectionGroup('contributions')
+    .orderBy(admin.firestore.FieldPath.documentId());
+  if (cursor) query = query.startAfter(cursor);
+  const snapshot = await query.limit(limit + 1).get();
+  const hasMore = snapshot.size > limit;
+  const documents = snapshot.docs.slice(0, limit);
+  return {
+    scanned: documents.length,
+    nextCursor: hasMore ? documents[documents.length - 1].ref.path : null,
+    records: documents.map((document) => {
+      const data = document.data();
+      const payments = Array.isArray(data.payments)
+        ? data.payments as Array<Record<string, unknown>> : [];
+      const amount = Number(data.amount);
+      const balance = Number(data.balance);
+      const validTotals = Number.isFinite(amount) && amount > 0 &&
+        Number.isFinite(balance) && balance >= 0 && balance <= amount;
+      const kcbLinked = payments.some((payment) =>
+        typeof payment.provider_transaction_id === 'string' ||
+        (Array.isArray(payment.allocations) && payment.allocations.length > 1));
+      return {
+        path: document.ref.path,
+        memberId: document.ref.parent.parent?.id ?? '',
+        contributionId: document.id,
+        amount: validTotals ? amount : null,
+        balance: validTotals ? balance : null,
+        paid: typeof data.paid === 'string' ? data.paid : null,
+        paymentCount: payments.length,
+        kcbLinked,
+        needsReview: !validTotals || (!kcbLinked && payments.length === 0 && balance < amount),
+      };
+    }),
+  };
 });
 
 export const removeContribution = onCall(async (request) => {
@@ -443,6 +523,12 @@ export const removeContribution = onCall(async (request) => {
     const contributionSnapshot = await transaction.get(contributionRef);
     if (!contributionSnapshot.exists) throw new HttpsError('not-found', 'Contribution not found.');
     const contribution = contributionData(contributionSnapshot);
+    if (hasLegacyCorrectionHistory(contribution.legacy_corrections)) {
+      throw new HttpsError(
+        'failed-precondition',
+        'Contributions with audited legacy correction history cannot be removed.',
+      );
+    }
     const payments = Array.isArray(contribution.payments) ? contribution.payments : [];
     const paymentRefs = payments.map((payment) =>
       db().doc(`members/${memberId}/payments/${payment.payment_id}`));

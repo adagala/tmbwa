@@ -4,6 +4,12 @@ import {
   availableUnreservedBalance,
   applyPayment,
   paymentAllocations,
+  legacyContributionCorrection,
+  correctedPaidAmountValue,
+  canReverseLegacyCorrection,
+  hasLegacyCorrectionHistory,
+  hasLinkedPaymentHistory,
+  legacyInventoryCursor,
   recoverableOutstandingBalance,
   requiresReceiptReversalBeforeContributionRemoval,
   reservableLegacyKcbCredit,
@@ -74,6 +80,67 @@ describe('financial invariants', () => {
         { balance: -100 },
       ]),
     ).toBe(900);
+  });
+
+  it('calculates an auditable legacy correction delta and status', () => {
+    expect(legacyContributionCorrection(500, 500, 400)).toEqual({
+      currentPaidAmount: 0,
+      correctedPaidAmount: 400,
+      correctedBalance: 100,
+      delta: 400,
+      status: 'partial',
+    });
+    expect(legacyContributionCorrection(500, 100, 500)).toMatchObject({
+      correctedBalance: 0,
+      delta: 100,
+      status: 'paid',
+    });
+    expect(legacyContributionCorrection(500, 0, 0)).toMatchObject({
+      correctedBalance: 500,
+      delta: -500,
+      status: 'unpaid',
+    });
+    expect(() => legacyContributionCorrection(500, 500, 501)).toThrow();
+  });
+
+  it('requires corrected paid amounts to be finite numbers without coercion', () => {
+    expect(correctedPaidAmountValue(0)).toBe(0);
+    expect(correctedPaidAmountValue(400)).toBe(400);
+    expect(() => correctedPaidAmountValue(null)).toThrow();
+    expect(() => correctedPaidAmountValue('400')).toThrow();
+    expect(() => correctedPaidAmountValue(Number.NaN)).toThrow();
+    expect(() => correctedPaidAmountValue(Number.POSITIVE_INFINITY)).toThrow();
+    expect(() => correctedPaidAmountValue(-1)).toThrow();
+  });
+
+  it('requires legacy corrections to be reversed in last-in-first-out order', () => {
+    // A later correction cycled the balance back to correction-1's numeric state.
+    expect(
+      canReverseLegacyCorrection('correction-3', 'correction-1', 400, 400),
+    ).toBe(false);
+    expect(
+      canReverseLegacyCorrection('correction-3', 'correction-3', 400, 400),
+    ).toBe(true);
+    // Once correction-3 restores correction-2 as active, correction-1 is still blocked.
+    expect(
+      canReverseLegacyCorrection('correction-2', 'correction-1', 300, 400),
+    ).toBe(false);
+  });
+
+  it('preserves corrected contributions and validates inventory cursors', () => {
+    expect(hasLegacyCorrectionHistory([])).toBe(false);
+    expect(hasLegacyCorrectionHistory([{ correctionId: 'correction-1' }])).toBe(
+      true,
+    );
+    expect(hasLinkedPaymentHistory([])).toBe(false);
+    expect(hasLinkedPaymentHistory([{ payment_id: 'payment-1' }])).toBe(true);
+    expect(legacyInventoryCursor(undefined)).toBeUndefined();
+    expect(
+      legacyInventoryCursor('members/member-1/contributions/2026-01-01'),
+    ).toBe('members/member-1/contributions/2026-01-01');
+    expect(() => legacyInventoryCursor('2026-01-01')).toThrow(
+      'Invalid legacy inventory cursor',
+    );
   });
 
   it('validates explicit multi-contribution allocations and credit', () => {
