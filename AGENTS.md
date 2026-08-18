@@ -90,6 +90,7 @@ Run the checks relevant to the area changed before opening a PR. The intended ba
 
 ```bash
 npm ci
+npm run format:check
 npm run lint
 npm run build
 
@@ -102,6 +103,15 @@ npm run build
 Also run automated tests once their scripts are available. Use Firebase emulators for integration and security-rule testing; do not connect automated tests to production data.
 
 If a baseline command is already broken, document the existing failure clearly in the PR and avoid introducing additional failures.
+
+## Frontend formatting
+
+- Prettier is the canonical formatter for frontend code and configuration.
+- Run `npm run format` after manually editing, generating, or AI-generating frontend files.
+- Run `npm run format:check` before committing or opening a pull request.
+- Humans, AI agents, and automation must not introduce a competing formatting style or hand-format around Prettier.
+- Formatting must remain behavior-preserving. Review bulk formatting separately from intentional UI changes whenever practical.
+- Editor formatting must use the repository configuration in `.prettierrc.json`; the recommended VS Code settings format on save with the Prettier extension.
 
 ## Secrets and sensitive data
 

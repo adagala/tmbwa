@@ -157,9 +157,10 @@ export const updateMember = (
   member: MemberForm | OwnMemberForm,
 ) => {
   const memberRef = doc(db, 'members', memberId);
-  const update = 'email' in member
-    ? memberFormSchema.parse(member)
-    : ownMemberFormSchema.parse(member);
+  const update =
+    'email' in member
+      ? memberFormSchema.parse(member)
+      : ownMemberFormSchema.parse(member);
   return updateDoc(memberRef, update);
 };
 
@@ -413,11 +414,33 @@ export const getRecentPayments = (cb: (data: Payment[]) => void) => {
   return unsubscribe;
 };
 
-export const getAllContributions = (cb: (data: Contribution[]) => void, onError?: (error: Error) => void) =>
-  onSnapshot(query(collectionGroup(db, 'contributions'), orderBy('month', 'desc')), (snapshot) => cb(snapshot.docs.map((item) => parseContributionDocument(item.id, item.data()))), onError);
+export const getAllContributions = (
+  cb: (data: Contribution[]) => void,
+  onError?: (error: Error) => void,
+) =>
+  onSnapshot(
+    query(collectionGroup(db, 'contributions'), orderBy('month', 'desc')),
+    (snapshot) =>
+      cb(
+        snapshot.docs.map((item) =>
+          parseContributionDocument(item.id, item.data()),
+        ),
+      ),
+    onError,
+  );
 
-export const getAllPayments = (cb: (data: Payment[]) => void, onError?: (error: Error) => void) =>
-  onSnapshot(query(collectionGroup(db, 'payments'), orderBy('paymentdate', 'desc')), (snapshot) => cb(snapshot.docs.map((item) => parsePaymentDocument(item.id, item.data()))), onError);
+export const getAllPayments = (
+  cb: (data: Payment[]) => void,
+  onError?: (error: Error) => void,
+) =>
+  onSnapshot(
+    query(collectionGroup(db, 'payments'), orderBy('paymentdate', 'desc')),
+    (snapshot) =>
+      cb(
+        snapshot.docs.map((item) => parsePaymentDocument(item.id, item.data())),
+      ),
+    onError,
+  );
 
 export const addContribution = async ({
   uid,

@@ -10,10 +10,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/Dialog';
-import {
-  Contribution,
-  Member,
-} from 'tmbwa-shared/firebase';
+import { Contribution, Member } from 'tmbwa-shared/firebase';
 import { ContributionStatusEnum, FirebaseTimestamp } from 'tmbwa-shared';
 import { Badge } from '@/components/Badge';
 import { Label } from '@/components/Label';

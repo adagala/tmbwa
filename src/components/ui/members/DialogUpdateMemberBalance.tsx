@@ -20,9 +20,7 @@ import {
   SelectValue,
 } from '@/components/Select';
 import { toast } from '@/hooks/useToast';
-import {
-  Member,
-} from 'tmbwa-shared/firebase';
+import { Member } from 'tmbwa-shared/firebase';
 import {
   member_balance_type,
   MemberBalanceForm,

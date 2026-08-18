@@ -1,8 +1,5 @@
 import React from 'react';
-import {
-  Payment,
-  Member,
-} from 'tmbwa-shared/firebase';
+import { Payment, Member } from 'tmbwa-shared/firebase';
 import { FirebaseTimestamp, PaymentTypeEnum } from 'tmbwa-shared';
 import { RiWalletLine } from '@remixicon/react';
 import { List, ListItem } from '@tremor/react';
@@ -61,7 +58,13 @@ const Transactions = React.forwardRef<HTMLDivElement, TransactionsProps>(
                       </div>
                     </div>
                   </div>
-                  <button type="button" className="hidden text-xs underline sm:block" onClick={() => printReceipt(payment, member)}>{receiptNumber(payment)}</button>
+                  <button
+                    type="button"
+                    className="hidden text-xs underline sm:block"
+                    onClick={() => printReceipt(payment, member)}
+                  >
+                    {receiptNumber(payment)}
+                  </button>
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="shrink-0 flex items-center gap-2">

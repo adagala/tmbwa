@@ -73,7 +73,41 @@ const ContributionsAndTransactions = React.forwardRef<
           <RiSettings5Line className="size-6 shrink-0" aria-hidden="true" />
           Settings
         </div>
-        <div className="flex flex-wrap items-end gap-3 rounded border p-3"><label className="text-xs">Statement from<input className="mt-1 block rounded border p-2" type="date" value={statementFrom} onChange={(event) => setStatementFrom(event.target.value)} /></label><label className="text-xs">To<input className="mt-1 block rounded border p-2" type="date" value={statementTo} onChange={(event) => setStatementTo(event.target.value)} /></label><button type="button" className="rounded bg-guardsman-red-600 px-4 py-2 text-sm text-white" onClick={() => printStatement(member, contributions, payments, statementFrom, statementTo)}>Print statement</button></div>
+        <div className="flex flex-wrap items-end gap-3 rounded border p-3">
+          <label className="text-xs">
+            Statement from
+            <input
+              className="mt-1 block rounded border p-2"
+              type="date"
+              value={statementFrom}
+              onChange={(event) => setStatementFrom(event.target.value)}
+            />
+          </label>
+          <label className="text-xs">
+            To
+            <input
+              className="mt-1 block rounded border p-2"
+              type="date"
+              value={statementTo}
+              onChange={(event) => setStatementTo(event.target.value)}
+            />
+          </label>
+          <button
+            type="button"
+            className="rounded bg-guardsman-red-600 px-4 py-2 text-sm text-white"
+            onClick={() =>
+              printStatement(
+                member,
+                contributions,
+                payments,
+                statementFrom,
+                statementTo,
+              )
+            }
+          >
+            Print statement
+          </button>
+        </div>
         <Tabs defaultValue={currentTab}>
           <TabsList variant="line">
             <TabsTrigger

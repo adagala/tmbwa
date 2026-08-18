@@ -21,11 +21,7 @@ import {
   SelectValue,
 } from '@/components/Select';
 import { toast } from '@/hooks/useToast';
-import {
-  Member,
-  memberFormSchema,
-  MemberForm,
-} from 'tmbwa-shared/firebase';
+import { Member, memberFormSchema, MemberForm } from 'tmbwa-shared/firebase';
 import { genders, member_roles, Gender, MemberRole } from 'tmbwa-shared';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
