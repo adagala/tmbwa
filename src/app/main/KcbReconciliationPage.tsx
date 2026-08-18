@@ -11,10 +11,12 @@ import {
   contributionOptionsFromDocuments,
 } from '@/lib/kcbReconciliation';
 import {
+  allocateKcbPaymentCredit,
   KcbPaymentNotification,
   reconcileKcbPayment,
   rejectKcbPayment,
   sendKcbDevTillNotification,
+  subscribeToKcbPaymentsWithCredit,
   subscribeToUnresolvedKcbPayments,
 } from '@/lib/firebase/kcb';
 import { Member, parseMemberDocument } from 'tmbwa-shared/firebase';
@@ -23,15 +25,117 @@ const devSimulatorEnabled =
   import.meta.env.VITE_APP_ENV === 'development' &&
   import.meta.env.VITE_KCB_DEV_MOCK_ENABLED === 'true';
 
+type AllocationDraft = { id: string; contributionId: string; amount: string };
+
+const AllocationEditor = ({
+  receiptAmount,
+  options,
+  rows,
+  disabled,
+  onAdd,
+  onChange,
+  onRemove,
+}: {
+  receiptAmount: number;
+  options: ContributionOption[];
+  rows: AllocationDraft[];
+  disabled: boolean;
+  onAdd: () => void;
+  onChange: (id: string, patch: Partial<AllocationDraft>) => void;
+  onRemove: (id: string) => void;
+}) => {
+  const allocated = rows.reduce(
+    (sum, row) => sum + (Number(row.amount) || 0),
+    0,
+  );
+  return (
+    <div className="space-y-3 sm:col-span-2">
+      {rows.map((row) => (
+        <div key={row.id} className="grid gap-2 sm:grid-cols-[1fr_10rem_auto]">
+          <select
+            aria-label="Contribution month"
+            className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
+            value={row.contributionId}
+            disabled={disabled}
+            onChange={(event) =>
+              onChange(row.id, { contributionId: event.target.value })
+            }
+          >
+            <option value="">Choose contribution</option>
+            {options.map((item) => (
+              <option
+                key={item.id}
+                value={item.id}
+                disabled={rows.some(
+                  (other) =>
+                    other.id !== row.id && other.contributionId === item.id,
+                )}
+              >
+                {item.month} — KES {item.balance.toLocaleString('en-KE')} due
+              </option>
+            ))}
+          </select>
+          <input
+            aria-label="Allocation amount"
+            type="number"
+            min="1"
+            step="1"
+            className="rounded-md border border-gray-300 px-3 py-2 text-sm"
+            placeholder="Amount"
+            value={row.amount}
+            disabled={disabled}
+            onChange={(event) =>
+              onChange(row.id, { amount: event.target.value })
+            }
+          />
+          <button
+            type="button"
+            className="text-sm font-medium text-red-700 underline"
+            onClick={() => onRemove(row.id)}
+          >
+            Remove
+          </button>
+        </div>
+      ))}
+      <Button variant="secondary" disabled={disabled} onClick={onAdd}>
+        Add allocation
+      </Button>
+      <dl className="grid gap-2 rounded-md bg-gray-50 p-3 text-sm sm:grid-cols-3">
+        <div>
+          <dt className="text-gray-500">Receipt</dt>
+          <dd className="font-semibold">
+            KES {receiptAmount.toLocaleString('en-KE')}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-gray-500">Allocated</dt>
+          <dd className="font-semibold">
+            KES {allocated.toLocaleString('en-KE')}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-gray-500">Account credit</dt>
+          <dd className="font-semibold">
+            KES {(receiptAmount - allocated).toLocaleString('en-KE')}
+          </dd>
+        </div>
+      </dl>
+    </div>
+  );
+};
+
 export default function KcbReconciliationPage() {
   const { role } = useUser();
   const [payments, setPayments] = useState<KcbPaymentNotification[]>([]);
+  const [creditPayments, setCreditPayments] = useState<
+    KcbPaymentNotification[]
+  >([]);
   const [members, setMembers] = useState<Member[]>([]);
   const [selectedMembers, setSelectedMembers] = useState<
     Record<string, string>
   >({});
-  const [selectedContributions, setSelectedContributions] = useState<
-    Record<string, string>
+  const [allocationDrafts, setAllocationDrafts] = useState<
+    Record<string, AllocationDraft[]>
   >({});
   const [contributions, setContributions] = useState<
     Record<string, ContributionOption[]>
@@ -129,6 +233,8 @@ export default function KcbReconciliationPage() {
   useEffect(() => {
     if (role !== 'administrator') return;
     const unsubscribe = subscribeToUnresolvedKcbPayments(setPayments);
+    const unsubscribeCredit =
+      subscribeToKcbPaymentsWithCredit(setCreditPayments);
     void getDocs(query(collection(db, 'members'), orderBy('firstname'))).then(
       (snapshot) =>
         setMembers(
@@ -137,7 +243,10 @@ export default function KcbReconciliationPage() {
           ),
         ),
     );
-    return unsubscribe;
+    return () => {
+      unsubscribe();
+      unsubscribeCredit();
+    };
   }, [role]);
 
   useEffect(() => {
@@ -163,6 +272,12 @@ export default function KcbReconciliationPage() {
     });
   }, [loadMemberContributions, payments]);
 
+  useEffect(() => {
+    creditPayments.forEach((payment) => {
+      if (payment.memberId) void loadMemberContributions(payment.memberId);
+    });
+  }, [creditPayments, loadMemberContributions]);
+
   const memberNames = useMemo(
     () =>
       new Map(
@@ -176,26 +291,140 @@ export default function KcbReconciliationPage() {
 
   const loadContributions = async (paymentId: string, memberId: string) => {
     setSelectedMembers((current) => ({ ...current, [paymentId]: memberId }));
-    setSelectedContributions((current) => ({ ...current, [paymentId]: '' }));
+    setAllocationDrafts((current) => ({ ...current, [paymentId]: [] }));
     await loadMemberContributions(memberId);
+  };
+
+  const addAllocation = (paymentId: string) =>
+    setAllocationDrafts((current) => ({
+      ...current,
+      [paymentId]: [
+        ...(current[paymentId] ?? []),
+        { id: crypto.randomUUID(), contributionId: '', amount: '' },
+      ],
+    }));
+
+  const updateAllocation = (
+    paymentId: string,
+    id: string,
+    patch: Partial<AllocationDraft>,
+  ) =>
+    setAllocationDrafts((current) => ({
+      ...current,
+      [paymentId]: (current[paymentId] ?? []).map((item) =>
+        item.id === id ? { ...item, ...patch } : item,
+      ),
+    }));
+
+  const removeAllocation = (paymentId: string, id: string) =>
+    setAllocationDrafts((current) => ({
+      ...current,
+      [paymentId]: (current[paymentId] ?? []).filter((item) => item.id !== id),
+    }));
+
+  const allocationsFor = (paymentId: string) =>
+    (allocationDrafts[paymentId] ?? []).map((item) => ({
+      contributionId: item.contributionId,
+      amount: Number(item.amount),
+    }));
+
+  const validateDrafts = (
+    allocations: Array<{ contributionId: string; amount: number }>,
+    options: ContributionOption[],
+    available: number,
+    requireAllocation: boolean,
+  ) => {
+    if (requireAllocation && !allocations.length) {
+      return 'Add at least one allocation.';
+    }
+    if (allocations.some((item) => !item.contributionId || item.amount <= 0)) {
+      return 'Complete or remove every allocation row.';
+    }
+    if (
+      new Set(allocations.map((item) => item.contributionId)).size !==
+      allocations.length
+    ) {
+      return 'Each contribution can be selected only once.';
+    }
+    if (allocations.reduce((sum, item) => sum + item.amount, 0) > available) {
+      return 'Allocations exceed the available receipt amount.';
+    }
+    if (
+      allocations.some((allocation) => {
+        const option = options.find(
+          (item) => item.id === allocation.contributionId,
+        );
+        return !option || allocation.amount > option.balance;
+      })
+    )
+      return 'An allocation exceeds the contribution balance.';
+    return undefined;
   };
 
   const reconcile = async (payment: KcbPaymentNotification) => {
     const memberId = selectedMembers[payment.providerTransactionId];
-    const contributionId = selectedContributions[payment.providerTransactionId];
-    if (!memberId || !contributionId)
-      return setError('Choose a member and an unpaid contribution.');
+    const allocations = allocationsFor(payment.providerTransactionId);
+    if (!memberId) return setError('Choose a member.');
+    const validationError = validateDrafts(
+      allocations,
+      contributions[memberId] ?? [],
+      payment.amount,
+      false,
+    );
+    if (validationError) return setError(validationError);
+    const allocated = allocations.reduce((sum, item) => sum + item.amount, 0);
+    if (
+      !window.confirm(
+        `Allocate KES ${allocated.toLocaleString('en-KE')} and leave KES ${(payment.amount - allocated).toLocaleString('en-KE')} as account credit?`,
+      )
+    )
+      return;
     setBusy(payment.providerTransactionId);
     setError(undefined);
     try {
       await reconcileKcbPayment({
         providerTransactionId: payment.providerTransactionId,
         memberId,
-        contributionId,
+        allocations,
       });
     } catch (cause) {
       setError(
         cause instanceof Error ? cause.message : 'Could not reconcile payment.',
+      );
+    } finally {
+      setBusy(undefined);
+    }
+  };
+
+  const allocateCredit = async (payment: KcbPaymentNotification) => {
+    const allocations = allocationsFor(payment.providerTransactionId);
+    const memberId = payment.memberId ?? '';
+    const validationError = validateDrafts(
+      allocations,
+      (contributions[memberId] ?? []).filter(
+        (option) =>
+          !payment.allocations.some(
+            (allocation) => allocation.contributionId === option.id,
+          ),
+      ),
+      Number(payment.unallocatedAmount ?? 0),
+      true,
+    );
+    if (validationError) return setError(validationError);
+    setBusy(payment.providerTransactionId);
+    setError(undefined);
+    try {
+      await allocateKcbPaymentCredit({
+        providerTransactionId: payment.providerTransactionId,
+        allocations,
+      });
+      setAllocationDrafts((current) => ({
+        ...current,
+        [payment.providerTransactionId]: [],
+      }));
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : 'Could not allocate credit.',
       );
     } finally {
       setBusy(undefined);
@@ -367,42 +596,8 @@ export default function KcbReconciliationPage() {
                     ))}
                   </select>
                 </label>
-                <label className="text-sm font-medium">
-                  Contribution
-                  <select
-                    className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2"
-                    value={
-                      selectedContributions[payment.providerTransactionId] ?? ''
-                    }
-                    disabled={
-                      !memberId ||
-                      contributionStatus === 'loading' ||
-                      contributionStatus === 'error'
-                    }
-                    onChange={(event) =>
-                      setSelectedContributions((current) => ({
-                        ...current,
-                        [payment.providerTransactionId]: event.target.value,
-                      }))
-                    }
-                  >
-                    <option value="">
-                      {contributionStatus === 'loading'
-                        ? 'Loading unpaid contributions...'
-                        : contributionStatus === 'error'
-                          ? 'Could not load contributions'
-                          : contributionStatus === 'loaded' &&
-                              contributionOptions.length === 0
-                            ? 'No unpaid contributions'
-                            : 'Choose unpaid contribution'}
-                    </option>
-                    {contributionOptions.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.month} — KES{' '}
-                        {item.balance.toLocaleString('en-KE')} outstanding
-                      </option>
-                    ))}
-                  </select>
+                <div className="text-sm font-medium">
+                  Contribution allocations
                   {contributionStatus === 'error' ? (
                     <span className="mt-1 block text-xs text-red-700">
                       {contributionErrors[memberId]}
@@ -422,7 +617,24 @@ export default function KcbReconciliationPage() {
                       not be shown.
                     </span>
                   ) : null}
-                </label>
+                </div>
+                <AllocationEditor
+                  receiptAmount={payment.amount}
+                  options={contributionOptions}
+                  rows={allocationDrafts[payment.providerTransactionId] ?? []}
+                  disabled={
+                    !memberId ||
+                    contributionStatus === 'loading' ||
+                    contributionStatus === 'error'
+                  }
+                  onAdd={() => addAllocation(payment.providerTransactionId)}
+                  onChange={(id, patch) =>
+                    updateAllocation(payment.providerTransactionId, id, patch)
+                  }
+                  onRemove={(id) =>
+                    removeAllocation(payment.providerTransactionId, id)
+                  }
+                />
               </div>
               <div className="flex gap-2">
                 <Button
@@ -446,6 +658,63 @@ export default function KcbReconciliationPage() {
           <p className="text-sm text-gray-500">No unresolved KCB payments.</p>
         ) : null}
       </div>
+      {creditPayments.length ? (
+        <div className="space-y-4">
+          <h2 className="text-lg font-semibold">Unallocated KCB credit</h2>
+          <p className="text-sm text-gray-600">
+            Allocate existing receipt credit without changing the member account
+            balance again.
+          </p>
+          {creditPayments.map((payment) => {
+            const memberId = payment.memberId ?? '';
+            const available = Number(payment.unallocatedAmount ?? 0);
+            return (
+              <Card key={payment.providerTransactionId} className="space-y-4">
+                <div className="grid gap-2 text-sm sm:grid-cols-3">
+                  <div>
+                    <span className="block text-gray-500">Receipt</span>
+                    <strong>{payment.receiptNumber}</strong>
+                  </div>
+                  <div>
+                    <span className="block text-gray-500">Member</span>
+                    <strong>{memberNames.get(memberId) ?? memberId}</strong>
+                  </div>
+                  <div>
+                    <span className="block text-gray-500">
+                      Available credit
+                    </span>
+                    <strong>KES {available.toLocaleString('en-KE')}</strong>
+                  </div>
+                </div>
+                <AllocationEditor
+                  receiptAmount={available}
+                  options={(contributions[memberId] ?? []).filter(
+                    (option) =>
+                      !payment.allocations.some(
+                        (allocation) => allocation.contributionId === option.id,
+                      ),
+                  )}
+                  rows={allocationDrafts[payment.providerTransactionId] ?? []}
+                  disabled={contributionLoadStatus[memberId] !== 'loaded'}
+                  onAdd={() => addAllocation(payment.providerTransactionId)}
+                  onChange={(id, patch) =>
+                    updateAllocation(payment.providerTransactionId, id, patch)
+                  }
+                  onRemove={(id) =>
+                    removeAllocation(payment.providerTransactionId, id)
+                  }
+                />
+                <Button
+                  onClick={() => void allocateCredit(payment)}
+                  isLoading={busy === payment.providerTransactionId}
+                >
+                  Allocate existing credit
+                </Button>
+              </Card>
+            );
+          })}
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -46,32 +46,54 @@ describe('Firestore document schemas', () => {
   it('accepts valid member, payment, and contribution records', () => {
     expect(memberDocumentSchema.parse(member).status).toBe('active');
     expect(paymentDocumentSchema.parse(payment).amount).toBe(500);
-    expect(contributionDocumentSchema.parse({
-      ...member,
-      contribution_id: '2026-08-01',
-      paid: 'paid',
-      amount: 500,
-      balance: 0,
-      payments: [payment],
-      month: '2026-08-01',
-    }).payments).toHaveLength(1);
+    expect(
+      paymentDocumentSchema.parse({
+        ...payment,
+        amount: 1000,
+        contribution_amount: 900,
+        allocations: [
+          { contribution_id: '2026-08-01', amount: 400 },
+          { contribution_id: '2026-07-01', amount: 500 },
+        ],
+        unallocated_amount: 100,
+      }).allocations,
+    ).toHaveLength(2);
+    expect(
+      contributionDocumentSchema.parse({
+        ...member,
+        contribution_id: '2026-08-01',
+        paid: 'paid',
+        amount: 500,
+        balance: 0,
+        payments: [payment],
+        month: '2026-08-01',
+      }).payments,
+    ).toHaveLength(1);
   });
 
   it('rejects records missing fields that application code accesses', () => {
-    expect(() => parseDocument(memberDocumentSchema, {
-      ...member,
-      firstname: undefined,
-    }, 'members/member-1')).toThrow(/members\/member-1/);
+    expect(() =>
+      parseDocument(
+        memberDocumentSchema,
+        {
+          ...member,
+          firstname: undefined,
+        },
+        'members/member-1',
+      ),
+    ).toThrow(/members\/member-1/);
   });
 
   it('rejects invalid notification delivery counters', () => {
-    expect(notificationDeliveryDocumentSchema.safeParse({
-      eventId: 'event-1',
-      memberId: 'member-1',
-      channel: 'in_app',
-      status: 'pending',
-      attempts: -1,
-    }).success).toBe(false);
+    expect(
+      notificationDeliveryDocumentSchema.safeParse({
+        eventId: 'event-1',
+        memberId: 'member-1',
+        channel: 'in_app',
+        status: 'pending',
+        attempts: -1,
+      }).success,
+    ).toBe(false);
   });
 
   it('normalizes legacy contribution and payment records on read', () => {
@@ -100,11 +122,13 @@ describe('Firestore document schemas', () => {
   });
 
   it('defaults missing monthly statistics counters', () => {
-    expect(monthlyStatsSchema.parse({
-      amount: 500,
-      contribution: 250,
-      paymentsCount: 1,
-      month: '2026-08-01',
-    })).toMatchObject({ newMembers: 0, totalMembers: 0 });
+    expect(
+      monthlyStatsSchema.parse({
+        amount: 500,
+        contribution: 250,
+        paymentsCount: 1,
+        month: '2026-08-01',
+      }),
+    ).toMatchObject({ newMembers: 0, totalMembers: 0 });
   });
 });

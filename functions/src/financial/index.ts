@@ -8,7 +8,12 @@ import {
   notificationEventDocumentSchema,
   paymentDocumentSchema,
 } from 'tmbwa-shared';
-import { applyBalanceAdjustment, applyPayment, reversePayment } from './domain';
+import {
+  applyBalanceAdjustment,
+  applyPayment,
+  paymentAllocations,
+  reversePayment,
+} from './domain';
 import {
   contributionData,
   memberData,
@@ -183,42 +188,71 @@ export const reverseContributionPayment = onCall(async (request) => {
     const paymentSnapshot = await transaction.get(paymentRef);
     if (!paymentSnapshot.exists) throw new HttpsError('not-found', 'Payment not found.');
     const payment = paymentData(paymentSnapshot);
-    const contributionId = String(payment.contribution_id || '');
-    if (!contributionId) throw new HttpsError('failed-precondition', 'Payment is not a contribution payment.');
-    const contributionRef = db().doc(`members/${memberId}/contributions/${contributionId}`);
-    const contributionSnapshot = await transaction.get(contributionRef);
-    if (!contributionSnapshot.exists) throw new HttpsError('not-found', 'Contribution not found.');
-    const contribution = contributionData(contributionSnapshot);
-    const reversal = reversePayment(
-      Number(contribution.balance ?? 0),
-      Number(payment.contribution_amount ?? 0),
-      Number(contribution.amount),
+    const allocations = paymentAllocations(payment);
+    if (
+      !allocations.length &&
+      typeof payment.provider_transaction_id !== 'string'
+    ) {
+      throw new HttpsError(
+        'failed-precondition',
+        'Payment has no contribution allocations.',
+      );
+    }
+    const contributionRefs = allocations.map(({ contributionId }) =>
+      db().doc(`members/${memberId}/contributions/${contributionId}`));
+    const contributionSnapshots = await Promise.all(
+      contributionRefs.map((ref) => transaction.get(ref)),
     );
+    if (contributionSnapshots.some((item) => !item.exists)) {
+      throw new HttpsError('not-found', 'Contribution not found.');
+    }
+    const contributions = contributionSnapshots.map(contributionData);
     writeCommand(transaction, command.ref, 'reverseContributionPayment', actorId);
     transaction.delete(paymentRef);
-    transaction.update(contributionRef, {
-      payments: admin.firestore.FieldValue.arrayRemove(payment),
-      balance: reversal.restoredBalance,
-      paid: reversal.status,
+    allocations.forEach((allocation, index) => {
+      const contribution = contributions[index];
+      const reversal = reversePayment(
+        Number(contribution.balance), allocation.amount, Number(contribution.amount),
+      );
+      transaction.update(contributionRefs[index], {
+        payments: contribution.payments.filter(
+          (item) => item.payment_id !== payment.payment_id,
+        ),
+        balance: reversal.restoredBalance,
+        paid: reversal.status,
+      });
+      transaction.set(db().doc(`monthly_stats/${allocation.contributionId}`), {
+        contribution: admin.firestore.FieldValue.increment(-allocation.amount),
+        month: allocation.contributionId,
+      }, { merge: true });
     });
     transaction.update(db().doc(`members/${memberId}`), {
       balance: admin.firestore.FieldValue.increment(-Number(payment.amount)),
-      contributionBalance: admin.firestore.FieldValue.increment(-Number(payment.contribution_amount)),
+      contributionBalance: admin.firestore.FieldValue.increment(
+        -allocations.reduce((sum, item) => sum + item.amount, 0),
+      ),
     });
-    transaction.set(db().doc(`monthly_stats/${contributionId}`), {
-      contribution: admin.firestore.FieldValue.increment(-Number(payment.contribution_amount)),
-      month: contributionId,
-    }, { merge: true });
+    if (typeof payment.provider_transaction_id === 'string') {
+      transaction.update(
+        db().doc(`kcb_payment_notifications/${payment.provider_transaction_id}`),
+        {
+          status: 'reversed',
+          unallocatedAmount: 0,
+          reversedAt: admin.firestore.FieldValue.serverTimestamp(),
+          reversedBy: actorId,
+        },
+      );
+    }
     writeAuditEvent(transaction, requestId, actorId, 'payment.reversed', memberId, paymentId, {
       amount: Number(payment.amount),
       contributionAmount: Number(payment.contribution_amount),
-      contributionId,
+      allocations,
     });
     const notificationPath = `notification_events/payment-reversed-${paymentId}`;
     transaction.create(db().doc(notificationPath), validateDocumentWrite(notificationEventDocumentSchema, {
       type: 'payment.reversed', memberId, paymentId,
       receiptNumber: payment.receipt_number ?? payment.referencenumber,
-      amount: Number(payment.amount), contributionId,
+      amount: Number(payment.amount),
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     }, notificationPath));
     return { requestId, duplicate: false };

@@ -155,6 +155,11 @@ export const paymentDocumentSchema = z.object({
   created_at: z.unknown().optional(),
   receipt_number: z.string().optional(),
   balance_direction: MemberBalanceTypeEnum.optional(),
+  allocations: z.array(z.object({
+    contribution_id: z.string().min(1),
+    amount: z.number().positive(),
+  })).optional(),
+  unallocated_amount: z.number().nonnegative().optional(),
 }).passthrough();
 
 export const contributionDocumentSchema = memberDocumentSchema.extend({
@@ -180,10 +185,18 @@ export const kcbPaymentNotificationDocumentSchema = z.object({
   currency: z.string(),
   billReference: z.string(),
   transactionDate: z.string(),
-  status: z.enum(['unresolved', 'reconciled', 'rejected']),
+  status: z.enum(['unresolved', 'reconciled', 'rejected', 'reversed']),
   suggestedMemberId: z.string().nullable().optional(),
   matchReason: z.string(),
   receivedAt: z.unknown().optional(),
+  memberId: z.string().optional(),
+  paymentId: z.string().optional(),
+  receiptNumber: z.string().optional(),
+  allocations: z.array(z.object({
+    contributionId: z.string().min(1),
+    amount: z.number().positive(),
+  })).default([]),
+  unallocatedAmount: z.number().nonnegative().optional(),
 }).passthrough();
 
 export const kcbStkRequestDocumentSchema = z.object({

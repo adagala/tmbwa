@@ -75,6 +75,11 @@ export const paymentSchema = paymentFormSchema.merge(
     created_at: z.union([z.date(), fieldValueSchema, firebaseTimestampSchema]),
     receipt_number: z.string().optional(),
     balance_direction: MemberBalanceTypeEnum.optional(),
+    allocations: z.array(z.object({
+      contribution_id: z.string().min(1),
+      amount: z.number().positive(),
+    })).optional(),
+    unallocated_amount: z.number().nonnegative().optional(),
   }),
 );
 

@@ -10,12 +10,16 @@ import {
   notificationEventDocumentSchema,
   paymentDocumentSchema,
 } from 'tmbwa-shared';
-import { applyPayment } from '../financial/domain';
+import {
+  PaymentAllocation,
+  validatePaymentAllocations,
+} from '../financial/domain';
 import {
   contributionData,
   kcbPaymentNotificationData,
   kcbStkRequestData,
   memberData,
+  paymentData,
   validateDocumentWrite,
 } from '../firestoreData';
 import {
@@ -79,6 +83,24 @@ const requiredString = (data: Data, key: string) => {
     throw new HttpsError('invalid-argument', `${key} is required.`);
   }
   return value.trim();
+};
+
+const requiredAllocations = (value: unknown): PaymentAllocation[] => {
+  if (!Array.isArray(value)) {
+    throw new HttpsError('invalid-argument', 'allocations must be an array.');
+  }
+  return value.map((item) => {
+    if (!item || typeof item !== 'object') {
+      throw new HttpsError('invalid-argument', 'Invalid allocation.');
+    }
+    const allocation = item as Record<string, unknown>;
+    const contributionId = String(allocation.contributionId ?? '').trim();
+    const amount = Number(allocation.amount);
+    if (!contributionId || !Number.isFinite(amount) || amount <= 0) {
+      throw new HttpsError('invalid-argument', 'Invalid allocation.');
+    }
+    return { contributionId, amount };
+  });
 };
 
 export const kcbTillNotification = onRequest(
@@ -203,7 +225,7 @@ export const reconcileKcbPayment = onCall(async (request) => {
   const requestId = requiredString(data, 'requestId');
   const providerTransactionId = requiredString(data, 'providerTransactionId');
   const memberId = requiredString(data, 'memberId');
-  const contributionId = requiredString(data, 'contributionId');
+  const allocations = requiredAllocations(data.allocations);
 
   return db().runTransaction(async (transaction) => {
     const commandRef = db().doc(`financial_commands/${requestId}`);
@@ -211,25 +233,20 @@ export const reconcileKcbPayment = onCall(async (request) => {
       `kcb_payment_notifications/${providerTransactionId}`,
     );
     const memberRef = db().doc(`members/${memberId}`);
-    const contributionRef = db().doc(
-      `members/${memberId}/contributions/${contributionId}`,
-    );
-    const [
-      command,
-      notificationSnapshot,
-      memberSnapshot,
-      contributionSnapshot,
-    ] = await Promise.all([
-      transaction.get(commandRef),
-      transaction.get(notificationRef),
-      transaction.get(memberRef),
-      transaction.get(contributionRef),
-    ]);
+    const contributionRefs = allocations.map(({ contributionId }) =>
+      db().doc(`members/${memberId}/contributions/${contributionId}`));
+    const [command, notificationSnapshot, memberSnapshot, ...contributionSnapshots] =
+      await Promise.all([
+        transaction.get(commandRef),
+        transaction.get(notificationRef),
+        transaction.get(memberRef),
+        ...contributionRefs.map((ref) => transaction.get(ref)),
+      ]);
     if (command.exists) return { requestId, duplicate: true };
     if (!notificationSnapshot.exists) {
       throw new HttpsError('not-found', 'KCB payment notification not found.');
     }
-    if (!memberSnapshot.exists || !contributionSnapshot.exists) {
+    if (!memberSnapshot.exists || contributionSnapshots.some((item) => !item.exists)) {
       throw new HttpsError('not-found', 'Member or contribution not found.');
     }
     const notification = kcbPaymentNotificationData(notificationSnapshot);
@@ -247,11 +264,19 @@ export const reconcileKcbPayment = onCall(async (request) => {
     }
 
     const member = memberData(memberSnapshot);
-    const contribution = contributionData(contributionSnapshot);
-    const result = applyPayment(
-      Number(notification.amount),
-      Number(contribution.balance ?? 0),
-    );
+    const contributions = contributionSnapshots.map(contributionData);
+    const outstanding = Object.fromEntries(contributions.map((item, index) => [
+      allocations[index].contributionId,
+      Number(item.balance),
+    ]));
+    let allocationResult: ReturnType<typeof validatePaymentAllocations>;
+    try {
+      allocationResult = validatePaymentAllocations(
+        Number(notification.amount), allocations, outstanding,
+      );
+    } catch (cause) {
+      throw new HttpsError('invalid-argument', (cause as Error).message);
+    }
     const paymentId = db().collection(`members/${memberId}/payments`).doc().id;
     const receiptNumber = `TMBWA-${paymentId.toUpperCase()}`;
     const payment = {
@@ -263,11 +288,16 @@ export const reconcileKcbPayment = onCall(async (request) => {
       ),
       created_at: admin.firestore.Timestamp.now(),
       member_id: memberId,
-      contribution_id: contributionId,
+      contribution_id: allocations[0]?.contributionId ?? '',
       firstname: member.firstname,
       lastname: member.lastname,
-      contribution_amount: result.contributionAmount,
-      payment_type: 'contribution',
+      contribution_amount: allocationResult.allocatedAmount,
+      payment_type: allocations.length ? 'contribution' : 'account',
+      allocations: allocations.map((item) => ({
+        contribution_id: item.contributionId,
+        amount: item.amount,
+      })),
+      unallocated_amount: allocationResult.unallocatedAmount,
       payment_source: 'kcb_buni',
       provider_transaction_id: providerTransactionId,
       payer_phone: notification.payerPhone,
@@ -289,36 +319,35 @@ export const reconcileKcbPayment = onCall(async (request) => {
         `members/${memberId}/payments/${paymentId}`,
       ),
     );
-    transaction.update(contributionRef, {
-      payments: admin.firestore.FieldValue.arrayUnion(payment),
-      balance: result.remainingBalance,
-      paid:
-        result.remainingBalance === 0
-          ? PAYMENT_STATUS.PAID
-          : PAYMENT_STATUS.PARTIAL,
+    allocations.forEach((allocation, index) => {
+      const remainingBalance = outstanding[allocation.contributionId] - allocation.amount;
+      transaction.update(contributionRefs[index], {
+        payments: admin.firestore.FieldValue.arrayUnion({
+          ...payment,
+          contribution_id: allocation.contributionId,
+          contribution_amount: allocation.amount,
+        }),
+        balance: remainingBalance,
+        paid: remainingBalance === 0 ? PAYMENT_STATUS.PAID : PAYMENT_STATUS.PARTIAL,
+      });
+      transaction.set(db().doc(`monthly_stats/${allocation.contributionId}`), {
+        contribution: admin.firestore.FieldValue.increment(allocation.amount),
+        month: allocation.contributionId,
+      }, { merge: true });
     });
     transaction.update(memberRef, {
       balance: admin.firestore.FieldValue.increment(
         Number(notification.amount),
       ),
       contributionBalance: admin.firestore.FieldValue.increment(
-        result.contributionAmount,
+        allocationResult.allocatedAmount,
       ),
     });
-    transaction.set(
-      db().doc(`monthly_stats/${contributionId}`),
-      {
-        contribution: admin.firestore.FieldValue.increment(
-          result.contributionAmount,
-        ),
-        month: contributionId,
-      },
-      { merge: true },
-    );
     transaction.update(notificationRef, {
       status: 'reconciled',
       memberId,
-      contributionId,
+      allocations,
+      unallocatedAmount: allocationResult.unallocatedAmount,
       paymentId,
       receiptNumber,
       reconciledAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -337,7 +366,8 @@ export const reconcileKcbPayment = onCall(async (request) => {
           changes: {
             providerTransactionId,
             amount: notification.amount,
-            contributionId,
+            allocations,
+            unallocatedAmount: allocationResult.unallocatedAmount,
             receiptNumber,
           },
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -363,6 +393,114 @@ export const reconcileKcbPayment = onCall(async (request) => {
       ),
     );
     return { requestId, paymentId, receiptNumber, duplicate: false };
+  });
+});
+
+export const allocateKcbPaymentCredit = onCall(async (request) => {
+  const actorId = requireAdministrator(request.auth);
+  const data = request.data as Data;
+  const requestId = requiredString(data, 'requestId');
+  const providerTransactionId = requiredString(data, 'providerTransactionId');
+  const allocations = requiredAllocations(data.allocations);
+  if (!allocations.length) {
+    throw new HttpsError('invalid-argument', 'Add at least one allocation.');
+  }
+  return db().runTransaction(async (transaction) => {
+    const commandRef = db().doc(`financial_commands/${requestId}`);
+    const notificationRef = db().doc(`kcb_payment_notifications/${providerTransactionId}`);
+    const [command, notificationSnapshot] = await Promise.all([
+      transaction.get(commandRef), transaction.get(notificationRef),
+    ]);
+    if (command.exists) return { requestId, duplicate: true };
+    if (!notificationSnapshot.exists) throw new HttpsError('not-found', 'KCB payment not found.');
+    const notification = kcbPaymentNotificationData(notificationSnapshot);
+    if (notification.status !== 'reconciled' || !notification.memberId || !notification.paymentId) {
+      throw new HttpsError('failed-precondition', 'Payment is not available for credit allocation.');
+    }
+    const available = Number(notification.unallocatedAmount ?? 0);
+    const paymentRef = db().doc(`members/${notification.memberId}/payments/${notification.paymentId}`);
+    const memberRef = db().doc(`members/${notification.memberId}`);
+    const contributionRefs = allocations.map(({ contributionId }) =>
+      db().doc(`members/${notification.memberId}/contributions/${contributionId}`));
+    const [paymentSnapshot, ...contributionSnapshots] = await Promise.all([
+      transaction.get(paymentRef),
+      ...contributionRefs.map((ref) => transaction.get(ref)),
+    ]);
+    if (!paymentSnapshot.exists || contributionSnapshots.some((item) => !item.exists)) {
+      throw new HttpsError('not-found', 'Payment or contribution not found.');
+    }
+    const payment = paymentData(paymentSnapshot);
+    const existingContributionIds = new Set(
+      (payment.allocations ?? []).map((item) => item.contribution_id),
+    );
+    if (allocations.some((item) => existingContributionIds.has(item.contributionId))) {
+      throw new HttpsError(
+        'invalid-argument',
+        'This receipt already has an allocation for that contribution.',
+      );
+    }
+    const outstanding = Object.fromEntries(contributionSnapshots.map((snapshot, index) => [
+      allocations[index].contributionId, Number(contributionData(snapshot).balance),
+    ]));
+    let result: ReturnType<typeof validatePaymentAllocations>;
+    try {
+      result = validatePaymentAllocations(available, allocations, outstanding);
+    } catch (cause) {
+      throw new HttpsError('invalid-argument', (cause as Error).message);
+    }
+    const storedAllocations = allocations.map((item) => ({
+      contribution_id: item.contributionId, amount: item.amount,
+    }));
+    allocations.forEach((allocation, index) => {
+      const remaining = outstanding[allocation.contributionId] - allocation.amount;
+      const allocationPayment = {
+        ...payment,
+        contribution_id: allocation.contributionId,
+        contribution_amount: allocation.amount,
+        payment_type: 'contribution',
+      };
+      transaction.update(contributionRefs[index], {
+        payments: admin.firestore.FieldValue.arrayUnion(allocationPayment),
+        balance: remaining,
+        paid: remaining === 0 ? PAYMENT_STATUS.PAID : PAYMENT_STATUS.PARTIAL,
+      });
+      transaction.set(db().doc(`monthly_stats/${allocation.contributionId}`), {
+        contribution: admin.firestore.FieldValue.increment(allocation.amount),
+        month: allocation.contributionId,
+      }, { merge: true });
+    });
+    transaction.create(commandRef, {
+      type: 'allocateKcbPaymentCredit', actorId,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    transaction.update(paymentRef, {
+      allocations: admin.firestore.FieldValue.arrayUnion(...storedAllocations),
+      contribution_amount: admin.firestore.FieldValue.increment(result.allocatedAmount),
+      contribution_id: payment.contribution_id || allocations[0].contributionId,
+      payment_type: 'contribution',
+      unallocated_amount: result.unallocatedAmount,
+    });
+    transaction.update(memberRef, {
+      contributionBalance: admin.firestore.FieldValue.increment(result.allocatedAmount),
+    });
+    transaction.update(notificationRef, {
+      allocations: admin.firestore.FieldValue.arrayUnion(...allocations),
+      unallocatedAmount: result.unallocatedAmount,
+      creditAllocatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      creditAllocatedBy: actorId,
+    });
+    transaction.create(db().doc(`audit_events/${requestId}`), validateDocumentWrite(
+      auditEventDocumentSchema,
+      {
+        requestId, actorId, action: 'kcb_payment.credit_allocated',
+        memberId: notification.memberId, targetId: notification.paymentId,
+        changes: { providerTransactionId, allocations, unallocatedAmount: result.unallocatedAmount },
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      },
+      `audit_events/${requestId}`,
+    ));
+    return { requestId, allocatedAmount: result.allocatedAmount,
+      unallocatedAmount: result.unallocatedAmount, duplicate: false };
   });
 });
 

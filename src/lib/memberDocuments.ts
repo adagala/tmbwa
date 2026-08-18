@@ -28,7 +28,7 @@ export const printReceipt = (payment: Payment, member: Member) => {
   if (!output) return;
   const { popup, main } = output;
   const date = timestampDate(payment.paymentdate);
-  [
+  const lines = [
     ['h1', 'TMBWA Payment Receipt'],
     ['p', `Receipt: ${receiptNumber(payment)}`],
     [
@@ -46,8 +46,19 @@ export const printReceipt = (payment: Payment, member: Member) => {
       'p',
       `Contribution allocation: ${kenyaMoney.format(payment.contribution_amount)}`,
     ],
-    ['small', 'Generated from TMBWA trusted financial records.'],
-  ].forEach(([tag, text]) =>
+    [
+      'p',
+      `Unallocated account credit: ${kenyaMoney.format(payment.unallocated_amount ?? Math.max(payment.amount - payment.contribution_amount, 0))}`,
+    ],
+  ];
+  (payment.allocations ?? []).forEach((allocation) => {
+    lines.push([
+      'p',
+      `${allocation.contribution_id}: ${kenyaMoney.format(allocation.amount)}`,
+    ]);
+  });
+  lines.push(['small', 'Generated from TMBWA trusted financial records.']);
+  lines.forEach(([tag, text]) =>
     main.append(textElement(popup.document, tag, text)),
   );
   popup.print();
@@ -69,10 +80,7 @@ export const statementRows = (
       const isDeduction =
         item.payment_type === 'account' &&
         item.balance_direction === 'deduction';
-      const amount =
-        item.payment_type === 'contribution'
-          ? item.contribution_amount
-          : item.amount;
+      const amount = item.amount;
       return {
         date: timestampDate(item.paymentdate)
           ? nairobiDate(timestampDate(item.paymentdate)!)
