@@ -19,7 +19,7 @@
     "format": "prettier --write src index.html vite.config.ts tailwind.config.js postcss.config.js tsconfig.json tsconfig.app.json tsconfig.node.json",
     "format:check": "prettier --check src index.html vite.config.ts tailwind.config.js postcss.config.js tsconfig.json tsconfig.app.json tsconfig.node.json",
     "test:rules": "firebase emulators:exec --config firebase.rules-test.json --only firestore --project demo-tmbwa \"vitest run tests/firestore.rules.test.ts\"",
-    "test:unit": "vitest run tests/financial.domain.test.ts tests/firestore.schemas.test.ts tests/kcb.domain.test.ts tests/notifications.domain.test.ts",
+    "test:unit": "vitest run tests/financial.domain.test.ts tests/firestore.schemas.test.ts tests/kcb.domain.test.ts tests/kcbReconciliation.test.ts tests/notifications.domain.test.ts",
     "test": "npm run test:unit && npm run test:rules",
     "preview": "vite preview",
     "deploy": "tsc -b && vite build && firebase deploy --only hosting"

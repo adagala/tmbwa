@@ -38,6 +38,7 @@
       "collectionGroup": "contributions",
       "fieldPath": "month",
       "indexes": [
+        { "order": "DESCENDING", "queryScope": "COLLECTION" },
         { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" },
         { "order": "DESCENDING", "queryScope": "COLLECTION_GROUP" }
       ]
@@ -53,6 +54,7 @@
       "collectionGroup": "payments",
       "fieldPath": "paymentdate",
       "indexes": [
+        { "order": "DESCENDING", "queryScope": "COLLECTION" },
         { "order": "DESCENDING", "queryScope": "COLLECTION_GROUP" }
       ]
     }
