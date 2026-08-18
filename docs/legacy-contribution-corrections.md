@@ -12,7 +12,17 @@ The trusted `correctLegacyContribution` Function atomically writes an idempotenc
 
 ## Inventory
 
-`listLegacyContributionInventory` is a read-only administrator callable. It scans at most 500 contribution documents per request and reports invalid totals, missing payment evidence, and KCB/shared-receipt linkage. It does not modify data. Review its output before applying individual corrections or designing a bulk migration.
+`listLegacyContributionInventory` is a read-only administrator callable. It scans at most 500 contribution documents per request and reports invalid totals, missing payment evidence, and KCB/shared-receipt linkage. It does not modify data. Results are ordered by document path. Pass the returned `nextCursor` as `cursor` on the next request until it returns `null`:
+
+```ts
+const firstPage = await listLegacyContributionInventory({ limit: 200 });
+const nextPage = await listLegacyContributionInventory({
+  limit: 200,
+  cursor: firstPage.nextCursor,
+});
+```
+
+Review all pages before applying individual corrections or designing a bulk migration.
 
 ## Development deployment
 

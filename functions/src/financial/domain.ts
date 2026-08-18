@@ -55,6 +55,23 @@ export const legacyContributionCorrection = (
   };
 };
 
+export const hasLegacyCorrectionHistory = (corrections: unknown) =>
+  Array.isArray(corrections) && corrections.length > 0;
+
+export const hasLinkedPaymentHistory = (payments: unknown) =>
+  Array.isArray(payments) && payments.length > 0;
+
+export const legacyInventoryCursor = (value: unknown) => {
+  if (value === undefined || value === null || value === '') return undefined;
+  if (
+    typeof value !== 'string' ||
+    !/^members\/[^/]+\/contributions\/[^/]+$/.test(value)
+  ) {
+    throw new Error('Invalid legacy inventory cursor.');
+  }
+  return value;
+};
+
 export const validatePaymentAllocations = (
   receiptAmount: number,
   allocations: PaymentAllocation[],

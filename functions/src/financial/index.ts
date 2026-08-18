@@ -12,6 +12,9 @@ import {
   availableUnreservedBalance,
   paymentAllocations,
   legacyContributionCorrection,
+  hasLegacyCorrectionHistory,
+  hasLinkedPaymentHistory,
+  legacyInventoryCursor,
   requiresReceiptReversalBeforeContributionRemoval,
   reversePayment,
 } from './domain';
@@ -325,10 +328,10 @@ export const correctLegacyContribution = onCall(async (request) => {
     }
     memberData(memberSnapshot);
     const contribution = contributionData(contributionSnapshot);
-    if (contribution.payments.some(requiresReceiptReversalBeforeContributionRemoval)) {
+    if (hasLinkedPaymentHistory(contribution.payments)) {
       throw new HttpsError(
         'failed-precondition',
-        'A KCB or shared receipt is linked to this contribution. Reverse that receipt instead.',
+        'A payment is linked to this contribution. Reverse that receipt before applying a legacy correction.',
       );
     }
     let correction: ReturnType<typeof legacyContributionCorrection>;
@@ -448,12 +451,25 @@ export const reverseLegacyContributionCorrection = onCall(async (request) => {
 
 export const listLegacyContributionInventory = onCall(async (request) => {
   requireAdministrator(request.auth);
-  const requestedLimit = Number((request.data as CommandData | undefined)?.limit ?? 200);
+  const data = request.data as CommandData | undefined;
+  const requestedLimit = Number(data?.limit ?? 200);
   const limit = Math.min(Math.max(Number.isInteger(requestedLimit) ? requestedLimit : 200, 1), 500);
-  const snapshot = await db().collectionGroup('contributions').limit(limit).get();
+  let cursor: string | undefined;
+  try {
+    cursor = legacyInventoryCursor(data?.cursor);
+  } catch (error) {
+    throw new HttpsError('invalid-argument', (error as Error).message);
+  }
+  let query: FirebaseFirestore.Query = db().collectionGroup('contributions')
+    .orderBy(admin.firestore.FieldPath.documentId());
+  if (cursor) query = query.startAfter(cursor);
+  const snapshot = await query.limit(limit + 1).get();
+  const hasMore = snapshot.size > limit;
+  const documents = snapshot.docs.slice(0, limit);
   return {
-    scanned: snapshot.size,
-    records: snapshot.docs.map((document) => {
+    scanned: documents.length,
+    nextCursor: hasMore ? documents[documents.length - 1].ref.path : null,
+    records: documents.map((document) => {
       const data = document.data();
       const payments = Array.isArray(data.payments)
         ? data.payments as Array<Record<string, unknown>> : [];
@@ -494,6 +510,12 @@ export const removeContribution = onCall(async (request) => {
     const contributionSnapshot = await transaction.get(contributionRef);
     if (!contributionSnapshot.exists) throw new HttpsError('not-found', 'Contribution not found.');
     const contribution = contributionData(contributionSnapshot);
+    if (hasLegacyCorrectionHistory(contribution.legacy_corrections)) {
+      throw new HttpsError(
+        'failed-precondition',
+        'Contributions with audited legacy correction history cannot be removed.',
+      );
+    }
     const payments = Array.isArray(contribution.payments) ? contribution.payments : [];
     const paymentRefs = payments.map((payment) =>
       db().doc(`members/${memberId}/payments/${payment.payment_id}`));

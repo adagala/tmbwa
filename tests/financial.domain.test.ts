@@ -5,6 +5,9 @@ import {
   applyPayment,
   paymentAllocations,
   legacyContributionCorrection,
+  hasLegacyCorrectionHistory,
+  hasLinkedPaymentHistory,
+  legacyInventoryCursor,
   recoverableOutstandingBalance,
   requiresReceiptReversalBeforeContributionRemoval,
   reservableLegacyKcbCredit,
@@ -96,6 +99,22 @@ describe('financial invariants', () => {
       status: 'unpaid',
     });
     expect(() => legacyContributionCorrection(500, 500, 501)).toThrow();
+  });
+
+  it('preserves corrected contributions and validates inventory cursors', () => {
+    expect(hasLegacyCorrectionHistory([])).toBe(false);
+    expect(hasLegacyCorrectionHistory([{ correctionId: 'correction-1' }])).toBe(
+      true,
+    );
+    expect(hasLinkedPaymentHistory([])).toBe(false);
+    expect(hasLinkedPaymentHistory([{ payment_id: 'payment-1' }])).toBe(true);
+    expect(legacyInventoryCursor(undefined)).toBeUndefined();
+    expect(
+      legacyInventoryCursor('members/member-1/contributions/2026-01-01'),
+    ).toBe('members/member-1/contributions/2026-01-01');
+    expect(() => legacyInventoryCursor('2026-01-01')).toThrow(
+      'Invalid legacy inventory cursor',
+    );
   });
 
   it('validates explicit multi-contribution allocations and credit', () => {
