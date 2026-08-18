@@ -1,5 +1,7 @@
 import {
   collection,
+  doc,
+  getDoc,
   onSnapshot,
   orderBy,
   query,
@@ -12,6 +14,7 @@ import {
   kcbPaymentNotificationSchema,
 } from 'tmbwa-shared/firebase';
 import { parseDocument } from 'tmbwa-shared';
+import { unallocatedPaymentAmount } from 'tmbwa-shared';
 
 export type { KcbPaymentNotification } from 'tmbwa-shared/firebase';
 
@@ -68,18 +71,48 @@ export const subscribeToKcbPaymentsWithCredit = (
       collection(db, 'kcb_payment_notifications'),
       where('status', '==', 'reconciled'),
     ),
-    (snapshot) =>
-      callback(
-        snapshot.docs
-          .map((item) =>
-            parseDocument(
-              kcbPaymentNotificationSchema,
-              { providerTransactionId: item.id, ...item.data() },
-              item.ref.path,
+    (snapshot) => {
+      const notifications = snapshot.docs.map((item) =>
+        parseDocument(
+          kcbPaymentNotificationSchema,
+          { providerTransactionId: item.id, ...item.data() },
+          item.ref.path,
+        ),
+      );
+      void Promise.all(
+        notifications.map(async (notification) => {
+          if (notification.unallocatedAmount !== undefined) return notification;
+          if (!notification.memberId || !notification.paymentId)
+            return notification;
+          const paymentSnapshot = await getDoc(
+            doc(
+              db,
+              `members/${notification.memberId}/payments/${notification.paymentId}`,
             ),
-          )
-          .filter((item) => Number(item.unallocatedAmount ?? 0) > 0),
-      ),
+          );
+          if (!paymentSnapshot.exists()) return notification;
+          const payment = paymentSnapshot.data();
+          return {
+            ...notification,
+            unallocatedAmount: unallocatedPaymentAmount(
+              Number(payment.amount),
+              Number(payment.contribution_amount),
+            ),
+          };
+        }),
+      )
+        .then((items) =>
+          callback(
+            items.filter((item) => Number(item.unallocatedAmount ?? 0) > 0),
+          ),
+        )
+        .catch((error: unknown) => {
+          console.error(
+            'Could not derive legacy KCB account credit.',
+            (error as { code?: string }).code ?? 'unknown',
+          );
+        });
+    },
   );
 
 export const reconcileKcbPayment = (data: {

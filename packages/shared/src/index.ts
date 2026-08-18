@@ -23,6 +23,15 @@ export const PAYMENT_STATUS = {
 } as const;
 export const MONTHLY_CONTRIBUTION = 500;
 
+export const unallocatedPaymentAmount = (
+  amount: number,
+  contributionAmount: number,
+  storedAmount?: number,
+) =>
+  storedAmount === undefined
+    ? Math.max(Number(amount) - Number(contributionAmount), 0)
+    : Number(storedAmount);
+
 export const member_roles = [
   MEMBER_ROLE.MEMBER,
   MEMBER_ROLE.ADMINISTRATOR,

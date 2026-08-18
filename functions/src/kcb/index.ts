@@ -9,9 +9,11 @@ import {
   kcbPaymentNotificationDocumentSchema,
   notificationEventDocumentSchema,
   paymentDocumentSchema,
+  unallocatedPaymentAmount,
 } from 'tmbwa-shared';
 import {
   PaymentAllocation,
+  paymentAllocations,
   validatePaymentAllocations,
 } from '../financial/domain';
 import {
@@ -417,7 +419,6 @@ export const allocateKcbPaymentCredit = onCall(async (request) => {
     if (notification.status !== 'reconciled' || !notification.memberId || !notification.paymentId) {
       throw new HttpsError('failed-precondition', 'Payment is not available for credit allocation.');
     }
-    const available = Number(notification.unallocatedAmount ?? 0);
     const paymentRef = db().doc(`members/${notification.memberId}/payments/${notification.paymentId}`);
     const memberRef = db().doc(`members/${notification.memberId}`);
     const contributionRefs = allocations.map(({ contributionId }) =>
@@ -430,8 +431,13 @@ export const allocateKcbPaymentCredit = onCall(async (request) => {
       throw new HttpsError('not-found', 'Payment or contribution not found.');
     }
     const payment = paymentData(paymentSnapshot);
+    const available = unallocatedPaymentAmount(
+      Number(payment.amount),
+      Number(payment.contribution_amount),
+      notification.unallocatedAmount,
+    );
     const existingContributionIds = new Set(
-      (payment.allocations ?? []).map((item) => item.contribution_id),
+      paymentAllocations(payment).map((item) => item.contributionId),
     );
     if (allocations.some((item) => existingContributionIds.has(item.contributionId))) {
       throw new HttpsError(

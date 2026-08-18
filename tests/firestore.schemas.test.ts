@@ -8,6 +8,7 @@ import {
   notificationDeliveryDocumentSchema,
   parseDocument,
   paymentDocumentSchema,
+  unallocatedPaymentAmount,
 } from 'tmbwa-shared';
 import {
   parseContributionDocument,
@@ -43,6 +44,10 @@ const payment = {
 };
 
 describe('Firestore document schemas', () => {
+  it('derives legacy credit unless an explicit amount is stored', () => {
+    expect(unallocatedPaymentAmount(1000, 400)).toBe(600);
+    expect(unallocatedPaymentAmount(1000, 400, 100)).toBe(100);
+  });
   it('accepts valid member, payment, and contribution records', () => {
     expect(memberDocumentSchema.parse(member).status).toBe('active');
     expect(paymentDocumentSchema.parse(payment).amount).toBe(500);
