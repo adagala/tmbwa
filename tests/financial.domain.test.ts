@@ -5,6 +5,8 @@ import {
   applyPayment,
   paymentAllocations,
   legacyContributionCorrection,
+  correctedPaidAmountValue,
+  canReverseLegacyCorrection,
   hasLegacyCorrectionHistory,
   hasLinkedPaymentHistory,
   legacyInventoryCursor,
@@ -99,6 +101,30 @@ describe('financial invariants', () => {
       status: 'unpaid',
     });
     expect(() => legacyContributionCorrection(500, 500, 501)).toThrow();
+  });
+
+  it('requires corrected paid amounts to be finite numbers without coercion', () => {
+    expect(correctedPaidAmountValue(0)).toBe(0);
+    expect(correctedPaidAmountValue(400)).toBe(400);
+    expect(() => correctedPaidAmountValue(null)).toThrow();
+    expect(() => correctedPaidAmountValue('400')).toThrow();
+    expect(() => correctedPaidAmountValue(Number.NaN)).toThrow();
+    expect(() => correctedPaidAmountValue(Number.POSITIVE_INFINITY)).toThrow();
+    expect(() => correctedPaidAmountValue(-1)).toThrow();
+  });
+
+  it('requires legacy corrections to be reversed in last-in-first-out order', () => {
+    // A later correction cycled the balance back to correction-1's numeric state.
+    expect(
+      canReverseLegacyCorrection('correction-3', 'correction-1', 400, 400),
+    ).toBe(false);
+    expect(
+      canReverseLegacyCorrection('correction-3', 'correction-3', 400, 400),
+    ).toBe(true);
+    // Once correction-3 restores correction-2 as active, correction-1 is still blocked.
+    expect(
+      canReverseLegacyCorrection('correction-2', 'correction-1', 300, 400),
+    ).toBe(false);
   });
 
   it('preserves corrected contributions and validates inventory cursors', () => {

@@ -12,6 +12,8 @@ import {
   availableUnreservedBalance,
   paymentAllocations,
   legacyContributionCorrection,
+  correctedPaidAmountValue,
+  canReverseLegacyCorrection,
   hasLegacyCorrectionHistory,
   hasLinkedPaymentHistory,
   legacyInventoryCursor,
@@ -303,9 +305,11 @@ export const correctLegacyContribution = onCall(async (request) => {
   const memberId = requiredString(data, 'memberId');
   const contributionId = requiredString(data, 'contributionId');
   const reason = requiredString(data, 'reason');
-  const correctedPaidAmount = Number(data.correctedPaidAmount);
-  if (!Number.isFinite(correctedPaidAmount) || correctedPaidAmount < 0) {
-    throw new HttpsError('invalid-argument', 'correctedPaidAmount must be zero or greater.');
+  let correctedPaidAmount: number;
+  try {
+    correctedPaidAmount = correctedPaidAmountValue(data.correctedPaidAmount);
+  } catch (error) {
+    throw new HttpsError('invalid-argument', (error as Error).message);
   }
   if (contributionId > new Date().toISOString().slice(0, 7) + '-01') {
     throw new HttpsError('invalid-argument', 'Future contributions cannot be corrected.');
@@ -361,6 +365,7 @@ export const correctLegacyContribution = onCall(async (request) => {
       after: { balance: correction.correctedBalance, paid: correction.status,
         paidAmount: correction.correctedPaidAmount },
       delta: correction.delta,
+      previousCorrectionId: contribution.active_legacy_correction_id ?? null,
       reversed: false,
       actorId,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -370,6 +375,7 @@ export const correctLegacyContribution = onCall(async (request) => {
     transaction.update(contributionRef, {
       balance: correction.correctedBalance,
       paid: correction.status,
+      active_legacy_correction_id: requestId,
       legacy_corrections: admin.firestore.FieldValue.arrayUnion({
         correctionId: requestId, delta: correction.delta, reason,
         source: 'legacy_correction', actorId,
@@ -407,6 +413,7 @@ export const reverseLegacyContributionCorrection = onCall(async (request) => {
       reversed?: boolean;
       contributionId?: unknown;
       delta?: unknown;
+      previousCorrectionId?: unknown;
       before?: { balance?: unknown; paid?: unknown };
       after?: { balance?: unknown };
     };
@@ -416,11 +423,15 @@ export const reverseLegacyContributionCorrection = onCall(async (request) => {
     const contributionSnapshot = await transaction.get(contributionRef);
     if (!contributionSnapshot.exists) throw new HttpsError('not-found', 'Contribution not found.');
     const contribution = contributionData(contributionSnapshot);
-    if (!correction.before || !correction.after ||
-      Number(contribution.balance) !== Number(correction.after.balance)) {
+    if (!correction.before || !correction.after || !canReverseLegacyCorrection(
+      contribution.active_legacy_correction_id,
+      correctionId,
+      Number(contribution.balance),
+      Number(correction.after.balance),
+    )) {
       throw new HttpsError(
         'failed-precondition',
-        'The contribution changed after this correction. Reverse the latest correction first.',
+        'This is not the latest active correction. Reverse newer corrections first.',
       );
     }
     const delta = Number(correction.delta);
@@ -430,6 +441,8 @@ export const reverseLegacyContributionCorrection = onCall(async (request) => {
     transaction.update(contributionRef, {
       balance: Number(correction.before.balance),
       paid: String(correction.before.paid),
+      active_legacy_correction_id: typeof correction.previousCorrectionId === 'string'
+        ? correction.previousCorrectionId : admin.firestore.FieldValue.delete(),
       legacy_corrections: admin.firestore.FieldValue.arrayUnion({
         correctionId, delta: -delta, reason,
         source: 'legacy_correction', actorId,

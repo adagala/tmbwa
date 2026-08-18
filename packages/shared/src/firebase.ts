@@ -92,6 +92,7 @@ export const memberContributionSchema = z.object({
   amount: z.number(),
   payments: z.array(paymentSchema),
   legacy_corrections: z.array(legacyCorrectionSummarySchema).default([]),
+  active_legacy_correction_id: z.string().optional(),
   month: z.string(),
   action_by: z.string(),
   createdat: z.union([z.date(), z.instanceof(Timestamp), fieldValueSchema]).optional(),

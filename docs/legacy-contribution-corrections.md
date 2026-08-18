@@ -8,7 +8,7 @@ Administrators can use **Correct legacy record** from a contribution's details w
 
 The trusted `correctLegacyContribution` Function atomically writes an idempotency command, a canonical record under `members/{memberId}/legacy_corrections/{correctionId}`, the contribution state and history summary, member aggregate totals, monthly statistics, and an immutable audit event. Contributions linked to KCB or shared receipts are rejected and must use receipt reversal instead.
 
-`reverseLegacyContributionCorrection` restores the recorded before-state only when no later financial operation has changed that contribution. Reversals are idempotent and audited; correction records are marked reversed rather than deleted.
+`reverseLegacyContributionCorrection` restores the recorded before-state only when the correction is still the contribution's explicit active correction and the state still matches. Each correction records the previously active correction ID, so reversals must occur in last-in-first-out order and restore the preceding correction marker. Reversals are idempotent and audited; correction records are marked reversed rather than deleted.
 
 ## Inventory
 

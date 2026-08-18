@@ -55,6 +55,21 @@ export const legacyContributionCorrection = (
   };
 };
 
+export const correctedPaidAmountValue = (value: unknown) => {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+    throw new Error('Corrected paid amount must be a finite number of zero or greater.');
+  }
+  return value;
+};
+
+export const canReverseLegacyCorrection = (
+  activeCorrectionId: unknown,
+  correctionId: string,
+  currentBalance: number,
+  expectedBalance: number,
+) => activeCorrectionId === correctionId &&
+  Number.isFinite(currentBalance) && currentBalance === expectedBalance;
+
 export const hasLegacyCorrectionHistory = (corrections: unknown) =>
   Array.isArray(corrections) && corrections.length > 0;
 

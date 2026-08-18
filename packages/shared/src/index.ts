@@ -191,6 +191,7 @@ export const contributionDocumentSchema = memberDocumentSchema.extend({
   balance: z.number(),
   payments: z.array(paymentDocumentSchema).default([]),
   legacy_corrections: z.array(legacyCorrectionSummarySchema).default([]),
+  active_legacy_correction_id: z.string().optional(),
   month: z.string(),
   action_by: z.string().optional(),
   createdat: z.unknown().optional(),
