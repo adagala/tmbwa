@@ -12,6 +12,7 @@ import {
   applyBalanceAdjustment,
   applyPayment,
   paymentAllocations,
+  requiresReceiptReversalBeforeContributionRemoval,
   reversePayment,
 } from './domain';
 import {
@@ -426,13 +427,27 @@ export const removeContribution = onCall(async (request) => {
     if (!contributionSnapshot.exists) throw new HttpsError('not-found', 'Contribution not found.');
     const contribution = contributionData(contributionSnapshot);
     const payments = Array.isArray(contribution.payments) ? contribution.payments : [];
-    for (const payment of payments) {
-      if (payment && typeof payment.payment_id === 'string') {
-        transaction.delete(db().doc(`members/${memberId}/payments/${payment.payment_id}`));
-      }
+    const paymentRefs = payments.map((payment) =>
+      db().doc(`members/${memberId}/payments/${payment.payment_id}`));
+    const paymentSnapshots = await Promise.all(
+      paymentRefs.map((ref) => transaction.get(ref)),
+    );
+    if (paymentSnapshots.some((snapshot) => !snapshot.exists)) {
+      throw new HttpsError(
+        'data-loss',
+        'A contribution payment record is missing. The contribution cannot be removed safely.',
+      );
+    }
+    const canonicalPayments = paymentSnapshots.map(paymentData);
+    if (canonicalPayments.some(requiresReceiptReversalBeforeContributionRemoval)) {
+      throw new HttpsError(
+        'failed-precondition',
+        'Reverse the linked receipt before removing this contribution.',
+      );
     }
     const paidAmount = Number(contribution.amount ?? 0) - Number(contribution.balance ?? 0);
     writeCommand(transaction, command.ref, 'removeContribution', actorId);
+    paymentRefs.forEach((paymentRef) => transaction.delete(paymentRef));
     transaction.delete(contributionRef);
     transaction.update(db().doc(`members/${memberId}`), {
       contributionBalance: admin.firestore.FieldValue.increment(-paidAmount),

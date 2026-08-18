@@ -51,6 +51,15 @@ export const paymentAllocations = (payment: {
       }]
     : [];
 
+export const requiresReceiptReversalBeforeContributionRemoval = (payment: {
+  provider_transaction_id?: unknown;
+  allocations?: Array<{ contribution_id: string; amount: number }>;
+  contribution_id?: string;
+  contribution_amount?: number;
+}) =>
+  typeof payment.provider_transaction_id === 'string' ||
+  paymentAllocations(payment).length > 1;
+
 export const applyPayment = (amount: number, outstanding: number) => {
   if (!Number.isFinite(amount) || amount <= 0) throw new Error('Payment must be positive.');
   if (!Number.isFinite(outstanding) || outstanding <= 0) throw new Error('Contribution is paid.');

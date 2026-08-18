@@ -3,6 +3,7 @@ import {
   applyBalanceAdjustment,
   applyPayment,
   paymentAllocations,
+  requiresReceiptReversalBeforeContributionRemoval,
   reversePayment,
   validatePaymentAllocations,
 } from '../functions/src/financial/domain';
@@ -114,5 +115,29 @@ describe('financial invariants', () => {
     expect(
       paymentAllocations({ contribution_id: '', contribution_amount: 0 }),
     ).toEqual([]);
+  });
+
+  it('requires receipt reversal before deleting shared or KCB contributions', () => {
+    expect(
+      requiresReceiptReversalBeforeContributionRemoval({
+        provider_transaction_id: 'KCB-1',
+        contribution_id: 'june',
+        contribution_amount: 400,
+      }),
+    ).toBe(true);
+    expect(
+      requiresReceiptReversalBeforeContributionRemoval({
+        allocations: [
+          { contribution_id: 'june', amount: 400 },
+          { contribution_id: 'march', amount: 500 },
+        ],
+      }),
+    ).toBe(true);
+    expect(
+      requiresReceiptReversalBeforeContributionRemoval({
+        contribution_id: 'june',
+        contribution_amount: 400,
+      }),
+    ).toBe(false);
   });
 });
