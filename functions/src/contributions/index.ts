@@ -15,6 +15,7 @@ import {
   memberWithIdData,
   validateDocumentWrite,
 } from '../firestoreData';
+import { availableUnreservedBalance } from '../financial/domain';
 
 const db = () => admin.firestore();
 
@@ -44,7 +45,12 @@ const createForMember = async (member: MemberWithId, month: string, amount: numb
     const freshMember = memberWithIdData(freshMemberSnapshot);
     if (freshMember.status !== 'active') return { created: false, applied: 0, payment: false };
     const accountBalance = Number(freshMember.balance ?? 0);
-    const applied = Math.min(Math.max(accountBalance, 0), amount);
+    const applied = Math.min(
+      availableUnreservedBalance(
+        accountBalance, Number(freshMember.reservedKcbCredit ?? 0),
+      ),
+      amount,
+    );
     const remaining = amount - applied;
     const payments: Record<string, unknown>[] = [];
     if (applied > 0) {

@@ -8,7 +8,14 @@ import {
   notificationEventDocumentSchema,
   paymentDocumentSchema,
 } from 'tmbwa-shared';
-import { applyBalanceAdjustment, applyPayment, reversePayment } from './domain';
+import {
+  applyBalanceAdjustment,
+  availableUnreservedBalance,
+  applyPayment,
+  paymentAllocations,
+  requiresReceiptReversalBeforeContributionRemoval,
+  reversePayment,
+} from './domain';
 import {
   contributionData,
   memberData,
@@ -183,42 +190,76 @@ export const reverseContributionPayment = onCall(async (request) => {
     const paymentSnapshot = await transaction.get(paymentRef);
     if (!paymentSnapshot.exists) throw new HttpsError('not-found', 'Payment not found.');
     const payment = paymentData(paymentSnapshot);
-    const contributionId = String(payment.contribution_id || '');
-    if (!contributionId) throw new HttpsError('failed-precondition', 'Payment is not a contribution payment.');
-    const contributionRef = db().doc(`members/${memberId}/contributions/${contributionId}`);
-    const contributionSnapshot = await transaction.get(contributionRef);
-    if (!contributionSnapshot.exists) throw new HttpsError('not-found', 'Contribution not found.');
-    const contribution = contributionData(contributionSnapshot);
-    const reversal = reversePayment(
-      Number(contribution.balance ?? 0),
-      Number(payment.contribution_amount ?? 0),
-      Number(contribution.amount),
+    const allocations = paymentAllocations(payment);
+    if (
+      !allocations.length &&
+      typeof payment.provider_transaction_id !== 'string'
+    ) {
+      throw new HttpsError(
+        'failed-precondition',
+        'Payment has no contribution allocations.',
+      );
+    }
+    const contributionRefs = allocations.map(({ contributionId }) =>
+      db().doc(`members/${memberId}/contributions/${contributionId}`));
+    const contributionSnapshots = await Promise.all(
+      contributionRefs.map((ref) => transaction.get(ref)),
     );
+    if (contributionSnapshots.some((item) => !item.exists)) {
+      throw new HttpsError('not-found', 'Contribution not found.');
+    }
+    const contributions = contributionSnapshots.map(contributionData);
     writeCommand(transaction, command.ref, 'reverseContributionPayment', actorId);
     transaction.delete(paymentRef);
-    transaction.update(contributionRef, {
-      payments: admin.firestore.FieldValue.arrayRemove(payment),
-      balance: reversal.restoredBalance,
-      paid: reversal.status,
+    allocations.forEach((allocation, index) => {
+      const contribution = contributions[index];
+      const reversal = reversePayment(
+        Number(contribution.balance), allocation.amount, Number(contribution.amount),
+      );
+      transaction.update(contributionRefs[index], {
+        payments: contribution.payments.filter(
+          (item) => item.payment_id !== payment.payment_id,
+        ),
+        balance: reversal.restoredBalance,
+        paid: reversal.status,
+      });
+      transaction.set(db().doc(`monthly_stats/${allocation.contributionId}`), {
+        contribution: admin.firestore.FieldValue.increment(-allocation.amount),
+        month: allocation.contributionId,
+      }, { merge: true });
     });
     transaction.update(db().doc(`members/${memberId}`), {
       balance: admin.firestore.FieldValue.increment(-Number(payment.amount)),
-      contributionBalance: admin.firestore.FieldValue.increment(-Number(payment.contribution_amount)),
+      contributionBalance: admin.firestore.FieldValue.increment(
+        -allocations.reduce((sum, item) => sum + item.amount, 0),
+      ),
+      ...(payment.credit_reserved === true ? {
+        reservedKcbCredit: admin.firestore.FieldValue.increment(
+          -Number(payment.unallocated_amount ?? 0),
+        ),
+      } : {}),
     });
-    transaction.set(db().doc(`monthly_stats/${contributionId}`), {
-      contribution: admin.firestore.FieldValue.increment(-Number(payment.contribution_amount)),
-      month: contributionId,
-    }, { merge: true });
+    if (typeof payment.provider_transaction_id === 'string') {
+      transaction.update(
+        db().doc(`kcb_payment_notifications/${payment.provider_transaction_id}`),
+        {
+          status: 'reversed',
+          unallocatedAmount: 0,
+          reversedAt: admin.firestore.FieldValue.serverTimestamp(),
+          reversedBy: actorId,
+        },
+      );
+    }
     writeAuditEvent(transaction, requestId, actorId, 'payment.reversed', memberId, paymentId, {
       amount: Number(payment.amount),
       contributionAmount: Number(payment.contribution_amount),
-      contributionId,
+      allocations,
     });
     const notificationPath = `notification_events/payment-reversed-${paymentId}`;
     transaction.create(db().doc(notificationPath), validateDocumentWrite(notificationEventDocumentSchema, {
       type: 'payment.reversed', memberId, paymentId,
       receiptNumber: payment.receipt_number ?? payment.referencenumber,
-      amount: Number(payment.amount), contributionId,
+      amount: Number(payment.amount),
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     }, notificationPath));
     return { requestId, duplicate: false };
@@ -251,7 +292,10 @@ export const createContribution = onCall(async (request) => {
     const member = memberData(memberSnapshot);
     if (member.status !== 'active') throw new HttpsError('failed-precondition', 'Only active members can receive new contributions.');
     const balance = Number(member.balance ?? 0);
-    const applied = Math.min(Math.max(balance, 0), MONTHLY_CONTRIBUTION);
+    const applied = Math.min(
+      availableUnreservedBalance(balance, Number(member.reservedKcbCredit ?? 0)),
+      MONTHLY_CONTRIBUTION,
+    );
     const payments: Record<string, unknown>[] = [];
     if (applied > 0) {
       const paymentId = db().collection(`members/${memberId}/payments`).doc().id;
@@ -339,6 +383,14 @@ export const adjustMemberBalance = onCall(async (request) => {
     const memberSnapshot = await transaction.get(memberRef);
     if (!memberSnapshot.exists) throw new HttpsError('not-found', 'Member not found.');
     const member = memberData(memberSnapshot);
+    if (type === 'deduction' && amount > availableUnreservedBalance(
+      Number(member.balance ?? 0), Number(member.reservedKcbCredit ?? 0),
+    )) {
+      throw new HttpsError(
+        'failed-precondition',
+        'Deduction exceeds the unreserved account balance.',
+      );
+    }
     let nextBalance: number;
     try {
       nextBalance = applyBalanceAdjustment(Number(member.balance ?? 0), amount, type);
@@ -392,13 +444,27 @@ export const removeContribution = onCall(async (request) => {
     if (!contributionSnapshot.exists) throw new HttpsError('not-found', 'Contribution not found.');
     const contribution = contributionData(contributionSnapshot);
     const payments = Array.isArray(contribution.payments) ? contribution.payments : [];
-    for (const payment of payments) {
-      if (payment && typeof payment.payment_id === 'string') {
-        transaction.delete(db().doc(`members/${memberId}/payments/${payment.payment_id}`));
-      }
+    const paymentRefs = payments.map((payment) =>
+      db().doc(`members/${memberId}/payments/${payment.payment_id}`));
+    const paymentSnapshots = await Promise.all(
+      paymentRefs.map((ref) => transaction.get(ref)),
+    );
+    if (paymentSnapshots.some((snapshot) => !snapshot.exists)) {
+      throw new HttpsError(
+        'data-loss',
+        'A contribution payment record is missing. The contribution cannot be removed safely.',
+      );
+    }
+    const canonicalPayments = paymentSnapshots.map(paymentData);
+    if (canonicalPayments.some(requiresReceiptReversalBeforeContributionRemoval)) {
+      throw new HttpsError(
+        'failed-precondition',
+        'Reverse the linked receipt before removing this contribution.',
+      );
     }
     const paidAmount = Number(contribution.amount ?? 0) - Number(contribution.balance ?? 0);
     writeCommand(transaction, command.ref, 'removeContribution', actorId);
+    paymentRefs.forEach((paymentRef) => transaction.delete(paymentRef));
     transaction.delete(contributionRef);
     transaction.update(db().doc(`members/${memberId}`), {
       contributionBalance: admin.firestore.FieldValue.increment(-paidAmount),

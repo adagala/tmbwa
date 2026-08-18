@@ -20,6 +20,7 @@ export const removeContribution = Financial.removeContribution;
 export const transitionMemberStatus = Financial.transitionMemberStatus;
 export const kcbTillNotification = Kcb.kcbTillNotification;
 export const reconcileKcbPayment = Kcb.reconcileKcbPayment;
+export const allocateKcbPaymentCredit = Kcb.allocateKcbPaymentCredit;
 export const rejectKcbPayment = Kcb.rejectKcbPayment;
 export const requestKcbStkPush = Kcb.requestKcbStkPush;
 export const kcbStkCallback = Kcb.kcbStkCallback;

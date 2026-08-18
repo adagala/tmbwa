@@ -159,10 +159,10 @@ export const DialogContributionDetails = ({
                       <dl className="divide-y divide-gray-100 dark:divide-gray-800">
                         <div className="px-4 py-0.5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-0">
                           <dt className="text-sm font-medium leading-6 text-gray-900 dark:text-gray-200">
-                            Amount
+                            Allocated amount
                           </dt>
                           <dd className="mt-1 text-sm leading-6 text-gray-700 dark:text-gray-400 sm:col-span-2 sm:mt-0">
-                            KES {payment.amount}
+                            KES {payment.contribution_amount}
                           </dd>
                         </div>
                       </dl>

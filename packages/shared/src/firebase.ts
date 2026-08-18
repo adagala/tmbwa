@@ -47,6 +47,7 @@ export const memberSchema = memberFormSchema.merge(
     createat: z.instanceof(Timestamp).optional(),
     balance: z.number(),
     contributionBalance: z.number(),
+    reservedKcbCredit: z.number().nonnegative().default(0),
   }),
 );
 
@@ -75,6 +76,12 @@ export const paymentSchema = paymentFormSchema.merge(
     created_at: z.union([z.date(), fieldValueSchema, firebaseTimestampSchema]),
     receipt_number: z.string().optional(),
     balance_direction: MemberBalanceTypeEnum.optional(),
+    allocations: z.array(z.object({
+      contribution_id: z.string().min(1),
+      amount: z.number().positive(),
+    })).optional(),
+    unallocated_amount: z.number().nonnegative().optional(),
+    credit_reserved: z.boolean().optional(),
   }),
 );
 

@@ -1,5 +1,89 @@
 import { PAYMENT_STATUS } from 'tmbwa-shared';
 
+export type PaymentAllocation = { contributionId: string; amount: number };
+
+export const availableUnreservedBalance = (balance: number, reservedCredit: number) => {
+  if (!Number.isFinite(balance) || !Number.isFinite(reservedCredit) || reservedCredit < 0) {
+    throw new Error('Invalid account balance.');
+  }
+  return Math.max(balance - reservedCredit, 0);
+};
+
+export const reservableLegacyKcbCredit = (
+  receiptCredit: number,
+  memberBalance: number,
+  outstandingContributions: number,
+  alreadyReserved: number,
+) => Math.min(
+  receiptCredit,
+  Math.max(memberBalance + outstandingContributions - alreadyReserved, 0),
+);
+
+export const recoverableOutstandingBalance = (
+  contributions: Array<{ balance?: unknown }>,
+) => contributions.reduce((sum, contribution) => {
+  const balance = Number(contribution.balance);
+  return sum + (Number.isFinite(balance) && balance > 0 ? balance : 0);
+}, 0);
+
+export const validatePaymentAllocations = (
+  receiptAmount: number,
+  allocations: PaymentAllocation[],
+  outstandingByContribution: Record<string, number>,
+) => {
+  if (!Number.isFinite(receiptAmount) || receiptAmount <= 0) {
+    throw new Error('Payment must be positive.');
+  }
+  const seen = new Set<string>();
+  let allocatedAmount = 0;
+  allocations.forEach(({ contributionId, amount }) => {
+    if (!contributionId || seen.has(contributionId)) {
+      throw new Error('Each contribution can be selected only once.');
+    }
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new Error('Allocation amounts must be positive.');
+    }
+    const outstanding = outstandingByContribution[contributionId];
+    if (!Number.isFinite(outstanding) || outstanding <= 0) {
+      throw new Error('A selected contribution is already paid or missing.');
+    }
+    if (amount > outstanding) {
+      throw new Error('An allocation exceeds the contribution balance.');
+    }
+    seen.add(contributionId);
+    allocatedAmount += amount;
+  });
+  if (allocatedAmount > receiptAmount) {
+    throw new Error('Allocations exceed the available receipt amount.');
+  }
+  return { allocatedAmount, unallocatedAmount: receiptAmount - allocatedAmount };
+};
+
+export const paymentAllocations = (payment: {
+  allocations?: Array<{ contribution_id: string; amount: number }>;
+  contribution_id?: string;
+  contribution_amount?: number;
+}) => payment.allocations?.length
+  ? payment.allocations.map((item) => ({
+    contributionId: item.contribution_id,
+    amount: Number(item.amount),
+  }))
+  : payment.contribution_id && Number(payment.contribution_amount) > 0
+    ? [{
+        contributionId: payment.contribution_id,
+        amount: Number(payment.contribution_amount),
+      }]
+    : [];
+
+export const requiresReceiptReversalBeforeContributionRemoval = (payment: {
+  provider_transaction_id?: unknown;
+  allocations?: Array<{ contribution_id: string; amount: number }>;
+  contribution_id?: string;
+  contribution_amount?: number;
+}) =>
+  typeof payment.provider_transaction_id === 'string' ||
+  paymentAllocations(payment).length > 1;
+
 export const applyPayment = (amount: number, outstanding: number) => {
   if (!Number.isFinite(amount) || amount <= 0) throw new Error('Payment must be positive.');
   if (!Number.isFinite(outstanding) || outstanding <= 0) throw new Error('Contribution is paid.');
