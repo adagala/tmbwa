@@ -173,12 +173,24 @@ export const paymentDocumentSchema = z.object({
   credit_reserved: z.boolean().optional(),
 }).passthrough();
 
+export const legacyCorrectionSummarySchema = z.object({
+  correctionId: z.string(),
+  delta: z.number(),
+  reason: z.string(),
+  source: z.literal('legacy_correction'),
+  actorId: z.string(),
+  type: z.enum(['correction', 'reversal']).default('correction'),
+  createdAt: z.unknown().optional(),
+  reversed: z.boolean().optional(),
+}).passthrough();
+
 export const contributionDocumentSchema = memberDocumentSchema.extend({
   contribution_id: z.string(),
   paid: ContributionStatusEnum,
   amount: z.number(),
   balance: z.number(),
   payments: z.array(paymentDocumentSchema).default([]),
+  legacy_corrections: z.array(legacyCorrectionSummarySchema).default([]),
   month: z.string(),
   action_by: z.string().optional(),
   createdat: z.unknown().optional(),

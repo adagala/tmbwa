@@ -26,6 +26,35 @@ export const recoverableOutstandingBalance = (
   return sum + (Number.isFinite(balance) && balance > 0 ? balance : 0);
 }, 0);
 
+export const legacyContributionCorrection = (
+  contributionAmount: number,
+  currentBalance: number,
+  correctedPaidAmount: number,
+) => {
+  if (!Number.isFinite(contributionAmount) || contributionAmount <= 0) {
+    throw new Error('Contribution amount must be positive.');
+  }
+  if (
+    !Number.isFinite(currentBalance) || currentBalance < 0 ||
+    !Number.isFinite(correctedPaidAmount) || correctedPaidAmount < 0 ||
+    correctedPaidAmount > contributionAmount
+  ) {
+    throw new Error('Corrected paid amount must be between zero and the contribution amount.');
+  }
+  const currentPaidAmount = contributionAmount - currentBalance;
+  const correctedBalance = contributionAmount - correctedPaidAmount;
+  const delta = correctedPaidAmount - currentPaidAmount;
+  return {
+    currentPaidAmount,
+    correctedPaidAmount,
+    correctedBalance,
+    delta,
+    status: correctedBalance === 0
+      ? PAYMENT_STATUS.PAID
+      : correctedPaidAmount > 0 ? PAYMENT_STATUS.PARTIAL : PAYMENT_STATUS.UNPAID,
+  };
+};
+
 export const validatePaymentAllocations = (
   receiptAmount: number,
   allocations: PaymentAllocation[],

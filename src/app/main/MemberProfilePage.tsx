@@ -8,7 +8,6 @@ import { Suspense, useEffect, useState } from 'react';
 import { getMemberById } from '@/lib/firebase/firestore';
 import useUser from '@/hooks/useUser';
 import { Link, useParams } from 'react-router-dom';
-import { DialogUpdateMemberBalance } from '@/components/ui/members/DialogUpdateMemberBalance';
 import { ContributionsAndTransactions } from '@/sections/contributionsAndTansactions';
 import { DialogMemberStatus } from '@/components/ui/members/DialogMemberStatus';
 
@@ -68,7 +67,6 @@ export default function MemberProfilePage() {
           <div className="flex flex-col sm:flex-row gap-1.5 sm:justify-end">
             {member && role === 'administrator' ? (
               <>
-                <DialogUpdateMemberBalance member={member} />
                 <DialogMemberStatus member={member} />
                 <DialogMemberForm member={member} />
                 <DialogDeleteMember member={member} />

@@ -4,6 +4,7 @@ import {
   availableUnreservedBalance,
   applyPayment,
   paymentAllocations,
+  legacyContributionCorrection,
   recoverableOutstandingBalance,
   requiresReceiptReversalBeforeContributionRemoval,
   reservableLegacyKcbCredit,
@@ -74,6 +75,27 @@ describe('financial invariants', () => {
         { balance: -100 },
       ]),
     ).toBe(900);
+  });
+
+  it('calculates an auditable legacy correction delta and status', () => {
+    expect(legacyContributionCorrection(500, 500, 400)).toEqual({
+      currentPaidAmount: 0,
+      correctedPaidAmount: 400,
+      correctedBalance: 100,
+      delta: 400,
+      status: 'partial',
+    });
+    expect(legacyContributionCorrection(500, 100, 500)).toMatchObject({
+      correctedBalance: 0,
+      delta: 100,
+      status: 'paid',
+    });
+    expect(legacyContributionCorrection(500, 0, 0)).toMatchObject({
+      correctedBalance: 500,
+      delta: -500,
+      status: 'unpaid',
+    });
+    expect(() => legacyContributionCorrection(500, 500, 501)).toThrow();
   });
 
   it('validates explicit multi-contribution allocations and credit', () => {
