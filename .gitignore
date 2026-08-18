@@ -27,3 +27,4 @@ functions/lib-scripts
 *.sw?
 
 .env
+.env*
