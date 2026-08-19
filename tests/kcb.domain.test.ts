@@ -1,9 +1,11 @@
 import { generateKeyPairSync, createSign } from 'crypto';
 import { describe, expect, it } from 'vitest';
 import {
-  acknowledgement, normalizeKenyanPhone, parseKcbTransactionDate, parseStkCallback,
+  acknowledgement, isLockedStkReconciliation, isSameStkRequestPayload,
+  normalizeKenyanPhone, parseKcbTransactionDate, parseStkCallback,
   parseTillNotification, permitsUnsignedSandboxNotification,
-  secureTokenMatches, verifyKcbSignature,
+  secureTokenMatches, stkFailureStatus, stkPaymentMatchesPendingRequest,
+  verifyKcbSignature,
 } from '../functions/src/kcb/domain';
 import {
   buildSyntheticTillPayload,
@@ -89,6 +91,69 @@ describe('KCB Till notification contract', () => {
     expect(parseKcbTransactionDate('Mon May 19 13:30:54 EAT 2025').toISOString()).toBe('2025-05-19T10:30:54.000Z');
     expect(parseKcbTransactionDate('20260813121212').toISOString()).toBe('2026-08-13T09:12:12.000Z');
     expect(() => parseKcbTransactionDate('not-a-date')).toThrow();
+  });
+
+  it('treats repeated STK request IDs as idempotent only for identical payloads', () => {
+    expect(isSameStkRequestPayload(
+      { memberId: 'member-1', contributionId: '2026-08-01', amount: 500 },
+      { memberId: 'member-1', contributionId: '2026-08-01', amount: 500 },
+    )).toBe(true);
+    expect(isSameStkRequestPayload(
+      { memberId: 'member-1', contributionId: '2026-08-01', amount: 500 },
+      { memberId: 'member-1', contributionId: '2026-08-01', amount: 400 },
+    )).toBe(false);
+  });
+
+  it('maps callback failure codes to explicit STK statuses', () => {
+    expect(stkFailureStatus(1032)).toBe('cancelled');
+    expect(stkFailureStatus(1037)).toBe('timed_out');
+    expect(stkFailureStatus(1)).toBe('failed');
+  });
+
+  it('requires exact callback payment details before accepting pending STK success', () => {
+    expect(stkPaymentMatchesPendingRequest({
+      callbackAmount: 500,
+      pendingAmount: 500,
+      callbackPhone: '+254711000000',
+      pendingPhone: '+254711000000',
+      receiptNumber: 'RCP123',
+    })).toBe(true);
+    expect(stkPaymentMatchesPendingRequest({
+      callbackAmount: 499,
+      pendingAmount: 500,
+      callbackPhone: '+254711000000',
+      pendingPhone: '+254711000000',
+      receiptNumber: 'RCP123',
+    })).toBe(false);
+    expect(stkPaymentMatchesPendingRequest({
+      callbackAmount: 500,
+      pendingAmount: 500,
+      callbackPhone: '+254711111111',
+      pendingPhone: '+254711000000',
+      receiptNumber: 'RCP123',
+    })).toBe(false);
+    expect(stkPaymentMatchesPendingRequest({
+      callbackAmount: 500,
+      pendingAmount: 500,
+      callbackPhone: '+254711000000',
+      pendingPhone: '+254711000000',
+      receiptNumber: '',
+    })).toBe(false);
+  });
+
+  it('identifies STK-origin contribution locks for reconciliation guards', () => {
+    expect(isLockedStkReconciliation({
+      source: 'stk_callback',
+      lockedContributionId: '2026-08-01',
+    })).toBe(true);
+    expect(isLockedStkReconciliation({
+      source: 'till_notification',
+      lockedContributionId: '2026-08-01',
+    })).toBe(false);
+    expect(isLockedStkReconciliation({
+      source: 'stk_callback',
+      lockedContributionId: undefined,
+    })).toBe(false);
   });
 });
 

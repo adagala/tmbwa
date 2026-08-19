@@ -126,6 +126,12 @@ export const allocateKcbPaymentCredit = (data: {
   allocations: Array<{ contributionId: string; amount: number }>;
 }) => call('allocateKcbPaymentCredit', data);
 
+export const requestKcbStkPush = (data: {
+  memberId: string;
+  contributionId: string;
+  amount: number;
+}) => call('requestKcbStkPush', data);
+
 export const rejectKcbPayment = (
   providerTransactionId: string,
   reason: string,

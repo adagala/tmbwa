@@ -214,6 +214,7 @@ export const kcbPaymentNotificationDocumentSchema = z.object({
   matchReason: z.string(),
   receivedAt: z.unknown().optional(),
   memberId: z.string().optional(),
+  contributionId: z.string().optional(),
   paymentId: z.string().optional(),
   receiptNumber: z.string().optional(),
   allocations: z.array(z.object({
@@ -224,6 +225,16 @@ export const kcbPaymentNotificationDocumentSchema = z.object({
   creditReserved: z.boolean().optional(),
 }).passthrough();
 
+export const kcbStkRequestStatusSchema = z.enum([
+  'initiating',
+  'pending',
+  'succeeded_pending_reconciliation',
+  'failed',
+  'cancelled',
+  'timed_out',
+  'rejected',
+]);
+
 export const kcbStkRequestDocumentSchema = z.object({
   requestId: z.string(),
   memberId: z.string(),
@@ -232,9 +243,17 @@ export const kcbStkRequestDocumentSchema = z.object({
   phone: z.string(),
   invoiceNumber: z.string(),
   messageId: z.string(),
-  status: z.string(),
+  status: kcbStkRequestStatusSchema,
   merchantRequestId: z.string().nullable().optional(),
   checkoutRequestId: z.string().nullable().optional(),
+  providerTransactionId: z.string().optional(),
+  resultCode: z.number().int().optional(),
+  resultDescription: z.string().optional(),
+  failureCategory: z.string().optional(),
+  callbackFailureReason: z.string().optional(),
+  requestedBy: z.string().optional(),
+  createdAt: z.unknown().optional(),
+  updatedAt: z.unknown().optional(),
   callbackReceivedAt: z.unknown().optional(),
 }).passthrough();
 

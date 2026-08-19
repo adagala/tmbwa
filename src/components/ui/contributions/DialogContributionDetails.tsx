@@ -20,6 +20,8 @@ import { DialogLegacyContributionCorrection } from './DialogLegacyContributionCo
 import useUser from '@/hooks/useUser';
 import { DialogDeleteContribution } from './DialogDeleteContribution';
 import { DialogReverseLegacyCorrection } from './DialogReverseLegacyCorrection';
+import { requestKcbStkPush } from '@/lib/firebase/kcb';
+import { useToast } from '@/hooks/useToast';
 
 export const DialogContributionDetails = ({
   contribution,
@@ -32,13 +34,51 @@ export const DialogContributionDetails = ({
   member?: Member;
   setOpen: React.Dispatch<React.SetStateAction<boolean>>;
 }) => {
-  const { role } = useUser();
+  const { role, user } = useUser();
+  const { toast } = useToast();
+  const [isRequestingStk, setIsRequestingStk] = React.useState(false);
   const payments = contribution?.payments || [];
   const reversedCorrectionIds = new Set(
     contribution.legacy_corrections
       .filter((correction) => correction.type === 'reversal')
       .map((correction) => correction.correctionId),
   );
+  const canRequestStk =
+    !!user &&
+    (role === 'member' || role === 'administrator') &&
+    member?.status === 'active' &&
+    contribution.balance > 0 &&
+    contribution.paid !== ContributionStatusEnum.Enum.paid;
+
+  const requestContributionPayment = async () => {
+    if (!user || !canRequestStk) return;
+    setIsRequestingStk(true);
+    try {
+      await requestKcbStkPush({
+        memberId: contribution.member_id,
+        contributionId: contribution.contribution_id,
+        amount: Number(contribution.balance),
+      });
+      toast({
+        title: 'STK Push requested',
+        description:
+          'Check your phone and complete the M-Pesa prompt to pay this contribution.',
+      });
+    } catch (cause) {
+      const message =
+        cause instanceof Error
+          ? cause.message
+          : 'Could not request STK Push for this contribution.';
+      toast({
+        title: 'STK request failed',
+        description: message,
+        variant: 'error',
+      });
+    } finally {
+      setIsRequestingStk(false);
+    }
+  };
+
   return (
     <>
       <div className="flex justify-center">
@@ -242,6 +282,16 @@ export const DialogContributionDetails = ({
               </DialogDescription>
             </DialogHeader>
             <DialogFooter className="mt-6">
+              {canRequestStk ? (
+                <Button
+                  className="mt-2 w-full sm:mt-0 sm:w-fit"
+                  onClick={requestContributionPayment}
+                  isLoading={isRequestingStk}
+                  loadingText="Requesting STK..."
+                >
+                  Pay balance via STK
+                </Button>
+              ) : null}
               {member && role === 'administrator' ? (
                 <DialogDeleteContribution
                   contribution={contribution}

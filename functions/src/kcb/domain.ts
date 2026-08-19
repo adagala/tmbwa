@@ -26,6 +26,18 @@ export type StkCallback = {
   transactionDate?: string;
 };
 
+export type StoredStkRequest = {
+  memberId: string;
+  contributionId: string;
+  amount: number;
+};
+
+export type IncomingStkRequest = {
+  memberId: string;
+  contributionId: string;
+  amount: number;
+};
+
 type JsonObject = Record<string, unknown>;
 
 const object = (value: unknown, field: string): JsonObject => {
@@ -164,3 +176,34 @@ export const parseStkCallback = (payload: unknown): StkCallback => {
   result.transactionDate = text(String(values.get('TransactionDate') ?? ''), 'TransactionDate');
   return result;
 };
+
+export const isSameStkRequestPayload = (
+  existing: StoredStkRequest,
+  incoming: IncomingStkRequest,
+) =>
+  existing.memberId === incoming.memberId &&
+  existing.contributionId === incoming.contributionId &&
+  Number(existing.amount) === Number(incoming.amount);
+
+export const stkFailureStatus = (resultCode: number) => {
+  if (resultCode === 1032) return 'cancelled';
+  if (resultCode === 1037) return 'timed_out';
+  return 'failed';
+};
+
+export const stkPaymentMatchesPendingRequest = (args: {
+  callbackAmount: number | undefined;
+  pendingAmount: number;
+  callbackPhone: string | undefined;
+  pendingPhone: string;
+  receiptNumber: string | undefined;
+}) =>
+  Number(args.callbackAmount) === Number(args.pendingAmount) &&
+  args.callbackPhone === args.pendingPhone &&
+  typeof args.receiptNumber === 'string' &&
+  args.receiptNumber.trim().length > 0;
+
+export const isLockedStkReconciliation = (args: {
+  source: string | undefined;
+  lockedContributionId: string | undefined;
+}) => args.source === 'stk_callback' && !!args.lockedContributionId;

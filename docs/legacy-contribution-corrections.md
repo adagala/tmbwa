@@ -33,3 +33,83 @@ firebase deploy --only functions:recordContributionPayment,functions:adjustMembe
 ```
 
 No new secrets, parameters, Firestore indexes, or destructive migrations are required.
+
+## Member STK contribution flow
+
+Member contribution payment uses the KCB STK request and callback flow and remains consistent with the KCB-only payment policy.
+
+### Request phase
+
+- Members can request STK only for their own contribution unless the caller is an administrator.
+- The request is idempotent by `requestId`. Reusing an existing `requestId` is accepted only when `memberId`, `contributionId`, and `amount` are identical.
+- Member status must be active.
+- Phone target is always the member profile phone (`members/{memberId}.phonenumber`) after Kenyan phone normalization.
+- `amount` must be a positive integer and cannot exceed the contribution balance.
+
+### Callback phase
+
+- Callback correlation uses both `CheckoutRequestID` and `MerchantRequestID`.
+- Non-success callback result codes are persisted as explicit statuses: `failed`, `cancelled`, or `timed_out`.
+- Successful callbacks are accepted only when callback `Amount`, `PhoneNumber`, and `MpesaReceiptNumber` match the pending STK request details.
+- Mismatch scenarios are persisted as `rejected` and audited.
+
+### Reconciliation lock for STK-originated notifications
+
+- STK callback notifications store authoritative `memberId` and `contributionId` linkage.
+- When source is `stk_callback`, reconciliation is locked to exactly one allocation:
+  - allocation contribution must equal the callback-linked contribution
+  - allocation amount must equal the callback amount
+- This prevents relinking STK-originated payments to a different member or contribution.
+
+### Audit trail
+
+- Request creation, callback processing outcomes, and callback rejections are auditable.
+- The expected trace is: STK request -> callback status -> payment notification -> contribution reconciliation.
+
+## Deployment steps for issue #42
+
+Deploy from a reviewed branch state after tests pass.
+
+### 1) Pre-deploy checks
+
+```bash
+npm ci
+npm ci --prefix functions
+npm run test:unit
+npm run build --workspace=functions
+npm run build
+```
+
+### 2) Verify required runtime config and secrets
+
+The STK flow relies on these values in the target Firebase project:
+
+- `KCB_STK_CALLBACK_URL`
+- `KCB_STK_CALLBACK_TOKEN`
+- `KCB_CONSUMER_KEY`
+- `KCB_CONSUMER_SECRET`
+- `KCB_STK_URL`
+- `KCB_TOKEN_URL`
+- `KCB_ORG_SHORTCODE`
+- `KCB_STK_ROUTE_CODE`
+
+If needed, set or rotate secrets before deploy:
+
+```bash
+firebase functions:secrets:set KCB_STK_CALLBACK_TOKEN
+firebase functions:secrets:set KCB_CONSUMER_KEY
+firebase functions:secrets:set KCB_CONSUMER_SECRET
+```
+
+### 3) Deploy only affected Functions plus hosting
+
+```bash
+firebase deploy --only functions:reconcileKcbPayment,functions:requestKcbStkPush,functions:kcbStkCallback,hosting --project <project-id>
+```
+
+### 4) Post-deploy verification
+
+- Verify member STK request from the profile contribution dialog.
+- Confirm callback updates one `kcb_stk_requests/{requestId}` document status exactly once.
+- Confirm STK-origin notifications are locked to the callback-linked contribution during reconciliation.
+- Confirm duplicate callback replay does not create duplicate payment records.

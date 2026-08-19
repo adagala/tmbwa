@@ -4,6 +4,7 @@ import { defineSecret, defineString } from 'firebase-functions/params';
 import { HttpsError, onCall, onRequest } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions';
 import {
+  MEMBER_STATUS,
   PAYMENT_STATUS,
   auditEventDocumentSchema,
   kcbPaymentNotificationDocumentSchema,
@@ -28,12 +29,16 @@ import {
 } from '../firestoreData';
 import {
   acknowledgement,
+  isLockedStkReconciliation,
+  isSameStkRequestPayload,
   normalizeKenyanPhone,
   parseKcbTransactionDate,
   parseStkCallback,
   parseTillNotification,
   permitsUnsignedSandboxNotification,
   secureTokenMatches,
+  stkFailureStatus,
+  stkPaymentMatchesPendingRequest,
   verifyKcbSignature,
 } from './domain';
 
@@ -265,6 +270,38 @@ export const reconcileKcbPayment = onCall(async (request) => {
         'failed-precondition',
         'This notification cannot be reconciled.',
       );
+    }
+    if (notification.memberId && notification.memberId !== memberId) {
+      throw new HttpsError(
+        'invalid-argument',
+        'This payment notification is locked to a different member.',
+      );
+    }
+    const notificationSource =
+      typeof notification.source === 'string' ? notification.source : undefined;
+    if (isLockedStkReconciliation({
+      source: notificationSource,
+      lockedContributionId: notification.contributionId,
+    })) {
+      const onlyAllocation = allocations[0];
+      if (allocations.length !== 1 || !onlyAllocation) {
+        throw new HttpsError(
+          'invalid-argument',
+          'STK payments must reconcile to exactly one contribution allocation.',
+        );
+      }
+      if (onlyAllocation.contributionId !== notification.contributionId) {
+        throw new HttpsError(
+          'invalid-argument',
+          'This STK payment is locked to a different contribution.',
+        );
+      }
+      if (Number(onlyAllocation.amount) !== Number(notification.amount)) {
+        throw new HttpsError(
+          'invalid-argument',
+          'STK allocation amount must match the callback amount.',
+        );
+      }
     }
 
     const member = memberData(memberSnapshot);
@@ -655,7 +692,18 @@ export const requestKcbStkPush = onCall(
     const requestRef = db().doc(`kcb_stk_requests/${requestId}`);
     const existing = await requestRef.get();
     if (existing.exists) {
-      return { ...kcbStkRequestData(existing), duplicate: true };
+      const stored = kcbStkRequestData(existing);
+      if (!isSameStkRequestPayload(stored, {
+        memberId,
+        contributionId,
+        amount,
+      })) {
+        throw new HttpsError(
+          'already-exists',
+          'requestId is already used for a different STK payment request.',
+        );
+      }
+      return { ...stored, duplicate: true };
     }
 
     const [member, contribution] = await Promise.all([
@@ -664,6 +712,13 @@ export const requestKcbStkPush = onCall(
     ]);
     if (!member.exists || !contribution.exists) {
       throw new HttpsError('not-found', 'Member or contribution not found.');
+    }
+    const memberRecord = memberData(member);
+    if (memberRecord.status !== MEMBER_STATUS.ACTIVE) {
+      throw new HttpsError(
+        'failed-precondition',
+        'Only active members can request contribution payments.',
+      );
     }
     const contributionRecord = contributionData(contribution);
     if (amount > contributionRecord.balance) {
@@ -674,7 +729,7 @@ export const requestKcbStkPush = onCall(
     }
     let phone: string;
     try {
-      phone = normalizeKenyanPhone(memberData(member).phonenumber);
+      phone = normalizeKenyanPhone(memberRecord.phonenumber);
     } catch {
       throw new HttpsError(
         'failed-precondition',
@@ -815,28 +870,102 @@ export const kcbStkCallback = onRequest(
         const pending = kcbStkRequestData(snapshot);
         if (pending.callbackReceivedAt) return;
         if (callback.merchantRequestId !== pending.merchantRequestId) {
-          throw new Error('STK callback correlation mismatch.');
+          transaction.update(requestRef, {
+            status: 'rejected',
+            resultCode: callback.resultCode,
+            resultDescription: callback.resultDescription,
+            callbackFailureReason: 'merchant_request_id_mismatch',
+            callbackReceivedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+          transaction.create(
+            db().doc(`audit_events/stk-callback-${callback.checkoutRequestId}`),
+            validateDocumentWrite(
+              auditEventDocumentSchema,
+              {
+                requestId: pending.requestId,
+                actorId: 'system:kcb_callback',
+                action: 'kcb_stk.callback_rejected',
+                memberId: pending.memberId,
+                targetId: callback.checkoutRequestId,
+                changes: {
+                  reason: 'merchant_request_id_mismatch',
+                  merchantRequestId: callback.merchantRequestId,
+                  checkoutRequestId: callback.checkoutRequestId,
+                },
+                createdAt: admin.firestore.FieldValue.serverTimestamp(),
+              },
+              `audit_events/stk-callback-${callback.checkoutRequestId}`,
+            ),
+          );
+          return;
         }
         if (callback.resultCode !== 0) {
-          let status = 'failed';
-          if (callback.resultCode === 1032) status = 'cancelled';
-          if (callback.resultCode === 1037) status = 'timed_out';
+          const status = stkFailureStatus(callback.resultCode);
           transaction.update(requestRef, {
             status,
             resultCode: callback.resultCode,
             resultDescription: callback.resultDescription,
             callbackReceivedAt: admin.firestore.FieldValue.serverTimestamp(),
           });
+          transaction.create(
+            db().doc(`audit_events/stk-callback-${callback.checkoutRequestId}`),
+            validateDocumentWrite(
+              auditEventDocumentSchema,
+              {
+                requestId: pending.requestId,
+                actorId: 'system:kcb_callback',
+                action: 'kcb_stk.callback_processed',
+                memberId: pending.memberId,
+                targetId: callback.checkoutRequestId,
+                changes: {
+                  status,
+                  resultCode: callback.resultCode,
+                  resultDescription: callback.resultDescription,
+                },
+                createdAt: admin.firestore.FieldValue.serverTimestamp(),
+              },
+              `audit_events/stk-callback-${callback.checkoutRequestId}`,
+            ),
+          );
           return;
         }
-        if (
-          callback.amount !== Number(pending.amount) ||
-          callback.payerPhone !== pending.phone ||
-          !callback.receiptNumber
-        ) {
-          throw new Error(
-            'STK callback payment details do not match the pending request.',
+        if (!stkPaymentMatchesPendingRequest({
+          callbackAmount: callback.amount,
+          pendingAmount: Number(pending.amount),
+          callbackPhone: callback.payerPhone,
+          pendingPhone: pending.phone,
+          receiptNumber: callback.receiptNumber,
+        })) {
+          transaction.update(requestRef, {
+            status: 'rejected',
+            resultCode: callback.resultCode,
+            resultDescription: callback.resultDescription,
+            callbackFailureReason: 'payment_details_mismatch',
+            callbackReceivedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+          transaction.create(
+            db().doc(`audit_events/stk-callback-${callback.checkoutRequestId}`),
+            validateDocumentWrite(
+              auditEventDocumentSchema,
+              {
+                requestId: pending.requestId,
+                actorId: 'system:kcb_callback',
+                action: 'kcb_stk.callback_rejected',
+                memberId: pending.memberId,
+                targetId: callback.checkoutRequestId,
+                changes: {
+                  reason: 'payment_details_mismatch',
+                  expectedAmount: pending.amount,
+                  callbackAmount: callback.amount,
+                  expectedPhone: pending.phone,
+                  callbackPhone: callback.payerPhone,
+                },
+                createdAt: admin.firestore.FieldValue.serverTimestamp(),
+              },
+              `audit_events/stk-callback-${callback.checkoutRequestId}`,
+            ),
           );
+          return;
         }
         const notificationRef = db().doc(
           `kcb_payment_notifications/${callback.receiptNumber}`,
@@ -860,6 +989,8 @@ export const kcbStkCallback = onRequest(
                 transactionType: 'MPESA_STK',
                 status: 'unresolved',
                 suggestedMemberId: pending.memberId,
+                memberId: pending.memberId,
+                contributionId: pending.contributionId,
                 matchReason: 'authenticated_stk_request',
                 provider: 'kcb_buni',
                 source: 'stk_callback',
@@ -877,6 +1008,27 @@ export const kcbStkCallback = onRequest(
           resultDescription: callback.resultDescription,
           callbackReceivedAt: admin.firestore.FieldValue.serverTimestamp(),
         });
+        transaction.create(
+          db().doc(`audit_events/stk-callback-${callback.checkoutRequestId}`),
+          validateDocumentWrite(
+            auditEventDocumentSchema,
+            {
+              requestId: pending.requestId,
+              actorId: 'system:kcb_callback',
+              action: 'kcb_stk.callback_processed',
+              memberId: pending.memberId,
+              targetId: callback.checkoutRequestId,
+              changes: {
+                status: 'succeeded_pending_reconciliation',
+                providerTransactionId: callback.receiptNumber,
+                contributionId: pending.contributionId,
+                amount: callback.amount,
+              },
+              createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            },
+            `audit_events/stk-callback-${callback.checkoutRequestId}`,
+          ),
+        );
       });
       response.status(200).json({ ResultCode: 0, ResultDesc: 'Accepted' });
     } catch (error) {
