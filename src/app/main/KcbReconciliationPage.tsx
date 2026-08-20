@@ -94,7 +94,6 @@ const AllocationEditor = ({
             type="number"
             min="1"
             step="1"
-            className="rounded-md border border-gray-300 px-3 py-2 text-sm"
             placeholder="Amount"
             value={row.amount}
             disabled={disabled}
@@ -534,7 +533,8 @@ export default function KcbReconciliationPage() {
                   pendingTestRequestId.current = undefined;
                   setTestAmount(Number(event.target.value));
                 }}
-                className="mt-1 block w-40 rounded-md border border-amber-400 bg-white px-3 py-2"
+                className="mt-1 w-40"
+                inputClassName="border-amber-400 bg-white"
               />
             </div>
             <Button

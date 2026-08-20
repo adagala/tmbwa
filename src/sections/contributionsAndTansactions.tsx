@@ -81,7 +81,7 @@ const ContributionsAndTransactions = React.forwardRef<
             <Label htmlFor="statement-from">Statement from</Label>
             <Input
               id="statement-from"
-              className="mt-1 block rounded border p-2"
+              className="mt-1"
               type="date"
               value={statementFrom}
               onChange={(event) => setStatementFrom(event.target.value)}
@@ -91,7 +91,7 @@ const ContributionsAndTransactions = React.forwardRef<
             <Label htmlFor="statement-to">To</Label>
             <Input
               id="statement-to"
-              className="mt-1 block rounded border p-2"
+              className="mt-1"
               type="date"
               value={statementTo}
               onChange={(event) => setStatementTo(event.target.value)}

@@ -135,7 +135,7 @@ export default function ReportPage() {
             type="month"
             value={filters.from}
             onChange={(event) => set('from', event.target.value)}
-            className="mt-1 w-full rounded border p-2"
+            className="mt-1 w-full"
           />
         </div>
         <div className="space-y-1">
@@ -145,7 +145,7 @@ export default function ReportPage() {
             type="month"
             value={filters.to}
             onChange={(event) => set('to', event.target.value)}
-            className="mt-1 w-full rounded border p-2"
+            className="mt-1 w-full"
           />
         </div>
         <div className="space-y-1">
