@@ -88,6 +88,7 @@ describe('Firestore authorization', () => {
     await seed();
     const db = testEnv.authenticatedContext('admin', { role: 'administrator' }).firestore();
     await assertFails(updateDoc(doc(db, 'members/member-a'), { balance: 500 }));
+    await assertFails(deleteDoc(doc(db, 'members/member-a')));
     await assertFails(deleteDoc(doc(db, 'members/member-a/payments/payment-1')));
     await assertFails(updateDoc(doc(db, 'monthly_stats/2026-08-01'), { amount: 0 }));
   });

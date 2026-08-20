@@ -5,6 +5,7 @@
     "prebuild": "cd ../packages/shared && npm run build",
     "build": "tsc",
     "build:scripts": "tsc -p tsconfig.scripts.json",
+    "migrate:stk-locks": "npm run build:scripts && node lib-scripts/scripts/kcb/backfillActiveStkLocks.js",
     "build:watch": "tsc --watch",
     "serve": "npm run build && firebase emulators:start --only functions",
     "shell": "npm run build && firebase functions:shell",

@@ -3,6 +3,8 @@ import {
   MEMBER_ROLE,
   MEMBER_STATUS,
   contributionDocumentSchema,
+  kcbPaymentNotificationDocumentSchema,
+  kcbStkRequestDocumentSchema,
   memberDocumentSchema,
   monthlyStatsSchema,
   notificationDeliveryDocumentSchema,
@@ -135,5 +137,58 @@ describe('Firestore document schemas', () => {
         month: '2026-08-01',
       }),
     ).toMatchObject({ newMembers: 0, totalMembers: 0 });
+  });
+
+  it('accepts only explicit KCB STK request status values', () => {
+    const baseRequest = {
+      requestId: 'req-1',
+      memberId: 'member-1',
+      contributionId: '2026-08-01',
+      amount: 500,
+      phone: '+254700000000',
+      invoiceNumber: 'TMBABC123',
+      messageId: 'msg-1',
+    };
+    expect(
+      kcbStkRequestDocumentSchema.safeParse({
+        ...baseRequest,
+        status: 'pending',
+      }).success,
+    ).toBe(true);
+    expect(
+      kcbStkRequestDocumentSchema.safeParse({
+        ...baseRequest,
+        status: 'outcome_unknown',
+      }).success,
+    ).toBe(true);
+    expect(
+      kcbStkRequestDocumentSchema.safeParse({
+        ...baseRequest,
+        status: 'dispatching',
+      }).success,
+    ).toBe(true);
+    expect(
+      kcbStkRequestDocumentSchema.safeParse({
+        ...baseRequest,
+        status: 'unknown_status',
+      }).success,
+    ).toBe(false);
+  });
+
+  it('accepts KCB notifications linked to a contribution and member', () => {
+    expect(
+      kcbPaymentNotificationDocumentSchema.safeParse({
+        payerPhone: '+254700000000',
+        payerName: 'Amina Adagala',
+        amount: 500,
+        currency: 'KES',
+        billReference: '7969138',
+        transactionDate: '20260813121212',
+        status: 'unresolved',
+        matchReason: 'authenticated_stk_request',
+        memberId: 'member-1',
+        contributionId: '2026-08-01',
+      }).success,
+    ).toBe(true);
   });
 });

@@ -48,6 +48,9 @@ export const addContribution = ({
   member: Member;
 }) => call('createContribution', { memberId: member.member_id, month });
 
+export const deleteMemberSafely = (memberId: string) =>
+  call('deleteMemberSafely', { memberId });
+
 export const deleteContribution = ({
   contribution,
   member,

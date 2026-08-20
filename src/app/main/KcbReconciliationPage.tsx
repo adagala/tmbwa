@@ -21,11 +21,14 @@ import {
 } from '@/lib/kcbReconciliation';
 import {
   allocateKcbPaymentCredit,
+  AmbiguousKcbStkRequest,
   KcbPaymentNotification,
   reconcileKcbPayment,
   rejectKcbPayment,
+  resolveKcbStkUnknownOutcome,
   sendKcbDevTillNotification,
   subscribeToKcbPaymentsWithCredit,
+  subscribeToAmbiguousKcbStkRequests,
   subscribeToUnresolvedKcbPayments,
 } from '@/lib/firebase/kcb';
 import { Member, parseMemberDocument } from 'tmbwa-shared/firebase';
@@ -144,6 +147,9 @@ export default function KcbReconciliationPage() {
   const [creditPayments, setCreditPayments] = useState<
     KcbPaymentNotification[]
   >([]);
+  const [ambiguousStkRequests, setAmbiguousStkRequests] = useState<
+    AmbiguousKcbStkRequest[]
+  >([]);
   const [members, setMembers] = useState<Member[]>([]);
   const [selectedMembers, setSelectedMembers] = useState<
     Record<string, string>
@@ -249,6 +255,9 @@ export default function KcbReconciliationPage() {
     const unsubscribe = subscribeToUnresolvedKcbPayments(setPayments);
     const unsubscribeCredit =
       subscribeToKcbPaymentsWithCredit(setCreditPayments);
+    const unsubscribeAmbiguous = subscribeToAmbiguousKcbStkRequests(
+      setAmbiguousStkRequests,
+    );
     void getDocs(query(collection(db, 'members'), orderBy('firstname'))).then(
       (snapshot) =>
         setMembers(
@@ -260,6 +269,7 @@ export default function KcbReconciliationPage() {
     return () => {
       unsubscribe();
       unsubscribeCredit();
+      unsubscribeAmbiguous();
     };
   }, [role]);
 
@@ -278,6 +288,25 @@ export default function KcbReconciliationPage() {
       const next = { ...current };
       suggestions.forEach(({ paymentId, memberId }) => {
         if (!next[paymentId]) next[paymentId] = memberId;
+      });
+      return next;
+    });
+    setAllocationDrafts((current) => {
+      const next = { ...current };
+      payments.forEach((payment) => {
+        if (
+          next[payment.providerTransactionId] === undefined &&
+          payment.contributionId &&
+          payment.requestedAmount
+        ) {
+          next[payment.providerTransactionId] = [
+            {
+              id: crypto.randomUUID(),
+              contributionId: payment.contributionId,
+              amount: String(Math.min(payment.amount, payment.requestedAmount)),
+            },
+          ];
+        }
       });
       return next;
     });
@@ -461,6 +490,34 @@ export default function KcbReconciliationPage() {
     }
   };
 
+  const resolveAmbiguousStkRequest = async (
+    stkRequest: AmbiguousKcbStkRequest,
+  ) => {
+    const reason = window.prompt(
+      'Enter the provider verification evidence confirming that no payment was accepted:',
+    );
+    if (!reason?.trim()) return;
+    if (
+      !window.confirm(
+        'Mark this STK request as failed and release its contribution lock?',
+      )
+    )
+      return;
+    setBusy(stkRequest.requestId);
+    setError(undefined);
+    try {
+      await resolveKcbStkUnknownOutcome(stkRequest.requestId, reason.trim());
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : 'Could not resolve the ambiguous STK request.',
+      );
+    } finally {
+      setBusy(undefined);
+    }
+  };
+
   const sendDevelopmentTest = async () => {
     const requestId = pendingTestRequestId.current ?? crypto.randomUUID();
     pendingTestRequestId.current = requestId;
@@ -551,6 +608,58 @@ export default function KcbReconciliationPage() {
             </p>
           ) : null}
         </Card>
+      ) : null}
+      {ambiguousStkRequests.length ? (
+        <div className="space-y-4">
+          <div>
+            <h2 className="text-lg font-semibold">
+              Ambiguous STK provider outcomes
+            </h2>
+            <p className="text-sm text-gray-600">
+              Release a contribution lock only after KCB confirms that no
+              payment was accepted. Confirmed successful receipt conflicts
+              remain locked for financial investigation.
+            </p>
+          </div>
+          {ambiguousStkRequests.map((stkRequest) => (
+            <Card key={stkRequest.requestId} className="space-y-3">
+              <dl className="grid gap-2 text-sm sm:grid-cols-4">
+                <div>
+                  <dt className="text-gray-500">Request</dt>
+                  <dd className="font-semibold">{stkRequest.requestId}</dd>
+                </div>
+                <div>
+                  <dt className="text-gray-500">Member</dt>
+                  <dd className="font-semibold">
+                    {memberNames.get(stkRequest.memberId) ??
+                      stkRequest.memberId}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-gray-500">Contribution</dt>
+                  <dd className="font-semibold">{stkRequest.contributionId}</dd>
+                </div>
+                <div>
+                  <dt className="text-gray-500">State</dt>
+                  <dd className="font-semibold">
+                    {stkRequest.status}
+                    {stkRequest.failureCategory
+                      ? ` — ${stkRequest.failureCategory}`
+                      : ''}
+                  </dd>
+                </div>
+              </dl>
+              <Button
+                variant="destructive"
+                isLoading={busy === stkRequest.requestId}
+                disabled={Boolean(busy)}
+                onClick={() => void resolveAmbiguousStkRequest(stkRequest)}
+              >
+                Confirm no payment and release lock
+              </Button>
+            </Card>
+          ))}
+        </div>
       ) : null}
       <div className="space-y-4">
         {payments.map((payment) => {

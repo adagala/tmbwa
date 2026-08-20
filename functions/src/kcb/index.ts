@@ -1,9 +1,10 @@
 import * as admin from 'firebase-admin';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { defineSecret, defineString } from 'firebase-functions/params';
 import { HttpsError, onCall, onRequest } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions';
 import {
+  MEMBER_STATUS,
   PAYMENT_STATUS,
   auditEventDocumentSchema,
   kcbPaymentNotificationDocumentSchema,
@@ -28,16 +29,38 @@ import {
 } from '../firestoreData';
 import {
   acknowledgement,
+  isActiveStkRequestStatus,
+  isLockedStkReconciliation,
+  isManuallyResolvableStkUnknownOutcome,
+  isRecoverableStkLeaseStatus,
+  isSameStkRequestPayload,
+  isStkInitiationLeaseExpired,
+  isSuccessfulStkDuplicateStatus,
+  lockedStkAllocationAmount,
   normalizeKenyanPhone,
+  ownsExpectedStkTransition,
   parseKcbTransactionDate,
   parseStkCallback,
   parseTillNotification,
   permitsUnsignedSandboxNotification,
   secureTokenMatches,
+  stkFailureStatus,
+  stkPaymentMatchesPendingRequest,
+  terminalNotificationMatchesStkRequest,
+  unmatchedStkCallbackMatchesRequest,
   verifyKcbSignature,
 } from './domain';
 
 type Data = Record<string, unknown>;
+
+const stkCallbackMismatchAuditId = (
+  checkoutRequestId: string,
+  merchantRequestId: string,
+) =>
+  `stk-callback-mismatch-${checkoutRequestId}-${createHash('sha256')
+    .update(merchantRequestId)
+    .digest('hex')
+    .slice(0, 16)}`;
 
 const KCB_PUBLIC_KEY = defineString('KCB_PUBLIC_KEY', { default: '' });
 const APP_ENV = defineString('APP_ENV', { default: 'production' });
@@ -65,6 +88,38 @@ const KCB_STK_ROUTE_CODE = defineString('KCB_STK_ROUTE_CODE', {
 });
 const KCB_STK_CALLBACK_TOKEN = defineSecret('KCB_STK_CALLBACK_TOKEN');
 const db = () => admin.firestore();
+const STK_INITIATION_LEASE_MS = 2 * 60 * 1000;
+const STK_DISPATCH_RESOLUTION_DELAY_MS = 5 * 60 * 1000;
+
+const stkContributionLockRef = (memberId: string, contributionId: string) =>
+  db().doc(
+    `members/${memberId}/contributions/${contributionId}/payment_locks/stk`,
+  );
+
+const timestampMillis = (value: unknown) =>
+  value && typeof (value as { toMillis?: unknown }).toMillis === 'function'
+    ? (value as { toMillis: () => number }).toMillis()
+    : undefined;
+
+const assertNoCompetingStkLocks = (
+  locks: FirebaseFirestore.DocumentSnapshot[],
+  allowedRequestId?: string,
+) => {
+  for (const lock of locks) {
+    if (!lock.exists) continue;
+    const data = lock.data() as { requestId?: unknown; status?: unknown };
+    if (
+      typeof data.status === 'string' &&
+      isActiveStkRequestStatus(data.status) &&
+      data.requestId !== allowedRequestId
+    ) {
+      throw new HttpsError(
+        'failed-precondition',
+        'This contribution has an active STK payment request.',
+      );
+    }
+  }
+};
 
 const requireAdministrator = (
   auth: { uid: string; token: Record<string, unknown> } | undefined,
@@ -239,13 +294,18 @@ export const reconcileKcbPayment = onCall(async (request) => {
     const memberRef = db().doc(`members/${memberId}`);
     const contributionRefs = allocations.map(({ contributionId }) =>
       db().doc(`members/${memberId}/contributions/${contributionId}`));
-    const [command, notificationSnapshot, memberSnapshot, ...contributionSnapshots] =
-      await Promise.all([
-        transaction.get(commandRef),
-        transaction.get(notificationRef),
-        transaction.get(memberRef),
-        ...contributionRefs.map((ref) => transaction.get(ref)),
-      ]);
+    const lockRefs = allocations.map(({ contributionId }) =>
+      stkContributionLockRef(memberId, contributionId));
+    const snapshots = await Promise.all([
+      transaction.get(commandRef),
+      transaction.get(notificationRef),
+      transaction.get(memberRef),
+      ...contributionRefs.map((ref) => transaction.get(ref)),
+      ...lockRefs.map((ref) => transaction.get(ref)),
+    ]);
+    const [command, notificationSnapshot, memberSnapshot] = snapshots;
+    const contributionSnapshots = snapshots.slice(3, 3 + contributionRefs.length);
+    const lockSnapshots = snapshots.slice(3 + contributionRefs.length);
     if (command.exists) return { requestId, duplicate: true };
     if (!notificationSnapshot.exists) {
       throw new HttpsError('not-found', 'KCB payment notification not found.');
@@ -266,6 +326,59 @@ export const reconcileKcbPayment = onCall(async (request) => {
         'This notification cannot be reconciled.',
       );
     }
+    const notificationSource =
+      typeof notification.source === 'string' ? notification.source : undefined;
+    let lockedMemberId = notification.memberId;
+    let lockedContributionId = notification.contributionId;
+    let lockedStkRequestId: string | undefined;
+    let lockedRequestedAmount: number | undefined;
+    if (isLockedStkReconciliation({ source: notificationSource })) {
+      lockedStkRequestId =
+        typeof notification.stkRequestId === 'string'
+          ? notification.stkRequestId
+          : undefined;
+      if (!lockedStkRequestId) {
+        throw new HttpsError(
+          'failed-precondition',
+          'This STK payment is missing its authoritative reconciliation linkage.',
+        );
+      }
+      const stkRequestSnapshot = await transaction.get(
+        db().doc(`kcb_stk_requests/${lockedStkRequestId}`),
+      );
+      if (!stkRequestSnapshot.exists) {
+        throw new HttpsError(
+          'failed-precondition',
+          'The linked STK request no longer exists.',
+        );
+      }
+      const stkRequest = kcbStkRequestData(stkRequestSnapshot);
+      lockedMemberId = stkRequest.memberId;
+      lockedContributionId = stkRequest.contributionId;
+      lockedRequestedAmount = Number(stkRequest.amount);
+    }
+    assertNoCompetingStkLocks(lockSnapshots, lockedStkRequestId);
+    if (lockedMemberId && lockedMemberId !== memberId) {
+      throw new HttpsError(
+        'invalid-argument',
+        'This payment notification is locked to a different member.',
+      );
+    }
+    if (isLockedStkReconciliation({ source: notificationSource })) {
+      const onlyAllocation = allocations[0];
+      if (allocations.length !== 1 || !onlyAllocation) {
+        throw new HttpsError(
+          'invalid-argument',
+          'STK payments must reconcile to exactly one contribution allocation.',
+        );
+      }
+      if (onlyAllocation.contributionId !== lockedContributionId) {
+        throw new HttpsError(
+          'invalid-argument',
+          'This STK payment is locked to a different contribution.',
+        );
+      }
+    }
 
     const member = memberData(memberSnapshot);
     const contributions = contributionSnapshots.map(contributionData);
@@ -273,6 +386,27 @@ export const reconcileKcbPayment = onCall(async (request) => {
       allocations[index].contributionId,
       Number(item.balance),
     ]));
+    if (
+      lockedContributionId &&
+      lockedRequestedAmount !== undefined
+    ) {
+      let expectedAllocationAmount: number;
+      try {
+        expectedAllocationAmount = lockedStkAllocationAmount(
+          Number(notification.amount),
+          lockedRequestedAmount,
+          Number(outstanding[lockedContributionId]),
+        );
+      } catch (cause) {
+        throw new HttpsError('failed-precondition', (cause as Error).message);
+      }
+      if (Number(allocations[0]?.amount) !== expectedAllocationAmount) {
+        throw new HttpsError(
+          'invalid-argument',
+          `STK allocation must be KES ${expectedAllocationAmount}; any excess remains account credit.`,
+        );
+      }
+    }
     let allocationResult: ReturnType<typeof validatePaymentAllocations>;
     try {
       allocationResult = validatePaymentAllocations(
@@ -362,6 +496,22 @@ export const reconcileKcbPayment = onCall(async (request) => {
       reconciledAt: admin.firestore.FieldValue.serverTimestamp(),
       reconciledBy: actorId,
     });
+    if (lockedStkRequestId && lockedContributionId) {
+      transaction.update(db().doc(`kcb_stk_requests/${lockedStkRequestId}`), {
+        status: 'reconciled',
+        reconciledAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      transaction.set(
+        stkContributionLockRef(memberId, lockedContributionId),
+        {
+          requestId: lockedStkRequestId,
+          status: 'reconciled',
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        },
+        { merge: true },
+      );
+    }
     transaction.create(
       db().doc(`audit_events/${requestId}`),
       validateDocumentWrite(
@@ -430,14 +580,24 @@ export const allocateKcbPaymentCredit = onCall(async (request) => {
     const memberRef = db().doc(`members/${notification.memberId}`);
     const contributionRefs = allocations.map(({ contributionId }) =>
       db().doc(`members/${notification.memberId}/contributions/${contributionId}`));
-    const [paymentSnapshot, memberSnapshot, ...contributionSnapshots] = await Promise.all([
+    const lockRefs = allocations.map(({ contributionId }) =>
+      stkContributionLockRef(String(notification.memberId), contributionId));
+    const relatedSnapshots = await Promise.all([
       transaction.get(paymentRef),
       transaction.get(memberRef),
       ...contributionRefs.map((ref) => transaction.get(ref)),
+      ...lockRefs.map((ref) => transaction.get(ref)),
     ]);
+    const [paymentSnapshot, memberSnapshot] = relatedSnapshots;
+    const contributionSnapshots = relatedSnapshots.slice(
+      2,
+      2 + contributionRefs.length,
+    );
+    const lockSnapshots = relatedSnapshots.slice(2 + contributionRefs.length);
     if (!paymentSnapshot.exists || !memberSnapshot.exists || contributionSnapshots.some((item) => !item.exists)) {
       throw new HttpsError('not-found', 'Payment or contribution not found.');
     }
+    assertNoCompetingStkLocks(lockSnapshots);
     const payment = paymentData(paymentSnapshot);
     const derivedAvailable = unallocatedPaymentAmount(
       Number(payment.amount),
@@ -563,11 +723,52 @@ export const rejectKcbPayment = onCall(async (request) => {
     if (!notification.exists) {
       throw new HttpsError('not-found', 'KCB payment notification not found.');
     }
-    if (kcbPaymentNotificationData(notification).status !== 'unresolved') {
+    const notificationData = kcbPaymentNotificationData(notification);
+    if (notificationData.status !== 'unresolved') {
       throw new HttpsError(
         'failed-precondition',
         'Only unresolved notifications can be rejected.',
       );
+    }
+    let linkedStkRequest:
+      | {
+        ref: FirebaseFirestore.DocumentReference;
+        data: ReturnType<typeof kcbStkRequestData>;
+        lockRef: FirebaseFirestore.DocumentReference;
+        ownsLock: boolean;
+      }
+      | undefined;
+    if (notificationData.source === 'stk_callback') {
+      const stkRequestId =
+        typeof notificationData.stkRequestId === 'string'
+          ? notificationData.stkRequestId
+          : '';
+      if (!stkRequestId) {
+        throw new HttpsError(
+          'failed-precondition',
+          'This STK notification is missing its linked request.',
+        );
+      }
+      const stkRequestRef = db().doc(`kcb_stk_requests/${stkRequestId}`);
+      const stkRequestSnapshot = await transaction.get(stkRequestRef);
+      if (!stkRequestSnapshot.exists) {
+        throw new HttpsError(
+          'failed-precondition',
+          'The linked STK request no longer exists.',
+        );
+      }
+      const stkRequest = kcbStkRequestData(stkRequestSnapshot);
+      const lockRef = stkContributionLockRef(
+        stkRequest.memberId,
+        stkRequest.contributionId,
+      );
+      const lockSnapshot = await transaction.get(lockRef);
+      linkedStkRequest = {
+        ref: stkRequestRef,
+        data: stkRequest,
+        lockRef,
+        ownsLock: lockSnapshot.data()?.requestId === stkRequestId,
+      };
     }
     transaction.create(commandRef, {
       type: 'rejectKcbPayment',
@@ -580,6 +781,20 @@ export const rejectKcbPayment = onCall(async (request) => {
       rejectedBy: actorId,
       rejectedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
+    if (linkedStkRequest) {
+      transaction.update(linkedStkRequest.ref, {
+        status: 'rejected',
+        rejectionReason: reason,
+        rejectedBy: actorId,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      if (linkedStkRequest.ownsLock) {
+        transaction.update(linkedStkRequest.lockRef, {
+          status: 'rejected',
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      }
+    }
     transaction.create(
       db().doc(`audit_events/${requestId}`),
       validateDocumentWrite(
@@ -588,7 +803,7 @@ export const rejectKcbPayment = onCall(async (request) => {
           requestId,
           actorId,
           action: 'kcb_payment.rejected',
-          memberId: '',
+          memberId: linkedStkRequest?.data.memberId ?? '',
           targetId: providerTransactionId,
           changes: { reason },
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -597,6 +812,111 @@ export const rejectKcbPayment = onCall(async (request) => {
       ),
     );
     return { requestId, duplicate: false };
+  });
+});
+
+export const resolveKcbStkUnknownOutcome = onCall(async (request) => {
+  const actorId = requireAdministrator(request.auth);
+  const data = request.data as Data;
+  const commandId = requiredString(data, 'requestId');
+  const stkRequestId = requiredString(data, 'stkRequestId');
+  const reason = requiredString(data, 'reason');
+  return db().runTransaction(async (transaction) => {
+    const commandRef = db().doc(`financial_commands/${commandId}`);
+    const stkRequestRef = db().doc(`kcb_stk_requests/${stkRequestId}`);
+    const [command, stkRequestSnapshot] = await Promise.all([
+      transaction.get(commandRef),
+      transaction.get(stkRequestRef),
+    ]);
+    if (command.exists) return { requestId: commandId, duplicate: true };
+    if (!stkRequestSnapshot.exists) {
+      throw new HttpsError('not-found', 'STK request not found.');
+    }
+    const stkRequest = kcbStkRequestData(stkRequestSnapshot);
+    if (
+      !isManuallyResolvableStkUnknownOutcome({
+        status: stkRequest.status,
+        failureCategory: stkRequest.failureCategory,
+        resultCode: stkRequest.resultCode,
+      })
+    ) {
+      throw new HttpsError(
+        'failed-precondition',
+        'Only an ambiguous provider dispatch can be marked as failed manually.',
+      );
+    }
+    const dispatchStartedAtMillis = timestampMillis(
+      stkRequest.dispatchStartedAt,
+    );
+    const dispatchExpiresAtMillis =
+      timestampMillis(stkRequest.dispatchExpiresAt) ??
+      (dispatchStartedAtMillis === undefined
+        ? undefined
+        : dispatchStartedAtMillis + STK_DISPATCH_RESOLUTION_DELAY_MS);
+    if (
+      stkRequest.status === 'dispatching' &&
+      !isStkInitiationLeaseExpired(dispatchExpiresAtMillis, Date.now())
+    ) {
+      throw new HttpsError(
+        'failed-precondition',
+        'This dispatch is still within its provider response window.',
+      );
+    }
+    const lockRef = stkContributionLockRef(
+      stkRequest.memberId,
+      stkRequest.contributionId,
+    );
+    const lock = await transaction.get(lockRef);
+    const lockData = lock.data();
+    const ownsLock = ownsExpectedStkTransition({
+      requestStatus: stkRequest.status,
+      expectedStatus: stkRequest.status,
+      requestId: stkRequestId,
+      lockRequestId: lockData?.requestId,
+      lockStatus: lockData?.status,
+    });
+    if (!ownsLock) {
+      throw new HttpsError(
+        'failed-precondition',
+        'This STK request no longer owns the matching contribution lock.',
+      );
+    }
+    transaction.create(commandRef, {
+      type: 'resolveKcbStkUnknownOutcome',
+      actorId,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    transaction.update(stkRequestRef, {
+      status: 'failed',
+      failureCategory: 'provider_outcome_verified_not_accepted',
+      resolutionReason: reason,
+      resolvedBy: actorId,
+      resolvedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    if (ownsLock) {
+      transaction.update(lockRef, {
+        status: 'failed',
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    }
+    transaction.create(
+      db().doc(`audit_events/${commandId}`),
+      validateDocumentWrite(
+        auditEventDocumentSchema,
+        {
+          requestId: commandId,
+          actorId,
+          action: 'kcb_stk.unknown_outcome_resolved',
+          memberId: stkRequest.memberId,
+          targetId: stkRequestId,
+          changes: { reason, status: 'failed', ownsLock },
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        },
+        `audit_events/${commandId}`,
+      ),
+    );
+    return { requestId: commandId, stkRequestId, duplicate: false };
   });
 });
 
@@ -624,6 +944,7 @@ export const requestKcbStkPush = onCall(
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'Sign in is required.');
     }
+    const requesterId = request.auth.uid;
     const data = request.data as Data;
     const requestId = requiredString(data, 'requestId');
     const memberId = requiredString(data, 'memberId');
@@ -653,52 +974,263 @@ export const requestKcbStkPush = onCall(
     }
     callbackUrl.searchParams.set('token', KCB_STK_CALLBACK_TOKEN.value());
     const requestRef = db().doc(`kcb_stk_requests/${requestId}`);
-    const existing = await requestRef.get();
-    if (existing.exists) {
-      return { ...kcbStkRequestData(existing), duplicate: true };
-    }
-
-    const [member, contribution] = await Promise.all([
-      db().doc(`members/${memberId}`).get(),
-      db().doc(`members/${memberId}/contributions/${contributionId}`).get(),
-    ]);
-    if (!member.exists || !contribution.exists) {
-      throw new HttpsError('not-found', 'Member or contribution not found.');
-    }
-    const contributionRecord = contributionData(contribution);
-    if (amount > contributionRecord.balance) {
-      throw new HttpsError(
-        'invalid-argument',
-        'amount exceeds the contribution balance.',
-      );
-    }
-    let phone: string;
-    try {
-      phone = normalizeKenyanPhone(memberData(member).phonenumber);
-    } catch {
-      throw new HttpsError(
-        'failed-precondition',
-        'Member must have a valid Kenyan phone number.',
-      );
-    }
     const invoiceNumber =
       `TMB${randomUUID().replace(/-/g, '').slice(0, 9)}`.toUpperCase();
     const messageId = randomUUID().replace(/-/g, '').slice(0, 32);
-
-    await requestRef.create({
-      requestId,
-      memberId,
-      contributionId,
-      amount,
-      phone,
-      invoiceNumber,
-      messageId,
-      status: 'initiating',
-      requestedBy: request.auth.uid,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    const memberRef = db().doc(`members/${memberId}`);
+    const contributionRef = db().doc(
+      `members/${memberId}/contributions/${contributionId}`,
+    );
+    const lockRef = stkContributionLockRef(memberId, contributionId);
+    const contributionStkRequestsQuery = db()
+      .collection('kcb_stk_requests')
+      .where('memberId', '==', memberId)
+      .where('contributionId', '==', contributionId);
+    const preparation = await db().runTransaction(async (transaction) => {
+      const [existing, member, contribution, lock, contributionStkRequests] =
+        await Promise.all([
+          transaction.get(requestRef),
+          transaction.get(memberRef),
+          transaction.get(contributionRef),
+          transaction.get(lockRef),
+          transaction.get(contributionStkRequestsQuery),
+        ]);
+      const legacyActiveRequest = contributionStkRequests.docs.find((item) => {
+        const stored = kcbStkRequestData(item);
+        return (
+          stored.memberId === memberId &&
+          isActiveStkRequestStatus(stored.status)
+        );
+      });
+      const existingLockStatus = lock.data()?.status;
+      const hasActiveLock =
+        typeof existingLockStatus === 'string' &&
+        isActiveStkRequestStatus(existingLockStatus);
+      let stagedLegacyRequestId: string | undefined;
+      let stagedLegacyLeaseExpiresAt:
+        | admin.firestore.Timestamp
+        | undefined;
+      if (!hasActiveLock && legacyActiveRequest) {
+        const legacy = kcbStkRequestData(legacyActiveRequest);
+        const legacyLeaseExpiresAt =
+          legacy.status === 'initiating'
+            ? admin.firestore.Timestamp.fromMillis(
+              timestampMillis(legacy.leaseExpiresAt) ?? Date.now() - 1,
+            )
+            : undefined;
+        stagedLegacyRequestId = legacyActiveRequest.id;
+        stagedLegacyLeaseExpiresAt = legacyLeaseExpiresAt;
+        if (legacy.status === 'initiating' && !legacy.leaseExpiresAt) {
+          transaction.update(legacyActiveRequest.ref, {
+            leaseExpiresAt: legacyLeaseExpiresAt,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+        }
+        transaction.set(lockRef, {
+          requestId: legacyActiveRequest.id,
+          status: legacy.status,
+          amount: Number(legacy.amount),
+          ...(legacyLeaseExpiresAt
+            ? { leaseExpiresAt: legacyLeaseExpiresAt }
+            : {}),
+          ...(legacy.dispatchExpiresAt
+            ? { dispatchExpiresAt: legacy.dispatchExpiresAt }
+            : {}),
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          backfilledFromLegacyRequest: true,
+        });
+      }
+      if (existing.exists) {
+        const stored = kcbStkRequestData(existing);
+        if (!isSameStkRequestPayload(stored, {
+          memberId,
+          contributionId,
+          amount,
+        })) {
+          throw new HttpsError(
+            'already-exists',
+            'requestId is already used for a different STK payment request.',
+          );
+        }
+        if (isSuccessfulStkDuplicateStatus(stored.status)) {
+          return { duplicate: stored };
+        }
+        if (isRecoverableStkLeaseStatus(stored.status)) {
+          const leaseExpired = isStkInitiationLeaseExpired(
+            timestampMillis(
+              stored.leaseExpiresAt ??
+                (stagedLegacyRequestId === requestId
+                  ? stagedLegacyLeaseExpiresAt
+                  : undefined),
+            ),
+            Date.now(),
+          );
+          const lockData = lock.data() as { requestId?: unknown } | undefined;
+          const ownsExistingOrStagedLock =
+            lockData?.requestId === requestId ||
+            stagedLegacyRequestId === requestId;
+          if (leaseExpired && ownsExistingOrStagedLock) {
+            const leaseExpiresAt = admin.firestore.Timestamp.fromMillis(
+              Date.now() + STK_INITIATION_LEASE_MS,
+            );
+            transaction.update(requestRef, {
+              status: 'initiating',
+              leaseExpiresAt,
+              retryCount: admin.firestore.FieldValue.increment(1),
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+            transaction.update(lockRef, {
+              status: 'initiating',
+              leaseExpiresAt,
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+            return {
+              phone: stored.phone,
+              invoiceNumber: stored.invoiceNumber,
+              messageId: stored.messageId,
+            };
+          }
+          throw new HttpsError(
+            'unavailable',
+            'This STK request is still being initiated. Try again shortly.',
+          );
+        }
+        if (
+          stored.status === 'dispatching' ||
+          stored.status === 'outcome_unknown'
+        ) {
+          throw new HttpsError(
+            'failed-precondition',
+            'The provider outcome must be verified by an administrator before another STK request.',
+          );
+        }
+        throw new HttpsError(
+          'failed-precondition',
+          `The previous STK request ended with status ${stored.status}. Try again.`,
+        );
+      }
+      if (!member.exists || !contribution.exists) {
+        throw new HttpsError('not-found', 'Member or contribution not found.');
+      }
+      if (legacyActiveRequest) {
+        return { blockedByLegacyRequestId: legacyActiveRequest.id };
+      }
+      if (lock.exists) {
+        const lockData = lock.data() as { status?: unknown };
+        if (
+          typeof lockData.status === 'string' &&
+          isActiveStkRequestStatus(lockData.status)
+        ) {
+          throw new HttpsError(
+            'already-exists',
+            'An STK payment request is already active for this contribution.',
+          );
+        }
+      }
+      const memberRecord = memberData(member);
+      if (memberRecord.status !== MEMBER_STATUS.ACTIVE) {
+        throw new HttpsError(
+          'failed-precondition',
+          'Only active members can request contribution payments.',
+        );
+      }
+      const contributionRecord = contributionData(contribution);
+      if (amount > contributionRecord.balance) {
+        throw new HttpsError(
+          'invalid-argument',
+          'amount exceeds the contribution balance.',
+        );
+      }
+      let phone: string;
+      try {
+        phone = normalizeKenyanPhone(memberRecord.phonenumber);
+      } catch {
+        throw new HttpsError(
+          'failed-precondition',
+          'Member must have a valid Kenyan phone number.',
+        );
+      }
+      const leaseExpiresAt = admin.firestore.Timestamp.fromMillis(
+        Date.now() + STK_INITIATION_LEASE_MS,
+      );
+      transaction.create(requestRef, {
+        requestId,
+        memberId,
+        contributionId,
+        amount,
+        phone,
+        invoiceNumber,
+        messageId,
+        status: 'initiating',
+        leaseExpiresAt,
+        retryCount: 0,
+        requestedBy: requesterId,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      transaction.set(lockRef, {
+        requestId,
+        status: 'initiating',
+        amount,
+        leaseExpiresAt,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      return { phone, invoiceNumber, messageId };
     });
+    if ('blockedByLegacyRequestId' in preparation) {
+      throw new HttpsError(
+        'already-exists',
+        'An active legacy STK request was locked for this contribution. Resolve it before requesting another prompt.',
+      );
+    }
+    if ('duplicate' in preparation) {
+      return { ...preparation.duplicate, duplicate: true };
+    }
+    const phone = preparation.phone;
+    const preparedInvoiceNumber = preparation.invoiceNumber;
+    const preparedMessageId = preparation.messageId;
+    let providerDispatchStarted = false;
+    let providerMerchantRequestId: string | null = null;
+    let providerCheckoutRequestId: string | null = null;
     try {
       const token = await bearerToken();
+      await db().runTransaction(async (transaction) => {
+        const [stkRequest, lock] = await Promise.all([
+          transaction.get(requestRef),
+          transaction.get(lockRef),
+        ]);
+        const stored = kcbStkRequestData(stkRequest);
+        if (
+          !ownsExpectedStkTransition({
+            requestStatus: stored.status,
+            expectedStatus: 'initiating',
+            requestId,
+            lockRequestId: lock.data()?.requestId,
+            lockStatus: lock.data()?.status,
+          })
+        ) {
+          throw new HttpsError(
+            'failed-precondition',
+            'This STK request no longer owns an initiating contribution lock.',
+          );
+        }
+        const dispatchExpiresAt = admin.firestore.Timestamp.fromMillis(
+          Date.now() + STK_DISPATCH_RESOLUTION_DELAY_MS,
+        );
+        transaction.update(requestRef, {
+          status: 'dispatching',
+          dispatchStartedAt: admin.firestore.FieldValue.serverTimestamp(),
+          dispatchExpiresAt,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        transaction.update(lockRef, {
+          status: 'dispatching',
+          dispatchExpiresAt,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      });
+      providerDispatchStarted = true;
       const response = await fetch(KCB_STK_URL.value(), {
         method: 'POST',
         headers: {
@@ -706,12 +1238,12 @@ export const requestKcbStkPush = onCall(
           'Content-Type': 'application/json',
           routeCode: KCB_STK_ROUTE_CODE.value(),
           operation: 'STKPush',
-          messageId,
+          messageId: preparedMessageId,
         },
         body: JSON.stringify({
           phoneNumber: phone.slice(1),
           amount: String(amount),
-          invoiceNumber,
+          invoiceNumber: preparedInvoiceNumber,
           sharedShortCode: true,
           orgShortCode: KCB_ORG_SHORTCODE.value(),
           orgPassKey: '',
@@ -735,39 +1267,436 @@ export const requestKcbStkPush = onCall(
         typeof body.response?.CheckoutRequestID === 'string'
           ? body.response.CheckoutRequestID
           : null;
-      await requestRef.update({
-        status: accepted ? 'pending' : 'rejected',
-        merchantRequestId,
-        checkoutRequestId,
-        responseCode: body.response?.ResponseCode ?? null,
-        responseDescription:
-          body.response?.ResponseDescription ??
-          body.header?.statusDescription ??
-          null,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      providerMerchantRequestId = merchantRequestId;
+      providerCheckoutRequestId = checkoutRequestId;
+      const providerResponseStatus = accepted
+        ? merchantRequestId && checkoutRequestId
+          ? 'pending'
+          : 'outcome_unknown'
+        : 'rejected';
+      const responseStored = await db().runTransaction(async (transaction) => {
+        const unmatchedRef = checkoutRequestId
+          ? db().doc(`kcb_stk_unmatched_callbacks/${checkoutRequestId}`)
+          : undefined;
+        const [currentRequest, lock, unmatched] = await Promise.all([
+          transaction.get(requestRef),
+          transaction.get(lockRef),
+          ...(unmatchedRef ? [transaction.get(unmatchedRef)] : []),
+        ]);
+        const current = kcbStkRequestData(currentRequest);
+        const lockData = lock.data();
+        if (!ownsExpectedStkTransition({
+          requestStatus: current.status,
+          expectedStatus: 'dispatching',
+          requestId,
+          lockRequestId: lockData?.requestId,
+          lockStatus: lockData?.status,
+        })) {
+          return false;
+        }
+        if (
+          accepted &&
+          merchantRequestId &&
+          checkoutRequestId &&
+          unmatchedRef &&
+          unmatched?.exists &&
+          Number.isInteger(Number(unmatched.data()?.resultCode))
+        ) {
+          const unmatchedData = unmatched.data() as {
+            merchantRequestId?: unknown;
+            receiptNumber?: unknown;
+            amount?: unknown;
+            payerPhone?: unknown;
+            transactionDate?: unknown;
+            resultCode?: unknown;
+            resultDescription?: unknown;
+          };
+          const callbackResultCode = Number(unmatchedData.resultCode);
+          if (
+            Number.isInteger(callbackResultCode) &&
+            callbackResultCode !== 0
+          ) {
+            const merchantRequestMismatch =
+              unmatchedData.merchantRequestId !== merchantRequestId;
+            const status = merchantRequestMismatch
+              ? 'outcome_unknown'
+              : stkFailureStatus(callbackResultCode);
+            transaction.update(requestRef, {
+              status,
+              merchantRequestId,
+              checkoutRequestId,
+              resultCode: callbackResultCode,
+              resultDescription: unmatchedData.resultDescription ?? null,
+              ...(merchantRequestMismatch
+                ? {
+                    callbackFailureReason: 'merchant_request_id_mismatch',
+                    mismatchedCallbackReceivedAt:
+                      admin.firestore.FieldValue.serverTimestamp(),
+                  }
+                : {
+                    callbackReceivedAt:
+                      admin.firestore.FieldValue.serverTimestamp(),
+                  }),
+              responseCode: body.response?.ResponseCode ?? null,
+              responseDescription:
+                body.response?.ResponseDescription ??
+                body.header?.statusDescription ??
+                null,
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+            transaction.update(lockRef, {
+              status,
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+            transaction.update(unmatchedRef, {
+              status: merchantRequestMismatch ? 'quarantined' : 'correlated',
+              requestId,
+              ...(merchantRequestMismatch
+                ? {
+                    quarantinedAt:
+                      admin.firestore.FieldValue.serverTimestamp(),
+                  }
+                : {
+                    correlatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                  }),
+            });
+            const callbackMerchantRequestId = String(
+              unmatchedData.merchantRequestId ?? '',
+            );
+            const auditEventId = merchantRequestMismatch
+              ? stkCallbackMismatchAuditId(
+                checkoutRequestId,
+                callbackMerchantRequestId,
+              )
+              : `stk-callback-${checkoutRequestId}`;
+            transaction.create(
+              db().doc(`audit_events/${auditEventId}`),
+              validateDocumentWrite(
+                auditEventDocumentSchema,
+                {
+                  requestId,
+                  actorId: 'system:kcb_callback',
+                  action: merchantRequestMismatch
+                    ? 'kcb_stk.callback_quarantined'
+                    : 'kcb_stk.callback_processed',
+                  memberId: current.memberId,
+                  targetId: checkoutRequestId,
+                  changes: {
+                    status,
+                    resultCode: callbackResultCode,
+                    resultDescription:
+                      unmatchedData.resultDescription ?? null,
+                    ...(merchantRequestMismatch
+                      ? {
+                          reason: 'merchant_request_id_mismatch',
+                          merchantRequestId: callbackMerchantRequestId,
+                        }
+                      : {}),
+                  },
+                  createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                },
+                `audit_events/${auditEventId}`,
+              ),
+            );
+            return status;
+          }
+          const receiptNumber = String(unmatchedData.receiptNumber ?? '');
+          if (!receiptNumber) {
+            throw new HttpsError(
+              'data-loss',
+              'The unmatched STK callback is missing its receipt number.',
+            );
+          }
+          const notificationRef = db().doc(
+            `kcb_payment_notifications/${receiptNumber}`,
+          );
+          const notification = await transaction.get(notificationRef);
+          const notificationData = notification.exists
+            ? kcbPaymentNotificationData(notification)
+            : undefined;
+          const notificationStatus = notificationData?.status;
+          const terminalReceiptMatchesRequest =
+            notificationStatus && notificationStatus !== 'unresolved'
+              ? terminalNotificationMatchesStkRequest({
+                notificationStatus,
+                notificationMemberId: notificationData?.memberId,
+                notificationStkRequestId: notificationData?.stkRequestId,
+                allocations: notificationData?.allocations ?? [],
+                requestId,
+                memberId: current.memberId,
+                contributionId: current.contributionId,
+                amount: Number(current.amount),
+              })
+              : undefined;
+          const terminalNotificationStatus =
+            notificationStatus && notificationStatus !== 'unresolved'
+              ? terminalReceiptMatchesRequest
+                ? notificationStatus === 'reconciled'
+                  ? 'reconciled'
+                  : 'rejected'
+                : 'outcome_unknown'
+              : undefined;
+          const callbackMatchesRequest = unmatchedStkCallbackMatchesRequest({
+            callbackMerchantRequestId: unmatchedData.merchantRequestId,
+            callbackAmount: unmatchedData.amount,
+            callbackPhone: unmatchedData.payerPhone,
+            requestMerchantRequestId: merchantRequestId,
+            requestAmount: Number(current.amount),
+            requestPhone: current.phone,
+          });
+          if (!terminalNotificationStatus) {
+            const correlatedNotification = {
+              messageId: checkoutRequestId,
+              channelCode: 'stk',
+              billReference: current.invoiceNumber,
+              payerPhone: String(unmatchedData.payerPhone ?? ''),
+              amount: Number(unmatchedData.amount),
+              transactionDate: String(unmatchedData.transactionDate ?? ''),
+              transactionType: 'MPESA_STK',
+              suggestedMemberId: current.memberId,
+              memberId: current.memberId,
+              contributionId: current.contributionId,
+              matchReason: callbackMatchesRequest
+                ? 'authenticated_stk_request'
+                : 'authenticated_stk_request_mismatch',
+              source: 'stk_callback',
+              provider: 'kcb_buni',
+              stkRequestId: requestId,
+              requestedAmount: Number(current.amount),
+            };
+            if (notification.exists) {
+              transaction.set(
+                notificationRef,
+                {
+                  ...correlatedNotification,
+                  reconciliationWarning: callbackMatchesRequest
+                    ? admin.firestore.FieldValue.delete()
+                    : 'payment_details_mismatch',
+                },
+                { merge: true },
+              );
+            } else {
+              transaction.create(
+                notificationRef,
+                validateDocumentWrite(
+                  kcbPaymentNotificationDocumentSchema,
+                  {
+                    providerTransactionId: receiptNumber,
+                    ...correlatedNotification,
+                    payerName: '',
+                    currency: KCB_CURRENCY.value(),
+                    status: 'unresolved',
+                    ...(!callbackMatchesRequest
+                      ? { reconciliationWarning: 'payment_details_mismatch' }
+                      : {}),
+                    receivedAt: admin.firestore.FieldValue.serverTimestamp(),
+                  },
+                  notificationRef.path,
+                ),
+              );
+            }
+          }
+          const correlatedStatus =
+            terminalNotificationStatus ?? 'succeeded_pending_reconciliation';
+          transaction.update(requestRef, {
+            status: correlatedStatus,
+            merchantRequestId,
+            checkoutRequestId,
+            providerTransactionId: receiptNumber,
+            ...(terminalNotificationStatus === 'outcome_unknown' &&
+            terminalReceiptMatchesRequest === false
+              ? { callbackFailureReason: 'terminal_receipt_linkage_mismatch' }
+              : {}),
+            responseCode: body.response?.ResponseCode ?? null,
+            responseDescription:
+              body.response?.ResponseDescription ??
+              body.header?.statusDescription ??
+              null,
+            callbackReceivedAt: admin.firestore.FieldValue.serverTimestamp(),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+          transaction.update(lockRef, {
+            status: correlatedStatus,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+          transaction.update(unmatchedRef, {
+            status: 'correlated',
+            requestId,
+            correlatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+          transaction.create(
+            db().doc(`audit_events/stk-callback-${checkoutRequestId}`),
+            validateDocumentWrite(
+              auditEventDocumentSchema,
+              {
+                requestId,
+                actorId: 'system:kcb_callback',
+                action:
+                  correlatedStatus === 'outcome_unknown' ||
+                  !callbackMatchesRequest
+                    ? 'kcb_stk.callback_quarantined'
+                    : 'kcb_stk.callback_processed',
+                memberId: current.memberId,
+                targetId: checkoutRequestId,
+                changes: {
+                  status: correlatedStatus,
+                  providerTransactionId: receiptNumber,
+                  contributionId: current.contributionId,
+                  amount: Number(unmatchedData.amount),
+                  ...(!callbackMatchesRequest
+                    ? { reason: 'payment_details_mismatch' }
+                    : terminalReceiptMatchesRequest === false
+                      ? { reason: 'terminal_receipt_linkage_mismatch' }
+                      : {}),
+                },
+                createdAt: admin.firestore.FieldValue.serverTimestamp(),
+              },
+              `audit_events/stk-callback-${checkoutRequestId}`,
+            ),
+          );
+          return correlatedStatus;
+        }
+        if (
+          accepted &&
+          merchantRequestId &&
+          checkoutRequestId &&
+          unmatchedRef
+        ) {
+          transaction.set(
+            unmatchedRef,
+            {
+              requestId,
+              merchantRequestId,
+              checkoutRequestId,
+              status: 'awaiting_callback',
+              registeredAt: admin.firestore.FieldValue.serverTimestamp(),
+            },
+            { merge: true },
+          );
+        }
+        transaction.update(requestRef, {
+          status: providerResponseStatus,
+          merchantRequestId,
+          checkoutRequestId,
+          ...(accepted && providerResponseStatus === 'outcome_unknown'
+            ? {
+                failureCategory: 'provider_response_missing_correlation_ids',
+              }
+            : {}),
+          responseCode: body.response?.ResponseCode ?? null,
+          responseDescription:
+            body.response?.ResponseDescription ??
+            body.header?.statusDescription ??
+            null,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        transaction.update(lockRef, {
+          status: providerResponseStatus,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        return 'stored';
       });
-      if (!accepted || !checkoutRequestId) {
+      if (!responseStored) {
+        logger.error('Ignored a late KCB STK response after state changed.', {
+          requestId,
+          accepted,
+          merchantRequestId,
+          checkoutRequestId,
+        });
+        throw new HttpsError(
+          'aborted',
+          'The STK request state changed before the provider response arrived.',
+        );
+      }
+      if (
+        responseStored !== 'stored' &&
+        responseStored !== 'succeeded_pending_reconciliation' &&
+        responseStored !== 'reconciled'
+      ) {
         throw new HttpsError(
           'failed-precondition',
-          'KCB did not accept the STK request.',
+          'KCB reported that the STK request did not complete.',
+        );
+      }
+      if (!accepted || !merchantRequestId || !checkoutRequestId) {
+        throw new HttpsError(
+          'failed-precondition',
+          'KCB did not return a complete accepted STK response.',
         );
       }
       return {
         requestId,
-        status: 'pending',
+        status: responseStored === 'stored' ? 'pending' : responseStored,
         merchantRequestId,
         checkoutRequestId,
         duplicate: false,
       };
     } catch (error) {
-      await requestRef.update({
-        status: 'failed',
-        failureCategory:
-          error instanceof HttpsError
-            ? 'provider_rejected'
-            : 'provider_unavailable',
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      const failureStatus =
+        error instanceof HttpsError
+          ? 'rejected'
+          : providerDispatchStarted
+            ? 'outcome_unknown'
+            : 'failed';
+      const recoveryLeaseExpiresAt =
+        failureStatus === 'outcome_unknown'
+          ? admin.firestore.Timestamp.fromMillis(
+            Date.now() + STK_INITIATION_LEASE_MS,
+          )
+          : undefined;
+      const expectedStatus = providerDispatchStarted
+        ? 'dispatching'
+        : 'initiating';
+      const failureStored = await db().runTransaction(async (transaction) => {
+        const [currentRequest, lock] = await Promise.all([
+          transaction.get(requestRef),
+          transaction.get(lockRef),
+        ]);
+        const current = kcbStkRequestData(currentRequest);
+        const lockData = lock.data();
+        if (!ownsExpectedStkTransition({
+          requestStatus: current.status,
+          expectedStatus,
+          requestId,
+          lockRequestId: lockData?.requestId,
+          lockStatus: lockData?.status,
+        })) {
+          return false;
+        }
+        transaction.update(requestRef, {
+          status: failureStatus,
+          ...(recoveryLeaseExpiresAt
+            ? { leaseExpiresAt: recoveryLeaseExpiresAt }
+            : {}),
+          ...(providerMerchantRequestId
+            ? { merchantRequestId: providerMerchantRequestId }
+            : {}),
+          ...(providerCheckoutRequestId
+            ? { checkoutRequestId: providerCheckoutRequestId }
+            : {}),
+          failureCategory:
+            error instanceof HttpsError
+              ? 'provider_rejected'
+              : providerDispatchStarted
+                ? 'provider_outcome_unknown'
+                : 'provider_unavailable',
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        transaction.update(lockRef, {
+          status: failureStatus,
+          ...(recoveryLeaseExpiresAt
+            ? { leaseExpiresAt: recoveryLeaseExpiresAt }
+            : {}),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        return true;
       });
+      if (!failureStored) {
+        logger.warn('Ignored a stale KCB STK failure after state changed.', {
+          requestId,
+          expectedStatus,
+        });
+      }
       if (error instanceof HttpsError) throw error;
       logger.error('KCB STK request failed.', {
         requestId,
@@ -799,50 +1728,425 @@ export const kcbStkCallback = onRequest(
     }
     try {
       const callback = parseStkCallback(request.body);
+      const unmatchedRef = db().doc(
+        `kcb_stk_unmatched_callbacks/${callback.checkoutRequestId}`,
+      );
       const matches = await db()
         .collection('kcb_stk_requests')
         .where('checkoutRequestId', '==', callback.checkoutRequestId)
         .limit(1)
         .get();
-      if (matches.empty) {
-        logger.warn('Unmatched KCB STK callback.');
-        response.status(200).json({ ResultCode: 0, ResultDesc: 'Accepted' });
-        return;
+      let requestRef = matches.empty ? undefined : matches.docs[0].ref;
+      let orphanedDispatchRequestId: string | undefined;
+      if (!requestRef && callback.resultCode === 0) {
+        const dispatchingRequests = await db()
+          .collection('kcb_stk_requests')
+          .where('status', '==', 'dispatching')
+          .get();
+        const candidates = dispatchingRequests.docs.filter((item) => {
+          const stored = kcbStkRequestData(item);
+          return stkPaymentMatchesPendingRequest({
+            callbackAmount: callback.amount,
+            pendingAmount: Number(stored.amount),
+            callbackPhone: callback.payerPhone,
+            pendingPhone: stored.phone,
+            receiptNumber: callback.receiptNumber,
+          });
+        });
+        if (candidates.length === 1) {
+          orphanedDispatchRequestId = candidates[0].id;
+        }
       }
-      const requestRef = matches.docs[0].ref;
+      if (!requestRef) {
+        let linkedRequestId: string | undefined;
+        if (callback.resultCode === 0) {
+          linkedRequestId = await db().runTransaction(async (transaction) => {
+            const unmatched = await transaction.get(unmatchedRef);
+            const registeredRequestId = unmatched.data()?.requestId;
+            const handshakeRequestId =
+              typeof registeredRequestId === 'string'
+                ? registeredRequestId
+                : orphanedDispatchRequestId;
+            transaction.set(
+              unmatchedRef,
+              {
+                merchantRequestId: callback.merchantRequestId,
+                checkoutRequestId: callback.checkoutRequestId,
+                receiptNumber: callback.receiptNumber,
+                amount: callback.amount,
+                payerPhone: callback.payerPhone,
+                transactionDate: callback.transactionDate,
+                resultCode: callback.resultCode,
+                resultDescription: callback.resultDescription,
+                ...(handshakeRequestId
+                  ? { requestId: handshakeRequestId }
+                  : {}),
+                status:
+                  unmatched.data()?.status === 'correlated'
+                    ? 'correlated'
+                    : 'pending_correlation',
+                receivedAt: admin.firestore.FieldValue.serverTimestamp(),
+              },
+              { merge: true },
+            );
+            return handshakeRequestId;
+          });
+          logger.warn('Quarantined unmatched successful KCB STK callback.', {
+            checkoutRequestId: callback.checkoutRequestId,
+            receiptNumber: callback.receiptNumber,
+          });
+        } else {
+          linkedRequestId = await db().runTransaction(async (transaction) => {
+            const unmatched = await transaction.get(unmatchedRef);
+            transaction.set(
+              unmatchedRef,
+              {
+                merchantRequestId: callback.merchantRequestId,
+                checkoutRequestId: callback.checkoutRequestId,
+                resultCode: callback.resultCode,
+                resultDescription: callback.resultDescription,
+                status:
+                  unmatched.data()?.status === 'correlated'
+                    ? 'correlated'
+                    : 'pending_correlation',
+                receivedAt: admin.firestore.FieldValue.serverTimestamp(),
+              },
+              { merge: true },
+            );
+            const registeredRequestId = unmatched.data()?.requestId;
+            return typeof registeredRequestId === 'string'
+              ? registeredRequestId
+              : undefined;
+          });
+          logger.warn('Quarantined unmatched unsuccessful KCB STK callback.', {
+            checkoutRequestId: callback.checkoutRequestId,
+            resultCode: callback.resultCode,
+          });
+        }
+        if (!linkedRequestId) {
+          if (callback.resultCode === 0) {
+            response.status(503).json({
+              ResultCode: 1,
+              ResultDesc: 'Callback stored; request correlation is pending',
+            });
+            return;
+          }
+          response.status(200).json({ ResultCode: 0, ResultDesc: 'Accepted' });
+          return;
+        }
+        requestRef = db().doc(`kcb_stk_requests/${linkedRequestId}`);
+      }
+      const correlatedRequestRef = requestRef;
+      if (!correlatedRequestRef) {
+        throw new Error('The STK callback request handshake is incomplete.');
+      }
       await db().runTransaction(async (transaction) => {
-        const snapshot = await transaction.get(requestRef);
+        const snapshot = await transaction.get(correlatedRequestRef);
         const pending = kcbStkRequestData(snapshot);
         if (pending.callbackReceivedAt) return;
-        if (callback.merchantRequestId !== pending.merchantRequestId) {
-          throw new Error('STK callback correlation mismatch.');
+        const lockRef = stkContributionLockRef(
+          pending.memberId,
+          pending.contributionId,
+        );
+        const lock = await transaction.get(lockRef);
+        const lockData = lock.data() as { requestId?: unknown } | undefined;
+        const updateOwnedLock = (status: string) => {
+          if (lockData?.requestId === pending.requestId) {
+            transaction.update(lockRef, {
+              status,
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+          }
+        };
+        const merchantRequestMismatch =
+          callback.merchantRequestId !== pending.merchantRequestId;
+        if (merchantRequestMismatch && callback.resultCode !== 0) {
+          const auditEventId = stkCallbackMismatchAuditId(
+            callback.checkoutRequestId,
+            callback.merchantRequestId,
+          );
+          const auditEventRef = db().doc(`audit_events/${auditEventId}`);
+          const existingAuditEvent = await transaction.get(auditEventRef);
+          transaction.update(correlatedRequestRef, {
+            status: 'outcome_unknown',
+            resultCode: callback.resultCode,
+            resultDescription: callback.resultDescription,
+            callbackFailureReason: 'merchant_request_id_mismatch',
+            mismatchedCallbackReceivedAt:
+              admin.firestore.FieldValue.serverTimestamp(),
+          });
+          updateOwnedLock('outcome_unknown');
+          if (!existingAuditEvent.exists) {
+            transaction.create(
+              auditEventRef,
+              validateDocumentWrite(
+                auditEventDocumentSchema,
+                {
+                  requestId: pending.requestId,
+                  actorId: 'system:kcb_callback',
+                  action: 'kcb_stk.callback_quarantined',
+                  memberId: pending.memberId,
+                  targetId: callback.checkoutRequestId,
+                  changes: {
+                    reason: 'merchant_request_id_mismatch',
+                    status: 'outcome_unknown',
+                    merchantRequestId: callback.merchantRequestId,
+                    checkoutRequestId: callback.checkoutRequestId,
+                  },
+                  createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                },
+                `audit_events/${auditEventId}`,
+              ),
+            );
+          }
+          return;
         }
         if (callback.resultCode !== 0) {
-          let status = 'failed';
-          if (callback.resultCode === 1032) status = 'cancelled';
-          if (callback.resultCode === 1037) status = 'timed_out';
-          transaction.update(requestRef, {
+          const status = stkFailureStatus(callback.resultCode);
+          transaction.update(correlatedRequestRef, {
             status,
             resultCode: callback.resultCode,
             resultDescription: callback.resultDescription,
             callbackReceivedAt: admin.firestore.FieldValue.serverTimestamp(),
           });
+          updateOwnedLock(status);
+          transaction.create(
+            db().doc(`audit_events/stk-callback-${callback.checkoutRequestId}`),
+            validateDocumentWrite(
+              auditEventDocumentSchema,
+              {
+                requestId: pending.requestId,
+                actorId: 'system:kcb_callback',
+                action: 'kcb_stk.callback_processed',
+                memberId: pending.memberId,
+                targetId: callback.checkoutRequestId,
+                changes: {
+                  status,
+                  resultCode: callback.resultCode,
+                  resultDescription: callback.resultDescription,
+                },
+                createdAt: admin.firestore.FieldValue.serverTimestamp(),
+              },
+              `audit_events/stk-callback-${callback.checkoutRequestId}`,
+            ),
+          );
           return;
         }
         if (
-          callback.amount !== Number(pending.amount) ||
-          callback.payerPhone !== pending.phone ||
-          !callback.receiptNumber
+          merchantRequestMismatch ||
+          !stkPaymentMatchesPendingRequest({
+            callbackAmount: callback.amount,
+            pendingAmount: Number(pending.amount),
+            callbackPhone: callback.payerPhone,
+            pendingPhone: pending.phone,
+            receiptNumber: callback.receiptNumber,
+          })
         ) {
-          throw new Error(
-            'STK callback payment details do not match the pending request.',
+          const hasReconciliationDetails =
+            typeof callback.receiptNumber === 'string' &&
+            callback.receiptNumber.length > 0 &&
+            typeof callback.payerPhone === 'string' &&
+            Number.isFinite(callback.amount) &&
+            Number(callback.amount) > 0 &&
+            typeof callback.transactionDate === 'string';
+          let quarantinedStatus = hasReconciliationDetails
+            ? 'succeeded_pending_reconciliation'
+            : 'outcome_unknown';
+          if (hasReconciliationDetails) {
+            const notificationRef = db().doc(
+              `kcb_payment_notifications/${callback.receiptNumber}`,
+            );
+            const existingNotification = await transaction.get(notificationRef);
+            const existingData = existingNotification.exists
+              ? kcbPaymentNotificationData(existingNotification)
+              : undefined;
+            const existingStatus = existingData?.status;
+            if (existingStatus && existingStatus !== 'unresolved') {
+              quarantinedStatus = terminalNotificationMatchesStkRequest({
+                notificationStatus: existingStatus,
+                notificationMemberId: existingData?.memberId,
+                notificationStkRequestId: existingData?.stkRequestId,
+                allocations: existingData?.allocations ?? [],
+                requestId: pending.requestId,
+                memberId: pending.memberId,
+                contributionId: pending.contributionId,
+                amount: Number(pending.amount),
+              })
+                ? existingStatus === 'reconciled'
+                  ? 'reconciled'
+                  : 'rejected'
+                : 'outcome_unknown';
+            }
+            const quarantinedNotification = {
+              providerTransactionId: callback.receiptNumber,
+              messageId: callback.checkoutRequestId,
+              channelCode: 'stk',
+              billReference: pending.invoiceNumber,
+              payerPhone: callback.payerPhone,
+              payerName: '',
+              amount: callback.amount,
+              currency: KCB_CURRENCY.value(),
+              transactionDate: callback.transactionDate,
+              transactionType: 'MPESA_STK',
+              status: 'unresolved',
+              suggestedMemberId: pending.memberId,
+              memberId: pending.memberId,
+              contributionId: pending.contributionId,
+              matchReason: 'authenticated_stk_request_mismatch',
+              provider: 'kcb_buni',
+              source: 'stk_callback',
+              stkRequestId: snapshot.id,
+              requestedAmount: Number(pending.amount),
+              reconciliationWarning: merchantRequestMismatch
+                ? 'merchant_request_id_mismatch'
+                : 'payment_details_mismatch',
+            };
+            if (existingNotification.exists && existingStatus === 'unresolved') {
+              transaction.set(
+                notificationRef,
+                quarantinedNotification,
+                { merge: true },
+              );
+            } else if (!existingNotification.exists) {
+              transaction.create(
+                notificationRef,
+                validateDocumentWrite(
+                  kcbPaymentNotificationDocumentSchema,
+                  {
+                    ...quarantinedNotification,
+                    receivedAt: admin.firestore.FieldValue.serverTimestamp(),
+                  },
+                  notificationRef.path,
+                ),
+              );
+            }
+          }
+          transaction.update(correlatedRequestRef, {
+            status: quarantinedStatus,
+            ...(callback.receiptNumber
+              ? { providerTransactionId: callback.receiptNumber }
+              : {}),
+            resultCode: callback.resultCode,
+            resultDescription: callback.resultDescription,
+            callbackFailureReason: merchantRequestMismatch
+              ? 'merchant_request_id_mismatch'
+              : 'payment_details_mismatch',
+            callbackReceivedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+          updateOwnedLock(quarantinedStatus);
+          transaction.create(
+            db().doc(`audit_events/stk-callback-${callback.checkoutRequestId}`),
+            validateDocumentWrite(
+              auditEventDocumentSchema,
+              {
+                requestId: pending.requestId,
+                actorId: 'system:kcb_callback',
+                action: 'kcb_stk.callback_quarantined',
+                memberId: pending.memberId,
+                targetId: callback.checkoutRequestId,
+                changes: {
+                  reason: merchantRequestMismatch
+                    ? 'merchant_request_id_mismatch'
+                    : 'payment_details_mismatch',
+                  expectedAmount: pending.amount,
+                  callbackAmount: callback.amount ?? null,
+                  expectedPhone: pending.phone,
+                  callbackPhone: callback.payerPhone ?? null,
+                  status: quarantinedStatus,
+                },
+                createdAt: admin.firestore.FieldValue.serverTimestamp(),
+              },
+              `audit_events/stk-callback-${callback.checkoutRequestId}`,
+            ),
           );
+          return;
         }
         const notificationRef = db().doc(
           `kcb_payment_notifications/${callback.receiptNumber}`,
         );
         const existingNotification = await transaction.get(notificationRef);
-        if (!existingNotification.exists) {
+        if (existingNotification.exists) {
+          const existingData = kcbPaymentNotificationData(existingNotification);
+          const existingStatus = existingData.status;
+          if (existingStatus !== 'unresolved') {
+            const terminalLinkageMatches =
+              terminalNotificationMatchesStkRequest({
+                notificationStatus: existingStatus,
+                notificationMemberId: existingData.memberId,
+                notificationStkRequestId: existingData.stkRequestId,
+                allocations: existingData.allocations,
+                requestId: pending.requestId,
+                memberId: pending.memberId,
+                contributionId: pending.contributionId,
+                amount: Number(pending.amount),
+              });
+            const terminalStatus =
+              terminalLinkageMatches
+                ? existingStatus === 'reconciled'
+                  ? 'reconciled'
+                  : 'rejected'
+                : 'outcome_unknown';
+            transaction.update(correlatedRequestRef, {
+              status: terminalStatus,
+              providerTransactionId: callback.receiptNumber,
+              resultCode: callback.resultCode,
+              resultDescription: callback.resultDescription,
+              ...(!terminalLinkageMatches
+                ? { callbackFailureReason: 'terminal_receipt_linkage_mismatch' }
+                : {}),
+              callbackReceivedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+            updateOwnedLock(terminalStatus);
+            if (!terminalLinkageMatches) {
+              transaction.create(
+                db().doc(
+                  `audit_events/stk-callback-${callback.checkoutRequestId}`,
+                ),
+                validateDocumentWrite(
+                  auditEventDocumentSchema,
+                  {
+                    requestId: pending.requestId,
+                    actorId: 'system:kcb_callback',
+                    action: 'kcb_stk.callback_quarantined',
+                    memberId: pending.memberId,
+                    targetId: callback.checkoutRequestId,
+                    changes: {
+                      reason: 'terminal_receipt_linkage_mismatch',
+                      receiptStatus: existingStatus,
+                      receiptMemberId: existingData.memberId ?? null,
+                      receiptAllocations: existingData.allocations,
+                      expectedContributionId: pending.contributionId,
+                    },
+                    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                  },
+                  `audit_events/stk-callback-${callback.checkoutRequestId}`,
+                ),
+              );
+            }
+            return;
+          }
+          transaction.set(
+            notificationRef,
+            {
+              messageId: callback.checkoutRequestId,
+              channelCode: 'stk',
+              billReference: pending.invoiceNumber,
+              payerPhone: callback.payerPhone,
+              amount: callback.amount,
+              transactionDate: callback.transactionDate,
+              transactionType: 'MPESA_STK',
+              suggestedMemberId: pending.memberId,
+              memberId: pending.memberId,
+              contributionId: pending.contributionId,
+              matchReason: 'authenticated_stk_request',
+              provider: 'kcb_buni',
+              source: 'stk_callback',
+              stkRequestId: snapshot.id,
+              requestedAmount: Number(pending.amount),
+            },
+            { merge: true },
+          );
+        } else {
           transaction.create(
             notificationRef,
             validateDocumentWrite(
@@ -860,23 +2164,48 @@ export const kcbStkCallback = onRequest(
                 transactionType: 'MPESA_STK',
                 status: 'unresolved',
                 suggestedMemberId: pending.memberId,
+                memberId: pending.memberId,
+                contributionId: pending.contributionId,
                 matchReason: 'authenticated_stk_request',
                 provider: 'kcb_buni',
                 source: 'stk_callback',
                 stkRequestId: snapshot.id,
+                requestedAmount: Number(pending.amount),
                 receivedAt: admin.firestore.FieldValue.serverTimestamp(),
               },
               notificationRef.path,
             ),
           );
         }
-        transaction.update(requestRef, {
+        transaction.update(correlatedRequestRef, {
           status: 'succeeded_pending_reconciliation',
           providerTransactionId: callback.receiptNumber,
           resultCode: callback.resultCode,
           resultDescription: callback.resultDescription,
           callbackReceivedAt: admin.firestore.FieldValue.serverTimestamp(),
         });
+        updateOwnedLock('succeeded_pending_reconciliation');
+        transaction.create(
+          db().doc(`audit_events/stk-callback-${callback.checkoutRequestId}`),
+          validateDocumentWrite(
+            auditEventDocumentSchema,
+            {
+              requestId: pending.requestId,
+              actorId: 'system:kcb_callback',
+              action: 'kcb_stk.callback_processed',
+              memberId: pending.memberId,
+              targetId: callback.checkoutRequestId,
+              changes: {
+                status: 'succeeded_pending_reconciliation',
+                providerTransactionId: callback.receiptNumber,
+                contributionId: pending.contributionId,
+                amount: callback.amount,
+              },
+              createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            },
+            `audit_events/stk-callback-${callback.checkoutRequestId}`,
+          ),
+        );
       });
       response.status(200).json({ ResultCode: 0, ResultDesc: 'Accepted' });
     } catch (error) {

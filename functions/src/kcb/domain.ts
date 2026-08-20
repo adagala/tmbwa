@@ -26,6 +26,18 @@ export type StkCallback = {
   transactionDate?: string;
 };
 
+export type StoredStkRequest = {
+  memberId: string;
+  contributionId: string;
+  amount: number;
+};
+
+export type IncomingStkRequest = {
+  memberId: string;
+  contributionId: string;
+  amount: number;
+};
+
 type JsonObject = Record<string, unknown>;
 
 const object = (value: unknown, field: string): JsonObject => {
@@ -164,3 +176,128 @@ export const parseStkCallback = (payload: unknown): StkCallback => {
   result.transactionDate = text(String(values.get('TransactionDate') ?? ''), 'TransactionDate');
   return result;
 };
+
+export const isSameStkRequestPayload = (
+  existing: StoredStkRequest,
+  incoming: IncomingStkRequest,
+) =>
+  existing.memberId === incoming.memberId &&
+  existing.contributionId === incoming.contributionId &&
+  Number(existing.amount) === Number(incoming.amount);
+
+export const stkFailureStatus = (resultCode: number) => {
+  if (resultCode === 1032) return 'cancelled';
+  if (resultCode === 1037) return 'timed_out';
+  return 'failed';
+};
+
+export const stkPaymentMatchesPendingRequest = (args: {
+  callbackAmount: number | undefined;
+  pendingAmount: number;
+  callbackPhone: string | undefined;
+  pendingPhone: string;
+  receiptNumber: string | undefined;
+}) =>
+  Number(args.callbackAmount) === Number(args.pendingAmount) &&
+  args.callbackPhone === args.pendingPhone &&
+  typeof args.receiptNumber === 'string' &&
+  args.receiptNumber.trim().length > 0;
+
+export const isLockedStkReconciliation = (args: {
+  source: string | undefined;
+}) => args.source === 'stk_callback';
+
+export const isActiveStkRequestStatus = (status: string) =>
+  [
+    'initiating',
+    'dispatching',
+    'outcome_unknown',
+    'pending',
+    'succeeded_pending_reconciliation',
+  ].includes(status);
+
+export const isSuccessfulStkDuplicateStatus = (status: string) =>
+  ['pending', 'succeeded_pending_reconciliation'].includes(status);
+
+export const isRecoverableStkLeaseStatus = (status: string) =>
+  status === 'initiating';
+
+export const isManuallyResolvableStkUnknownOutcome = (args: {
+  status: string;
+  failureCategory: unknown;
+  resultCode: unknown;
+}) =>
+  args.status === 'dispatching' ||
+  (args.status === 'outcome_unknown' &&
+    args.resultCode !== 0 &&
+    [
+      'provider_outcome_unknown',
+      'provider_response_missing_correlation_ids',
+    ].includes(String(args.failureCategory ?? '')));
+
+export const terminalNotificationMatchesStkRequest = (args: {
+  notificationStatus: string;
+  notificationMemberId: string | undefined;
+  notificationStkRequestId: string | undefined;
+  allocations: Array<{ contributionId: string; amount: number }>;
+  requestId: string;
+  memberId: string;
+  contributionId: string;
+  amount: number;
+}) => {
+  if (args.notificationStkRequestId === args.requestId) return true;
+  if (args.notificationStatus !== 'reconciled') return false;
+  const allocation = args.allocations[0];
+  return (
+    args.notificationMemberId === args.memberId &&
+    args.allocations.length === 1 &&
+    allocation?.contributionId === args.contributionId &&
+    Number(allocation.amount) === Number(args.amount)
+  );
+};
+
+export const ownsExpectedStkTransition = (args: {
+  requestStatus: string;
+  expectedStatus: string;
+  requestId: string;
+  lockRequestId: unknown;
+  lockStatus: unknown;
+}) =>
+  args.requestStatus === args.expectedStatus &&
+  args.lockRequestId === args.requestId &&
+  args.lockStatus === args.expectedStatus;
+
+export const lockedStkAllocationAmount = (
+  callbackAmount: number,
+  requestedAmount: number,
+  outstandingAmount: number,
+) => {
+  if (
+    !Number.isFinite(callbackAmount) || callbackAmount <= 0 ||
+    !Number.isFinite(requestedAmount) || requestedAmount <= 0 ||
+    !Number.isFinite(outstandingAmount) || outstandingAmount <= 0
+  ) {
+    throw new Error('STK allocation inputs must be positive amounts.');
+  }
+  return Math.min(callbackAmount, requestedAmount, outstandingAmount);
+};
+
+export const unmatchedStkCallbackMatchesRequest = (args: {
+  callbackMerchantRequestId: unknown;
+  callbackAmount: unknown;
+  callbackPhone: unknown;
+  requestMerchantRequestId: string | null;
+  requestAmount: number;
+  requestPhone: string;
+}) =>
+  args.callbackMerchantRequestId === args.requestMerchantRequestId &&
+  Number(args.callbackAmount) === Number(args.requestAmount) &&
+  args.callbackPhone === args.requestPhone;
+
+export const isStkInitiationLeaseExpired = (
+  leaseExpiresAtMillis: number | undefined,
+  nowMillis: number,
+) =>
+  typeof leaseExpiresAtMillis === 'number' &&
+  Number.isFinite(leaseExpiresAtMillis) &&
+  leaseExpiresAtMillis <= nowMillis;

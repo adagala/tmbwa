@@ -1,9 +1,18 @@
 import { generateKeyPairSync, createSign } from 'crypto';
 import { describe, expect, it } from 'vitest';
 import {
-  acknowledgement, normalizeKenyanPhone, parseKcbTransactionDate, parseStkCallback,
+  acknowledgement, isActiveStkRequestStatus, isLockedStkReconciliation,
+  isManuallyResolvableStkUnknownOutcome,
+  isRecoverableStkLeaseStatus,
+  isSameStkRequestPayload, isStkInitiationLeaseExpired,
+  isSuccessfulStkDuplicateStatus,
+  lockedStkAllocationAmount, normalizeKenyanPhone,
+  ownsExpectedStkTransition, parseKcbTransactionDate, parseStkCallback,
   parseTillNotification, permitsUnsignedSandboxNotification,
-  secureTokenMatches, verifyKcbSignature,
+  secureTokenMatches, stkFailureStatus, stkPaymentMatchesPendingRequest,
+  terminalNotificationMatchesStkRequest,
+  unmatchedStkCallbackMatchesRequest,
+  verifyKcbSignature,
 } from '../functions/src/kcb/domain';
 import {
   buildSyntheticTillPayload,
@@ -89,6 +98,174 @@ describe('KCB Till notification contract', () => {
     expect(parseKcbTransactionDate('Mon May 19 13:30:54 EAT 2025').toISOString()).toBe('2025-05-19T10:30:54.000Z');
     expect(parseKcbTransactionDate('20260813121212').toISOString()).toBe('2026-08-13T09:12:12.000Z');
     expect(() => parseKcbTransactionDate('not-a-date')).toThrow();
+  });
+
+  it('treats repeated STK request IDs as idempotent only for identical payloads', () => {
+    expect(isSameStkRequestPayload(
+      { memberId: 'member-1', contributionId: '2026-08-01', amount: 500 },
+      { memberId: 'member-1', contributionId: '2026-08-01', amount: 500 },
+    )).toBe(true);
+    expect(isSameStkRequestPayload(
+      { memberId: 'member-1', contributionId: '2026-08-01', amount: 500 },
+      { memberId: 'member-1', contributionId: '2026-08-01', amount: 400 },
+    )).toBe(false);
+  });
+
+  it('maps callback failure codes to explicit STK statuses', () => {
+    expect(stkFailureStatus(1032)).toBe('cancelled');
+    expect(stkFailureStatus(1037)).toBe('timed_out');
+    expect(stkFailureStatus(1)).toBe('failed');
+  });
+
+  it('requires exact callback payment details before accepting pending STK success', () => {
+    expect(stkPaymentMatchesPendingRequest({
+      callbackAmount: 500,
+      pendingAmount: 500,
+      callbackPhone: '+254711000000',
+      pendingPhone: '+254711000000',
+      receiptNumber: 'RCP123',
+    })).toBe(true);
+    expect(stkPaymentMatchesPendingRequest({
+      callbackAmount: 499,
+      pendingAmount: 500,
+      callbackPhone: '+254711000000',
+      pendingPhone: '+254711000000',
+      receiptNumber: 'RCP123',
+    })).toBe(false);
+    expect(stkPaymentMatchesPendingRequest({
+      callbackAmount: 500,
+      pendingAmount: 500,
+      callbackPhone: '+254711111111',
+      pendingPhone: '+254711000000',
+      receiptNumber: 'RCP123',
+    })).toBe(false);
+    expect(stkPaymentMatchesPendingRequest({
+      callbackAmount: 500,
+      pendingAmount: 500,
+      callbackPhone: '+254711000000',
+      pendingPhone: '+254711000000',
+      receiptNumber: '',
+    })).toBe(false);
+  });
+
+  it('identifies STK-origin contribution locks for reconciliation guards', () => {
+    expect(isLockedStkReconciliation({
+      source: 'stk_callback',
+    })).toBe(true);
+    expect(isLockedStkReconciliation({
+      source: 'till_notification',
+    })).toBe(false);
+    expect(isLockedStkReconciliation({
+      source: 'stk_callback',
+    })).toBe(true);
+  });
+
+  it('blocks concurrent STK requests until the active request is terminal', () => {
+    expect(isActiveStkRequestStatus('initiating')).toBe(true);
+    expect(isActiveStkRequestStatus('dispatching')).toBe(true);
+    expect(isActiveStkRequestStatus('outcome_unknown')).toBe(true);
+    expect(isActiveStkRequestStatus('pending')).toBe(true);
+    expect(isActiveStkRequestStatus('succeeded_pending_reconciliation')).toBe(true);
+    expect(isActiveStkRequestStatus('failed')).toBe(false);
+    expect(isActiveStkRequestStatus('rejected')).toBe(false);
+    expect(isActiveStkRequestStatus('cancelled')).toBe(false);
+    expect(isActiveStkRequestStatus('timed_out')).toBe(false);
+    expect(isActiveStkRequestStatus('reconciled')).toBe(false);
+  });
+
+  it('reports only accepted STK duplicates as successful', () => {
+    expect(isSuccessfulStkDuplicateStatus('pending')).toBe(true);
+    expect(isSuccessfulStkDuplicateStatus('succeeded_pending_reconciliation')).toBe(true);
+    expect(isSuccessfulStkDuplicateStatus('initiating')).toBe(false);
+    expect(isSuccessfulStkDuplicateStatus('failed')).toBe(false);
+    expect(isSuccessfulStkDuplicateStatus('rejected')).toBe(false);
+    expect(isSuccessfulStkDuplicateStatus('cancelled')).toBe(false);
+    expect(isSuccessfulStkDuplicateStatus('timed_out')).toBe(false);
+  });
+
+  it('recovers initiating requests only after their lease expires', () => {
+    expect(isRecoverableStkLeaseStatus('initiating')).toBe(true);
+    expect(isRecoverableStkLeaseStatus('outcome_unknown')).toBe(false);
+    expect(isRecoverableStkLeaseStatus('pending')).toBe(false);
+    expect(isStkInitiationLeaseExpired(1_000, 1_000)).toBe(true);
+    expect(isStkInitiationLeaseExpired(1_001, 1_000)).toBe(false);
+    expect(isStkInitiationLeaseExpired(undefined, 1_000)).toBe(false);
+  });
+
+  it('allows manual failure resolution only for ambiguous provider dispatches', () => {
+    expect(isManuallyResolvableStkUnknownOutcome({
+      status: 'dispatching', failureCategory: undefined, resultCode: undefined,
+    })).toBe(true);
+    expect(isManuallyResolvableStkUnknownOutcome({
+      status: 'outcome_unknown', failureCategory: 'provider_outcome_unknown',
+      resultCode: undefined,
+    })).toBe(true);
+    expect(isManuallyResolvableStkUnknownOutcome({
+      status: 'outcome_unknown',
+      failureCategory: 'provider_response_missing_correlation_ids',
+      resultCode: undefined,
+    })).toBe(true);
+    expect(isManuallyResolvableStkUnknownOutcome({
+      status: 'outcome_unknown', failureCategory: undefined, resultCode: 0,
+    })).toBe(false);
+    expect(isManuallyResolvableStkUnknownOutcome({
+      status: 'outcome_unknown', failureCategory: undefined, resultCode: 1032,
+    })).toBe(false);
+  });
+
+  it('releases terminal receipt locks only for matching STK linkage', () => {
+    const request = {
+      requestId: 'stk-1', memberId: 'member-1',
+      contributionId: '2026-08-01', amount: 500,
+    };
+    expect(terminalNotificationMatchesStkRequest({
+      ...request, notificationStatus: 'reconciled',
+      notificationMemberId: 'member-1', notificationStkRequestId: undefined,
+      allocations: [{ contributionId: '2026-08-01', amount: 500 }],
+    })).toBe(true);
+    expect(terminalNotificationMatchesStkRequest({
+      ...request, notificationStatus: 'reconciled',
+      notificationMemberId: 'member-2', notificationStkRequestId: undefined,
+      allocations: [{ contributionId: 'different', amount: 500 }],
+    })).toBe(false);
+    expect(terminalNotificationMatchesStkRequest({
+      ...request, notificationStatus: 'rejected',
+      notificationMemberId: undefined, notificationStkRequestId: 'stk-1',
+      allocations: [],
+    })).toBe(true);
+  });
+
+  it('applies STK state transitions only while request and lock still match', () => {
+    expect(ownsExpectedStkTransition({
+      requestStatus: 'dispatching', expectedStatus: 'dispatching',
+      requestId: 'stk-1', lockRequestId: 'stk-1', lockStatus: 'dispatching',
+    })).toBe(true);
+    expect(ownsExpectedStkTransition({
+      requestStatus: 'failed', expectedStatus: 'dispatching',
+      requestId: 'stk-1', lockRequestId: 'stk-1', lockStatus: 'failed',
+    })).toBe(false);
+  });
+
+  it('allocates STK overpayments to the contribution and reserves the excess', () => {
+    expect(lockedStkAllocationAmount(600, 500, 500)).toBe(500);
+    expect(lockedStkAllocationAmount(400, 500, 500)).toBe(400);
+    expect(lockedStkAllocationAmount(600, 500, 450)).toBe(450);
+    expect(() => lockedStkAllocationAmount(0, 500, 500)).toThrow();
+  });
+
+  it('correlates quarantined callbacks only to the exact provider request', () => {
+    const request = {
+      requestMerchantRequestId: 'merchant-1', requestAmount: 500,
+      requestPhone: '+254711000000',
+    };
+    expect(unmatchedStkCallbackMatchesRequest({
+      ...request, callbackMerchantRequestId: 'merchant-1',
+      callbackAmount: 500, callbackPhone: '+254711000000',
+    })).toBe(true);
+    expect(unmatchedStkCallbackMatchesRequest({
+      ...request, callbackMerchantRequestId: 'merchant-2',
+      callbackAmount: 500, callbackPhone: '+254711000000',
+    })).toBe(false);
   });
 });
 
