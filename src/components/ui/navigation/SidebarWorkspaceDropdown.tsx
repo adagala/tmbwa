@@ -2,6 +2,7 @@ import { DropdownMenu, DropdownMenuTrigger } from '@/components/Dropdown';
 import { cx, focusInput } from '@/lib/utils';
 import { RiArrowRightSLine } from '@remixicon/react';
 import React from 'react';
+import { Button } from '@/components/Button';
 
 export const WorkspacesDropdownDesktop = () => {
   const [dropdownOpen, setDropdownOpen] = React.useState(false);
@@ -15,7 +16,8 @@ export const WorkspacesDropdownDesktop = () => {
         modal={false}
       >
         <DropdownMenuTrigger asChild>
-          <button
+          <Button
+            variant="secondary"
             className={cx(
               'flex w-full items-center gap-x-2.5 rounded-md border border-gray-300 bg-white p-2 text-sm shadow-sm transition-all hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-950 hover:dark:bg-gray-900',
               focusInput,
@@ -37,7 +39,7 @@ export const WorkspacesDropdownDesktop = () => {
                 </p>
               </div>
             </div>
-          </button>
+          </Button>
         </DropdownMenuTrigger>
       </DropdownMenu>
     </>
@@ -48,7 +50,7 @@ export const WorkspacesDropdownMobile = () => {
   return (
     <>
       {/* sidebar (xs-lg) */}
-      <button className="flex items-center gap-x-1.5 rounded-md p-2 hover:bg-gray-100 focus:outline-none hover:dark:bg-gray-900">
+      <Button variant="ghost" className="h-auto gap-x-1.5 p-2">
         <span
           className={cx(
             'flex aspect-square size-7 items-center justify-center rounded bg-guardsman-red-600 p-2 text-xs font-medium text-white dark:bg-guardsman-red-500',
@@ -66,7 +68,7 @@ export const WorkspacesDropdownMobile = () => {
             MidBar Welfare
           </p>
         </div>
-      </button>
+      </Button>
     </>
   );
 };

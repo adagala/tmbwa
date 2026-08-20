@@ -5,7 +5,7 @@ import {
   RiSafe2Line,
   RiWalletLine,
 } from '@remixicon/react';
-import { List, ListItem } from '@tremor/react';
+import { List, ListItem } from '@/components/List';
 import { Input } from '@/components/Input';
 import {
   Select,

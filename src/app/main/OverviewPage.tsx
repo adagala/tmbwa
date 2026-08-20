@@ -2,7 +2,7 @@ import { Card } from '@/components/Card';
 import { Payment } from 'tmbwa-shared/firebase';
 import { MonthlyStats } from 'tmbwa-shared';
 import { RiExchangeFundsLine, RiHome2Line } from '@remixicon/react';
-import { List, ListItem } from '@tremor/react';
+import { List, ListItem } from '@/components/List';
 import { AreaChart } from '@/components/AreaChart';
 import { useEffect, useState } from 'react';
 import { getMonthlyStats, getRecentPayments } from '@/lib/firebase/firestore';

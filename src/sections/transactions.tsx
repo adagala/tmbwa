@@ -2,8 +2,9 @@ import React from 'react';
 import { Payment, Member } from 'tmbwa-shared/firebase';
 import { FirebaseTimestamp, PaymentTypeEnum } from 'tmbwa-shared';
 import { RiWalletLine } from '@remixicon/react';
-import { List, ListItem } from '@tremor/react';
+import { List, ListItem } from '@/components/List';
 import { Badge } from '@/components/Badge';
+import { Button } from '@/components/Button';
 import { printReceipt, receiptNumber } from '@/lib/memberDocuments';
 
 interface TransactionsProps extends React.ComponentPropsWithoutRef<'div'> {
@@ -58,13 +59,14 @@ const Transactions = React.forwardRef<HTMLDivElement, TransactionsProps>(
                       </div>
                     </div>
                   </div>
-                  <button
+                  <Button
+                    variant="ghost"
                     type="button"
-                    className="hidden text-xs underline sm:block"
+                    className="hidden h-auto border-0 p-0 text-xs underline shadow-none sm:inline-flex"
                     onClick={() => printReceipt(payment, member)}
                   >
                     {receiptNumber(payment)}
-                  </button>
+                  </Button>
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="shrink-0 flex items-center gap-2">

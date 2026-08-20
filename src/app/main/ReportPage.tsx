@@ -1,6 +1,25 @@
 import { useEffect, useMemo, useState } from 'react';
 import { RiDownloadLine, RiFileTextLine } from '@remixicon/react';
 import { Card } from '@/components/Card';
+import { Button } from '@/components/Button';
+import { Input } from '@/components/Input';
+import { Label } from '@/components/Label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/Select';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeaderCell,
+  TableRoot,
+  TableRow,
+} from '@/components/Table';
 import { Contribution, Member, Payment } from 'tmbwa-shared/firebase';
 import {
   getAllContributions,
@@ -96,10 +115,8 @@ export default function ReportPage() {
       ).sort((a, b) => b.month.localeCompare(a.month)),
     [visibleContributions],
   );
-  const set =
-    (key: keyof ReportFilters) =>
-    (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
-      setFilters((current) => ({ ...current, [key]: event.target.value }));
+  const set = (key: keyof ReportFilters, value: string) =>
+    setFilters((current) => ({ ...current, [key]: value }));
   return (
     <div className="flex flex-col gap-6">
       <h1 className="mt-6 flex items-center gap-2 text-xl font-bold text-guardsman-red-600">
@@ -111,64 +128,84 @@ export default function ReportPage() {
         separately.
       </p>
       <Card className="grid gap-3 md:grid-cols-5">
-        <label className="text-sm">
-          From month
-          <input
+        <div className="space-y-1">
+          <Label htmlFor="report-from">From month</Label>
+          <Input
+            id="report-from"
             type="month"
             value={filters.from}
-            onChange={set('from')}
+            onChange={(event) => set('from', event.target.value)}
             className="mt-1 w-full rounded border p-2"
           />
-        </label>
-        <label className="text-sm">
-          To month
-          <input
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor="report-to">To month</Label>
+          <Input
+            id="report-to"
             type="month"
             value={filters.to}
-            onChange={set('to')}
+            onChange={(event) => set('to', event.target.value)}
             className="mt-1 w-full rounded border p-2"
           />
-        </label>
-        <label className="text-sm">
-          Member
-          <select
-            value={filters.memberId}
-            onChange={set('memberId')}
-            className="mt-1 w-full rounded border p-2"
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor="report-member">Member</Label>
+          <Select
+            value={filters.memberId || 'all'}
+            onValueChange={(value) =>
+              set('memberId', value === 'all' ? '' : value)
+            }
           >
-            <option value="">All members</option>
-            {members.map((member) => (
-              <option key={member.member_id} value={member.member_id}>
-                {member.firstname} {member.lastname}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="text-sm">
-          Charge status
-          <select
-            value={filters.status}
-            onChange={set('status')}
-            className="mt-1 w-full rounded border p-2"
+            <SelectTrigger id="report-member">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All members</SelectItem>
+              {members.map((member) => (
+                <SelectItem key={member.member_id} value={member.member_id}>
+                  {member.firstname} {member.lastname}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor="report-status">Charge status</Label>
+          <Select
+            value={filters.status || 'all'}
+            onValueChange={(value) =>
+              set('status', value === 'all' ? '' : value)
+            }
           >
-            <option value="">All statuses</option>
-            <option value="paid">Paid</option>
-            <option value="partial">Partial</option>
-            <option value="unpaid">Unpaid</option>
-          </select>
-        </label>
-        <label className="text-sm">
-          Payment type
-          <select
-            value={filters.paymentType}
-            onChange={set('paymentType')}
-            className="mt-1 w-full rounded border p-2"
+            <SelectTrigger id="report-status">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All statuses</SelectItem>
+              <SelectItem value="paid">Paid</SelectItem>
+              <SelectItem value="partial">Partial</SelectItem>
+              <SelectItem value="unpaid">Unpaid</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor="report-payment-type">Payment type</Label>
+          <Select
+            value={filters.paymentType || 'all'}
+            onValueChange={(value) =>
+              set('paymentType', value === 'all' ? '' : value)
+            }
           >
-            <option value="">All types</option>
-            <option value="contribution">Contribution</option>
-            <option value="account">Account</option>
-          </select>
-        </label>
+            <SelectTrigger id="report-payment-type">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All types</SelectItem>
+              <SelectItem value="contribution">Contribution</SelectItem>
+              <SelectItem value="account">Account</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </Card>
       {error ? (
         <Card className="text-red-700">
@@ -200,9 +237,9 @@ export default function ReportPage() {
             ))}
           </div>
           <div className="flex justify-end">
-            <button
+            <Button
               type="button"
-              className="flex items-center gap-2 rounded bg-guardsman-red-600 px-4 py-2 text-sm font-semibold text-white"
+              className="gap-2"
               onClick={() =>
                 downloadCsv(
                   contributionCsv(visibleContributions),
@@ -212,41 +249,39 @@ export default function ReportPage() {
             >
               <RiDownloadLine className="size-4" />
               Export CSV
-            </button>
+            </Button>
           </div>
           {months.length === 0 ? (
             <Card className="text-sm text-gray-500">
               No financial records match these filters.
             </Card>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead>
-                  <tr className="border-b">
-                    <th className="p-3">Month</th>
-                    <th className="p-3">Billed</th>
-                    <th className="p-3">Collected</th>
-                    <th className="p-3">Outstanding</th>
-                  </tr>
-                </thead>
-                <tbody>
+            <TableRoot>
+              <Table>
+                <TableHead>
+                  <TableRow>
+                    <TableHeaderCell>Month</TableHeaderCell>
+                    <TableHeaderCell>Billed</TableHeaderCell>
+                    <TableHeaderCell>Collected</TableHeaderCell>
+                    <TableHeaderCell>Outstanding</TableHeaderCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
                   {months.map((row) => (
-                    <tr key={row.month} className="border-b">
-                      <td className="p-3 font-medium">
+                    <TableRow key={row.month}>
+                      <TableCell className="font-medium">
                         {monthLabel(row.month)}
-                      </td>
-                      <td className="p-3">{kenyaMoney.format(row.billed)}</td>
-                      <td className="p-3">
-                        {kenyaMoney.format(row.collected)}
-                      </td>
-                      <td className="p-3">
+                      </TableCell>
+                      <TableCell>{kenyaMoney.format(row.billed)}</TableCell>
+                      <TableCell>{kenyaMoney.format(row.collected)}</TableCell>
+                      <TableCell>
                         {kenyaMoney.format(row.billed - row.collected)}
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
-            </div>
+                </TableBody>
+              </Table>
+            </TableRoot>
           )}
         </>
       ) : null}
