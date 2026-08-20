@@ -1,5 +1,5 @@
 import * as admin from 'firebase-admin';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { defineSecret, defineString } from 'firebase-functions/params';
 import { HttpsError, onCall, onRequest } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions';
@@ -51,6 +51,15 @@ import {
 } from './domain';
 
 type Data = Record<string, unknown>;
+
+const stkCallbackMismatchAuditId = (
+  checkoutRequestId: string,
+  merchantRequestId: string,
+) =>
+  `stk-callback-mismatch-${checkoutRequestId}-${createHash('sha256')
+    .update(merchantRequestId)
+    .digest('hex')
+    .slice(0, 16)}`;
 
 const KCB_PUBLIC_KEY = defineString('KCB_PUBLIC_KEY', { default: '' });
 const APP_ENV = defineString('APP_ENV', { default: 'production' });
@@ -1234,7 +1243,7 @@ export const requestKcbStkPush = onCall(
             const merchantRequestMismatch =
               unmatchedData.merchantRequestId !== merchantRequestId;
             const status = merchantRequestMismatch
-              ? 'rejected'
+              ? 'outcome_unknown'
               : stkFailureStatus(callbackResultCode);
             transaction.update(requestRef, {
               status,
@@ -1243,14 +1252,20 @@ export const requestKcbStkPush = onCall(
               resultCode: callbackResultCode,
               resultDescription: unmatchedData.resultDescription ?? null,
               ...(merchantRequestMismatch
-                ? { callbackFailureReason: 'merchant_request_id_mismatch' }
-                : {}),
+                ? {
+                    callbackFailureReason: 'merchant_request_id_mismatch',
+                    mismatchedCallbackReceivedAt:
+                      admin.firestore.FieldValue.serverTimestamp(),
+                  }
+                : {
+                    callbackReceivedAt:
+                      admin.firestore.FieldValue.serverTimestamp(),
+                  }),
               responseCode: body.response?.ResponseCode ?? null,
               responseDescription:
                 body.response?.ResponseDescription ??
                 body.header?.statusDescription ??
                 null,
-              callbackReceivedAt: admin.firestore.FieldValue.serverTimestamp(),
               updatedAt: admin.firestore.FieldValue.serverTimestamp(),
             });
             transaction.update(lockRef, {
@@ -1258,10 +1273,55 @@ export const requestKcbStkPush = onCall(
               updatedAt: admin.firestore.FieldValue.serverTimestamp(),
             });
             transaction.update(unmatchedRef, {
-              status: 'correlated',
+              status: merchantRequestMismatch ? 'quarantined' : 'correlated',
               requestId,
-              correlatedAt: admin.firestore.FieldValue.serverTimestamp(),
+              ...(merchantRequestMismatch
+                ? {
+                    quarantinedAt:
+                      admin.firestore.FieldValue.serverTimestamp(),
+                  }
+                : {
+                    correlatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                  }),
             });
+            const callbackMerchantRequestId = String(
+              unmatchedData.merchantRequestId ?? '',
+            );
+            const auditEventId = merchantRequestMismatch
+              ? stkCallbackMismatchAuditId(
+                checkoutRequestId,
+                callbackMerchantRequestId,
+              )
+              : `stk-callback-${checkoutRequestId}`;
+            transaction.create(
+              db().doc(`audit_events/${auditEventId}`),
+              validateDocumentWrite(
+                auditEventDocumentSchema,
+                {
+                  requestId,
+                  actorId: 'system:kcb_callback',
+                  action: merchantRequestMismatch
+                    ? 'kcb_stk.callback_quarantined'
+                    : 'kcb_stk.callback_processed',
+                  memberId: current.memberId,
+                  targetId: checkoutRequestId,
+                  changes: {
+                    status,
+                    resultCode: callbackResultCode,
+                    resultDescription:
+                      unmatchedData.resultDescription ?? null,
+                    ...(merchantRequestMismatch
+                      ? {
+                          reason: 'merchant_request_id_mismatch',
+                          merchantRequestId: callbackMerchantRequestId,
+                        }
+                      : {}),
+                  },
+                  createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                },
+                `audit_events/${auditEventId}`,
+              ),
+            );
             return status;
           }
           const receiptNumber = String(unmatchedData.receiptNumber ?? '');
@@ -1695,34 +1755,44 @@ export const kcbStkCallback = onRequest(
         const merchantRequestMismatch =
           callback.merchantRequestId !== pending.merchantRequestId;
         if (merchantRequestMismatch && callback.resultCode !== 0) {
+          const auditEventId = stkCallbackMismatchAuditId(
+            callback.checkoutRequestId,
+            callback.merchantRequestId,
+          );
+          const auditEventRef = db().doc(`audit_events/${auditEventId}`);
+          const existingAuditEvent = await transaction.get(auditEventRef);
           transaction.update(correlatedRequestRef, {
-            status: 'rejected',
+            status: 'outcome_unknown',
             resultCode: callback.resultCode,
             resultDescription: callback.resultDescription,
             callbackFailureReason: 'merchant_request_id_mismatch',
-            callbackReceivedAt: admin.firestore.FieldValue.serverTimestamp(),
+            mismatchedCallbackReceivedAt:
+              admin.firestore.FieldValue.serverTimestamp(),
           });
-          updateOwnedLock('rejected');
-          transaction.create(
-            db().doc(`audit_events/stk-callback-${callback.checkoutRequestId}`),
-            validateDocumentWrite(
-              auditEventDocumentSchema,
-              {
-                requestId: pending.requestId,
-                actorId: 'system:kcb_callback',
-                action: 'kcb_stk.callback_rejected',
-                memberId: pending.memberId,
-                targetId: callback.checkoutRequestId,
-                changes: {
-                  reason: 'merchant_request_id_mismatch',
-                  merchantRequestId: callback.merchantRequestId,
-                  checkoutRequestId: callback.checkoutRequestId,
+          updateOwnedLock('outcome_unknown');
+          if (!existingAuditEvent.exists) {
+            transaction.create(
+              auditEventRef,
+              validateDocumentWrite(
+                auditEventDocumentSchema,
+                {
+                  requestId: pending.requestId,
+                  actorId: 'system:kcb_callback',
+                  action: 'kcb_stk.callback_quarantined',
+                  memberId: pending.memberId,
+                  targetId: callback.checkoutRequestId,
+                  changes: {
+                    reason: 'merchant_request_id_mismatch',
+                    status: 'outcome_unknown',
+                    merchantRequestId: callback.merchantRequestId,
+                    checkoutRequestId: callback.checkoutRequestId,
+                  },
+                  createdAt: admin.firestore.FieldValue.serverTimestamp(),
                 },
-                createdAt: admin.firestore.FieldValue.serverTimestamp(),
-              },
-              `audit_events/stk-callback-${callback.checkoutRequestId}`,
-            ),
-          );
+                `audit_events/${auditEventId}`,
+              ),
+            );
+          }
           return;
         }
         if (callback.resultCode !== 0) {

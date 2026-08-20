@@ -51,15 +51,17 @@ Member contribution payment uses the KCB STK request and callback flow and remai
 
 - Callback correlation uses both `CheckoutRequestID` and `MerchantRequestID`.
 - Non-success callback result codes are persisted as explicit statuses: `failed`, `cancelled`, or `timed_out`.
-- Successful callbacks are accepted only when callback `Amount`, `PhoneNumber`, and `MpesaReceiptNumber` match the pending STK request details.
-- Mismatch scenarios are persisted as `rejected` and audited.
+- Successful callbacks whose `Amount`, `PhoneNumber`, or `MerchantRequestID` does not match the pending request are quarantined for administrator review instead of being silently rejected.
+- Ambiguous merchant-request or terminal-receipt linkage remains `outcome_unknown` and keeps the contribution locked until an administrator verifies the provider outcome.
+- Quarantined callbacks retain the collected receipt in the unresolved reconciliation queue only after exact checkout-request correlation.
 
 ### Reconciliation lock for STK-originated notifications
 
 - STK callback notifications store authoritative `memberId` and `contributionId` linkage.
-- When source is `stk_callback`, reconciliation is locked to exactly one allocation:
+- When source is `stk_callback`, reconciliation is locked to the callback-linked contribution:
   - allocation contribution must equal the callback-linked contribution
-  - allocation amount must equal the callback amount
+- The contribution allocation is the minimum of the callback amount, requested amount, and current outstanding balance.
+- Any callback amount above that allocation is retained as member account credit instead of being discarded or forced beyond the outstanding balance.
 - This prevents relinking STK-originated payments to a different member or contribution.
 
 ### Audit trail
