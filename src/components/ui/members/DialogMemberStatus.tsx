@@ -13,6 +13,14 @@ import { Member } from 'tmbwa-shared/firebase';
 import { member_status } from 'tmbwa-shared';
 import { transitionMemberStatus } from '@/lib/firebase/financial';
 import { toast } from '@/hooks/useToast';
+import { Label } from '@/components/Label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/Select';
 
 export function DialogMemberStatus({ member }: { member: Member }) {
   const [open, setOpen] = useState(false);
@@ -31,19 +39,24 @@ export function DialogMemberStatus({ member }: { member: Member }) {
             access. Terminal resigned/deceased statuses cannot be reopened.
           </DialogDescription>
         </DialogHeader>
-        <select
-          className="w-full rounded border p-2 capitalize"
-          value={status}
-          onChange={(event) =>
-            setStatus(event.target.value as Member['status'])
-          }
-        >
-          {member_status.map((item) => (
-            <option key={item} value={item}>
-              {item}
-            </option>
-          ))}
-        </select>
+        <div className="space-y-1">
+          <Label htmlFor="member-status">Status</Label>
+          <Select
+            value={status}
+            onValueChange={(value) => setStatus(value as Member['status'])}
+          >
+            <SelectTrigger id="member-status" className="capitalize">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {member_status.map((item) => (
+                <SelectItem key={item} value={item} className="capitalize">
+                  {item}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
         <DialogFooter>
           <Button
             disabled={saving || status === member.status}

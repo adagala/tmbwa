@@ -113,6 +113,14 @@ If a baseline command is already broken, document the existing failure clearly i
 - Formatting must remain behavior-preserving. Review bulk formatting separately from intentional UI changes whenever practical.
 - Editor formatting must use the repository configuration in `.prettierrc.json`; the recommended VS Code settings format on save with the Prettier extension.
 
+## Frontend component system
+
+- Application pages, sections, and feature components must use shared UI primitives from `src/components`; this applies equally to human- and AI-generated code.
+- Do not introduce native `button`, `input`, `select`, `option`, `textarea`, `label`, or `table` elements outside top-level shared primitive implementations in `src/components`.
+- If a required primitive is missing, add it centrally under `src/components` using the current official Tremor component as the preferred source, record the source, and adapt it to repository accessibility, dark-mode, TypeScript, and styling conventions.
+- Semantic structural elements such as `form`, headings, paragraphs, sections, and layout containers may remain native when no reusable visual primitive is appropriate.
+- Run `npm run lint:ui-components` and Prettier after adding or converting UI. Any exception requires an explicit explanation in the pull request.
+
 ## Secrets and sensitive data
 
 - Never commit Firebase service-account files, passwords, API credentials, access tokens, private keys, production exports, or member financial/personal data.

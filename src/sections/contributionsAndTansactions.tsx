@@ -15,6 +15,9 @@ import {
 } from '@/lib/firebase/firestore';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { printStatement } from '@/lib/memberDocuments';
+import { Button } from '@/components/Button';
+import { Input } from '@/components/Input';
+import { Label } from '@/components/Label';
 
 interface ContributionsAndTransactionsProps
   extends React.ComponentPropsWithoutRef<'div'> {
@@ -74,27 +77,28 @@ const ContributionsAndTransactions = React.forwardRef<
           Settings
         </div>
         <div className="flex flex-wrap items-end gap-3 rounded border p-3">
-          <label className="text-xs">
-            Statement from
-            <input
-              className="mt-1 block rounded border p-2"
+          <div className="space-y-1">
+            <Label htmlFor="statement-from">Statement from</Label>
+            <Input
+              id="statement-from"
+              className="mt-1"
               type="date"
               value={statementFrom}
               onChange={(event) => setStatementFrom(event.target.value)}
             />
-          </label>
-          <label className="text-xs">
-            To
-            <input
-              className="mt-1 block rounded border p-2"
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="statement-to">To</Label>
+            <Input
+              id="statement-to"
+              className="mt-1"
               type="date"
               value={statementTo}
               onChange={(event) => setStatementTo(event.target.value)}
             />
-          </label>
-          <button
+          </div>
+          <Button
             type="button"
-            className="rounded bg-guardsman-red-600 px-4 py-2 text-sm text-white"
             onClick={() =>
               printStatement(
                 member,
@@ -106,7 +110,7 @@ const ContributionsAndTransactions = React.forwardRef<
             }
           >
             Print statement
-          </button>
+          </Button>
         </div>
         <Tabs defaultValue={currentTab}>
           <TabsList variant="line">

@@ -2,7 +2,7 @@ import React from 'react';
 import { Contribution, Member } from 'tmbwa-shared/firebase';
 import { ContributionStatusEnum } from 'tmbwa-shared';
 import { RiWalletLine, RiArrowRightSLine } from '@remixicon/react';
-import { List, ListItem } from '@tremor/react';
+import { List, ListItem } from '@/components/List';
 import { DialogContributionDetails } from '@/components/ui/contributions/DialogContributionDetails';
 import { Avatar } from '@/components/Avatar';
 import { DialogAddContribution } from '@/components/ui/contributions/DialogAddContribution';

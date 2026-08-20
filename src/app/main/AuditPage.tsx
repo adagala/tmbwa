@@ -8,6 +8,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/clientApp';
 import { Card } from '@/components/Card';
+import { Button } from '@/components/Button';
 import useUser from '@/hooks/useUser';
 import { Navigate } from 'react-router-dom';
 import { AuditEvent, auditEventSchema } from 'tmbwa-shared/firebase';
@@ -72,13 +73,12 @@ export default function AuditPage() {
           <p className="text-sm text-gray-500">No audit events found.</p>
         ) : null}
         {events.length === pageSize ? (
-          <button
+          <Button
             type="button"
-            className="rounded bg-guardsman-red-600 px-4 py-2 text-sm font-semibold text-white"
             onClick={() => setPageSize((current) => current + 100)}
           >
             Load older events
-          </button>
+          </Button>
         ) : null}
       </div>
     </div>

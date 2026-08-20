@@ -4,6 +4,15 @@ import { collection, getDocs, orderBy, query } from 'firebase/firestore';
 import { Navigate } from 'react-router-dom';
 import { Card } from '@/components/Card';
 import { Button } from '@/components/Button';
+import { Input } from '@/components/Input';
+import { Label } from '@/components/Label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/Select';
 import useUser from '@/hooks/useUser';
 import { db } from '@/lib/firebase/clientApp';
 import {
@@ -52,35 +61,39 @@ const AllocationEditor = ({
     <div className="space-y-3 sm:col-span-2">
       {rows.map((row) => (
         <div key={row.id} className="grid gap-2 sm:grid-cols-[1fr_10rem_auto]">
-          <select
-            aria-label="Contribution month"
-            className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
-            value={row.contributionId}
+          <Select
+            value={row.contributionId || 'none'}
             disabled={disabled}
-            onChange={(event) =>
-              onChange(row.id, { contributionId: event.target.value })
+            onValueChange={(value) =>
+              onChange(row.id, {
+                contributionId: value === 'none' ? '' : value,
+              })
             }
           >
-            <option value="">Choose contribution</option>
-            {options.map((item) => (
-              <option
-                key={item.id}
-                value={item.id}
-                disabled={rows.some(
-                  (other) =>
-                    other.id !== row.id && other.contributionId === item.id,
-                )}
-              >
-                {item.month} — KES {item.balance.toLocaleString('en-KE')} due
-              </option>
-            ))}
-          </select>
-          <input
+            <SelectTrigger aria-label="Contribution month">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Choose contribution</SelectItem>
+              {options.map((item) => (
+                <SelectItem
+                  key={item.id}
+                  value={item.id}
+                  disabled={rows.some(
+                    (other) =>
+                      other.id !== row.id && other.contributionId === item.id,
+                  )}
+                >
+                  {item.month} — KES {item.balance.toLocaleString('en-KE')} due
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Input
             aria-label="Allocation amount"
             type="number"
             min="1"
             step="1"
-            className="rounded-md border border-gray-300 px-3 py-2 text-sm"
             placeholder="Amount"
             value={row.amount}
             disabled={disabled}
@@ -88,13 +101,14 @@ const AllocationEditor = ({
               onChange(row.id, { amount: event.target.value })
             }
           />
-          <button
+          <Button
+            variant="ghost"
             type="button"
-            className="text-sm font-medium text-red-700 underline"
+            className="h-auto border-0 p-0 text-sm font-medium text-red-700 underline shadow-none"
             onClick={() => onRemove(row.id)}
           >
             Remove
-          </button>
+          </Button>
         </div>
       ))}
       <Button variant="secondary" disabled={disabled} onClick={onAdd}>
@@ -504,9 +518,12 @@ export default function KcbReconciliationPage() {
             </p>
           </div>
           <div className="flex flex-wrap items-end gap-3">
-            <label className="text-sm font-medium text-amber-950">
-              Test amount (KES)
-              <input
+            <div className="space-y-1">
+              <Label htmlFor="kcb-test-amount" className="text-amber-950">
+                Test amount (KES)
+              </Label>
+              <Input
+                id="kcb-test-amount"
                 type="number"
                 min="1"
                 max="10000"
@@ -516,9 +533,10 @@ export default function KcbReconciliationPage() {
                   pendingTestRequestId.current = undefined;
                   setTestAmount(Number(event.target.value));
                 }}
-                className="mt-1 block w-40 rounded-md border border-amber-400 bg-white px-3 py-2"
+                className="mt-1 w-40"
+                inputClassName="border-amber-400 bg-white"
               />
-            </label>
+            </div>
             <Button
               variant="secondary"
               isLoading={busy === 'dev-simulator'}
@@ -576,38 +594,50 @@ export default function KcbReconciliationPage() {
                 </p>
               ) : null}
               <div className="grid gap-3 sm:grid-cols-2">
-                <label className="text-sm font-medium">
-                  Member
-                  <select
-                    className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2"
-                    value={memberId}
-                    onChange={(event) =>
+                <div className="space-y-1">
+                  <Label htmlFor={`member-${payment.providerTransactionId}`}>
+                    Member
+                  </Label>
+                  <Select
+                    value={memberId || 'none'}
+                    onValueChange={(value) =>
                       void loadContributions(
                         payment.providerTransactionId,
-                        event.target.value,
+                        value === 'none' ? '' : value,
                       )
                     }
                   >
-                    <option value="">Choose member</option>
-                    {members.map((member) => (
-                      <option key={member.member_id} value={member.member_id}>
-                        {member.firstname} {member.lastname}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                    <SelectTrigger
+                      id={`member-${payment.providerTransactionId}`}
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Choose member</SelectItem>
+                      {members.map((member) => (
+                        <SelectItem
+                          key={member.member_id}
+                          value={member.member_id}
+                        >
+                          {member.firstname} {member.lastname}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
                 <div className="text-sm font-medium">
                   Contribution allocations
                   {contributionStatus === 'error' ? (
                     <span className="mt-1 block text-xs text-red-700">
                       {contributionErrors[memberId]}
-                      <button
+                      <Button
+                        variant="ghost"
                         type="button"
-                        className="ml-2 font-semibold underline"
+                        className="ml-2 h-auto border-0 p-0 font-semibold underline shadow-none"
                         onClick={() => void loadMemberContributions(memberId)}
                       >
                         Retry
-                      </button>
+                      </Button>
                     </span>
                   ) : null}
                   {(contributionWarnings[memberId] ?? 0) > 0 ? (
