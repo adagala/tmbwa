@@ -18,6 +18,14 @@ import { unallocatedPaymentAmount } from 'tmbwa-shared';
 
 export type { KcbPaymentNotification } from 'tmbwa-shared/firebase';
 
+export type AmbiguousKcbStkRequest = {
+  requestId: string;
+  memberId: string;
+  contributionId: string;
+  status: 'dispatching' | 'outcome_unknown';
+  failureCategory?: string;
+};
+
 const pendingRequests = new Map<string, string>();
 
 const call = async (name: string, data: Record<string, unknown>) => {
@@ -115,6 +123,46 @@ export const subscribeToKcbPaymentsWithCredit = (
     },
   );
 
+export const subscribeToAmbiguousKcbStkRequests = (
+  callback: (items: AmbiguousKcbStkRequest[]) => void,
+) =>
+  onSnapshot(
+    query(
+      collection(db, 'kcb_stk_requests'),
+      where('status', 'in', ['dispatching', 'outcome_unknown']),
+    ),
+    (snapshot) =>
+      callback(
+        snapshot.docs.flatMap((item) => {
+          const data = item.data();
+          const status = data.status as 'dispatching' | 'outcome_unknown';
+          const failureCategory =
+            typeof data.failureCategory === 'string'
+              ? data.failureCategory
+              : undefined;
+          if (
+            status === 'outcome_unknown' &&
+            (Number(data.resultCode) === 0 ||
+              ![
+                'provider_outcome_unknown',
+                'provider_response_missing_correlation_ids',
+              ].includes(failureCategory ?? ''))
+          ) {
+            return [];
+          }
+          return [
+            {
+              requestId: item.id,
+              memberId: String(data.memberId ?? ''),
+              contributionId: String(data.contributionId ?? ''),
+              status,
+              ...(failureCategory ? { failureCategory } : {}),
+            },
+          ];
+        }),
+      ),
+  );
+
 export const reconcileKcbPayment = (data: {
   providerTransactionId: string;
   memberId: string;
@@ -136,6 +184,11 @@ export const rejectKcbPayment = (
   providerTransactionId: string,
   reason: string,
 ) => call('rejectKcbPayment', { providerTransactionId, reason });
+
+export const resolveKcbStkUnknownOutcome = (
+  stkRequestId: string,
+  reason: string,
+) => call('resolveKcbStkUnknownOutcome', { stkRequestId, reason });
 
 export const sendKcbDevTillNotification = (amount: number, requestId: string) =>
   httpsCallable(

@@ -69,6 +69,13 @@ Member contribution payment uses the KCB STK request and callback flow and remai
 - Request creation, callback processing outcomes, and callback rejections are auditable.
 - The expected trace is: STK request -> callback status -> payment notification -> contribution reconciliation.
 
+### Resolving an ambiguous provider outcome
+
+- Administrators can review eligible `dispatching` and `outcome_unknown` requests under **KCB payment reconciliation -> Ambiguous STK provider outcomes**.
+- Use **Confirm no payment and release lock** only after KCB provides evidence that the request was not accepted and no member charge occurred; record that evidence in the required reason.
+- The backend accepts this action only for an expired dispatch or an outcome caused by a lost/incomplete provider response.
+- Confirmed successful callbacks with merchant or receipt-linkage conflicts are excluded from this action and remain locked for financial investigation and reconciliation.
+
 ## Deployment steps for issue #42
 
 Deploy from a reviewed branch state after tests pass.

@@ -31,6 +31,7 @@ import {
   acknowledgement,
   isActiveStkRequestStatus,
   isLockedStkReconciliation,
+  isManuallyResolvableStkUnknownOutcome,
   isRecoverableStkLeaseStatus,
   isSameStkRequestPayload,
   isStkInitiationLeaseExpired,
@@ -832,10 +833,16 @@ export const resolveKcbStkUnknownOutcome = onCall(async (request) => {
       throw new HttpsError('not-found', 'STK request not found.');
     }
     const stkRequest = kcbStkRequestData(stkRequestSnapshot);
-    if (!['dispatching', 'outcome_unknown'].includes(stkRequest.status)) {
+    if (
+      !isManuallyResolvableStkUnknownOutcome({
+        status: stkRequest.status,
+        failureCategory: stkRequest.failureCategory,
+        resultCode: stkRequest.resultCode,
+      })
+    ) {
       throw new HttpsError(
         'failed-precondition',
-        'Only a dispatching or outcome-unknown STK request can be resolved manually.',
+        'Only an ambiguous provider dispatch can be marked as failed manually.',
       );
     }
     const dispatchStartedAtMillis = timestampMillis(

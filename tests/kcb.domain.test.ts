@@ -2,6 +2,7 @@ import { generateKeyPairSync, createSign } from 'crypto';
 import { describe, expect, it } from 'vitest';
 import {
   acknowledgement, isActiveStkRequestStatus, isLockedStkReconciliation,
+  isManuallyResolvableStkUnknownOutcome,
   isRecoverableStkLeaseStatus,
   isSameStkRequestPayload, isStkInitiationLeaseExpired,
   isSuccessfulStkDuplicateStatus,
@@ -189,6 +190,27 @@ describe('KCB Till notification contract', () => {
     expect(isStkInitiationLeaseExpired(1_000, 1_000)).toBe(true);
     expect(isStkInitiationLeaseExpired(1_001, 1_000)).toBe(false);
     expect(isStkInitiationLeaseExpired(undefined, 1_000)).toBe(false);
+  });
+
+  it('allows manual failure resolution only for ambiguous provider dispatches', () => {
+    expect(isManuallyResolvableStkUnknownOutcome({
+      status: 'dispatching', failureCategory: undefined, resultCode: undefined,
+    })).toBe(true);
+    expect(isManuallyResolvableStkUnknownOutcome({
+      status: 'outcome_unknown', failureCategory: 'provider_outcome_unknown',
+      resultCode: undefined,
+    })).toBe(true);
+    expect(isManuallyResolvableStkUnknownOutcome({
+      status: 'outcome_unknown',
+      failureCategory: 'provider_response_missing_correlation_ids',
+      resultCode: undefined,
+    })).toBe(true);
+    expect(isManuallyResolvableStkUnknownOutcome({
+      status: 'outcome_unknown', failureCategory: undefined, resultCode: 0,
+    })).toBe(false);
+    expect(isManuallyResolvableStkUnknownOutcome({
+      status: 'outcome_unknown', failureCategory: undefined, resultCode: 1032,
+    })).toBe(false);
   });
 
   it('releases terminal receipt locks only for matching STK linkage', () => {

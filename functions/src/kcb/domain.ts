@@ -222,6 +222,19 @@ export const isSuccessfulStkDuplicateStatus = (status: string) =>
 export const isRecoverableStkLeaseStatus = (status: string) =>
   status === 'initiating';
 
+export const isManuallyResolvableStkUnknownOutcome = (args: {
+  status: string;
+  failureCategory: unknown;
+  resultCode: unknown;
+}) =>
+  args.status === 'dispatching' ||
+  (args.status === 'outcome_unknown' &&
+    args.resultCode !== 0 &&
+    [
+      'provider_outcome_unknown',
+      'provider_response_missing_correlation_ids',
+    ].includes(String(args.failureCategory ?? '')));
+
 export const terminalNotificationMatchesStkRequest = (args: {
   notificationStatus: string;
   notificationMemberId: string | undefined;
