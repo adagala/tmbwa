@@ -219,7 +219,7 @@ export const isSuccessfulStkDuplicateStatus = (status: string) =>
   ['pending', 'succeeded_pending_reconciliation'].includes(status);
 
 export const isRecoverableStkLeaseStatus = (status: string) =>
-  ['initiating', 'outcome_unknown'].includes(status);
+  status === 'initiating';
 
 export const isStkInitiationLeaseExpired = (
   leaseExpiresAtMillis: number | undefined,

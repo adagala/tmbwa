@@ -11,7 +11,7 @@ import {
   DialogTrigger,
 } from '@/components/Dialog';
 import { useToast } from '@/hooks/useToast';
-import { deleteMember } from '@/lib/firebase/firestore';
+import { deleteMemberSafely } from '@/lib/firebase/financial';
 import { Member } from 'tmbwa-shared/firebase';
 import { useNavigate } from 'react-router-dom';
 
@@ -35,9 +35,10 @@ export const DialogDeleteMember = ({ member }: { member: Member }) => {
           </DialogTrigger>
           <DialogContent className="sm:max-w-lg">
             <form
-              onSubmit={() => {
+              onSubmit={(event) => {
+                event.preventDefault();
                 setIsLoading(true);
-                deleteMember(member.member_id)
+                deleteMemberSafely(member.member_id)
                   .then(() => {
                     toast({
                       title: 'Success',

@@ -42,7 +42,7 @@ Member contribution payment uses the KCB STK request and callback flow and remai
 
 - Members can request STK only for their own contribution unless the caller is an administrator.
 - The request is idempotent by `requestId`. Reusing an existing `requestId` is accepted only when `memberId`, `contributionId`, and `amount` are identical.
-- Stale initiating or outcome-unknown retries retain the original provider `messageId` and invoice number; the contribution remains locked while the bounded recovery lease is active.
+- Stale initiating retries retain the original provider `messageId` and invoice number. Ambiguous `outcome_unknown` requests are never redispatched and remain locked until an administrator verifies the provider outcome and resolves them.
 - Member status must be active.
 - Phone target is always the member profile phone (`members/{memberId}.phonenumber`) after Kenyan phone normalization.
 - `amount` must be a positive integer and cannot exceed the contribution balance.
@@ -105,7 +105,7 @@ firebase functions:secrets:set KCB_CONSUMER_SECRET
 ### 3) Deploy only affected Functions plus hosting
 
 ```bash
-firebase deploy --only functions:reconcileKcbPayment,functions:allocateKcbPaymentCredit,functions:rejectKcbPayment,functions:requestKcbStkPush,functions:kcbStkCallback,functions:reverseContributionPayment,functions:correctLegacyContribution,functions:reverseLegacyContributionCorrection,functions:removeContribution,hosting --project <project-id>
+firebase deploy --only functions:reconcileKcbPayment,functions:allocateKcbPaymentCredit,functions:rejectKcbPayment,functions:resolveKcbStkUnknownOutcome,functions:requestKcbStkPush,functions:kcbStkCallback,functions:reverseContributionPayment,functions:correctLegacyContribution,functions:reverseLegacyContributionCorrection,functions:removeContribution,functions:deleteMemberSafely,functions:deleteMember,firestore:rules,hosting --project <project-id>
 ```
 
 ### 4) Post-deploy verification

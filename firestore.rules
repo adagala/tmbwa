@@ -40,7 +40,8 @@ service cloud.firestore {
     match /members/{memberId} {
       allow get: if isAdministrator() || isActiveOwner(memberId);
       allow list: if isAdministrator();
-      allow create, delete: if isAdministrator();
+      allow create: if isAdministrator();
+      allow delete: if false;
       allow update: if (isAdministrator() && administratorMemberFieldsOnly()) ||
         (isActiveOwner(memberId) && ownerProfileFieldsOnly());
 

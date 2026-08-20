@@ -611,6 +611,42 @@ export const removeContribution = onCall(async (request) => {
   });
 });
 
+export const deleteMemberSafely = onCall(async (request) => {
+  const actorId = requireAdministrator(request.auth);
+  const data = request.data as CommandData;
+  const requestId = requiredString(data, 'requestId');
+  const memberId = requiredString(data, 'memberId');
+  return db().runTransaction(async (transaction) => {
+    const command = await readCommand(transaction, requestId);
+    if (command.exists) return { requestId, duplicate: true };
+    const memberRef = db().doc(`members/${memberId}`);
+    const [memberSnapshot, contributions] = await Promise.all([
+      transaction.get(memberRef),
+      transaction.get(db().collection(`members/${memberId}/contributions`)),
+    ]);
+    if (!memberSnapshot.exists) {
+      throw new HttpsError('not-found', 'Member not found.');
+    }
+    const lockSnapshots = await Promise.all(
+      contributions.docs.map((contribution) =>
+        transaction.get(stkContributionLockRef(memberId, contribution.id))),
+    );
+    lockSnapshots.forEach(assertNoActiveStkLock);
+    writeCommand(transaction, command.ref, 'deleteMemberSafely', actorId);
+    transaction.delete(memberRef);
+    writeAuditEvent(
+      transaction,
+      requestId,
+      actorId,
+      'member.deleted',
+      memberId,
+      memberId,
+      { contributionCount: contributions.size },
+    );
+    return { requestId, duplicate: false };
+  });
+});
+
 const lifecycleTransitions: Record<string, string[]> = {
   active: ['inactive', 'suspended', 'resigned', 'deceased'],
   inactive: ['active', 'suspended', 'resigned', 'deceased'],

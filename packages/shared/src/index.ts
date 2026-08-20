@@ -231,6 +231,7 @@ export const kcbStkRequestStatusSchema = z.enum([
   'outcome_unknown',
   'pending',
   'succeeded_pending_reconciliation',
+  'reconciled',
   'failed',
   'cancelled',
   'timed_out',
