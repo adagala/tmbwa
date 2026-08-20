@@ -1250,7 +1250,7 @@ export const requestKcbStkPush = onCall(
               requestId,
               correlatedAt: admin.firestore.FieldValue.serverTimestamp(),
             });
-            return 'correlated_failure';
+            return status;
           }
           const receiptNumber = String(unmatchedData.receiptNumber ?? '');
           const notificationRef = db().doc(
@@ -1263,6 +1263,29 @@ export const requestKcbStkPush = onCall(
               'The unmatched STK callback is missing its quarantined receipt.',
             );
           }
+          const notificationData = kcbPaymentNotificationData(notification);
+          const notificationStatus = notificationData.status;
+          const terminalReceiptMatchesRequest =
+            notificationStatus !== 'unresolved'
+              ? terminalNotificationMatchesStkRequest({
+                notificationStatus,
+                notificationMemberId: notificationData.memberId,
+                notificationStkRequestId: notificationData.stkRequestId,
+                allocations: notificationData.allocations ?? [],
+                requestId,
+                memberId: current.memberId,
+                contributionId: current.contributionId,
+                amount: Number(current.amount),
+              })
+              : undefined;
+          const terminalNotificationStatus =
+            notificationStatus !== 'unresolved'
+              ? terminalReceiptMatchesRequest
+                ? notificationStatus === 'reconciled'
+                  ? 'reconciled'
+                  : 'rejected'
+                : 'rejected'
+              : undefined;
           const callbackMatchesRequest = unmatchedStkCallbackMatchesRequest({
             callbackMerchantRequestId: unmatchedData.merchantRequestId,
             callbackAmount: unmatchedData.amount,
@@ -1271,30 +1294,38 @@ export const requestKcbStkPush = onCall(
             requestAmount: Number(current.amount),
             requestPhone: current.phone,
           });
-          transaction.set(
-            notificationRef,
-            {
-              billReference: current.invoiceNumber,
-              suggestedMemberId: current.memberId,
-              memberId: current.memberId,
-              contributionId: current.contributionId,
-              matchReason: callbackMatchesRequest
-                ? 'authenticated_stk_request'
-                : 'authenticated_stk_request_mismatch',
-              source: 'stk_callback',
-              stkRequestId: requestId,
-              requestedAmount: Number(current.amount),
-              reconciliationWarning: callbackMatchesRequest
-                ? admin.firestore.FieldValue.delete()
-                : 'payment_details_mismatch',
-            },
-            { merge: true },
-          );
+          if (!terminalNotificationStatus) {
+            transaction.set(
+              notificationRef,
+              {
+                billReference: current.invoiceNumber,
+                suggestedMemberId: current.memberId,
+                memberId: current.memberId,
+                contributionId: current.contributionId,
+                matchReason: callbackMatchesRequest
+                  ? 'authenticated_stk_request'
+                  : 'authenticated_stk_request_mismatch',
+                source: 'stk_callback',
+                stkRequestId: requestId,
+                requestedAmount: Number(current.amount),
+                reconciliationWarning: callbackMatchesRequest
+                  ? admin.firestore.FieldValue.delete()
+                  : 'payment_details_mismatch',
+              },
+              { merge: true },
+            );
+          }
+          const correlatedStatus =
+            terminalNotificationStatus ?? 'succeeded_pending_reconciliation';
           transaction.update(requestRef, {
-            status: 'succeeded_pending_reconciliation',
+            status: correlatedStatus,
             merchantRequestId,
             checkoutRequestId,
             providerTransactionId: receiptNumber,
+            ...(terminalNotificationStatus === 'rejected' &&
+            terminalReceiptMatchesRequest === false
+              ? { callbackFailureReason: 'terminal_receipt_linkage_mismatch' }
+              : {}),
             responseCode: body.response?.ResponseCode ?? null,
             responseDescription:
               body.response?.ResponseDescription ??
@@ -1304,7 +1335,7 @@ export const requestKcbStkPush = onCall(
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
           });
           transaction.update(lockRef, {
-            status: 'succeeded_pending_reconciliation',
+            status: correlatedStatus,
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
           });
           transaction.update(unmatchedRef, {
@@ -1312,7 +1343,7 @@ export const requestKcbStkPush = onCall(
             requestId,
             correlatedAt: admin.firestore.FieldValue.serverTimestamp(),
           });
-          return 'correlated';
+          return correlatedStatus;
         }
         transaction.update(requestRef, {
           status: accepted ? 'pending' : 'rejected',
@@ -1343,7 +1374,11 @@ export const requestKcbStkPush = onCall(
           'The STK request state changed before the provider response arrived.',
         );
       }
-      if (responseStored === 'correlated_failure') {
+      if (
+        responseStored !== 'stored' &&
+        responseStored !== 'succeeded_pending_reconciliation' &&
+        responseStored !== 'reconciled'
+      ) {
         throw new HttpsError(
           'failed-precondition',
           'KCB reported that the STK request did not complete.',
@@ -1357,10 +1392,7 @@ export const requestKcbStkPush = onCall(
       }
       return {
         requestId,
-        status:
-          responseStored === 'correlated'
-            ? 'succeeded_pending_reconciliation'
-            : 'pending',
+        status: responseStored === 'stored' ? 'pending' : responseStored,
         merchantRequestId,
         checkoutRequestId,
         duplicate: false,
