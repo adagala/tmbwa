@@ -1265,25 +1265,27 @@ export const requestKcbStkPush = onCall(
             return status;
           }
           const receiptNumber = String(unmatchedData.receiptNumber ?? '');
+          if (!receiptNumber) {
+            throw new HttpsError(
+              'data-loss',
+              'The unmatched STK callback is missing its receipt number.',
+            );
+          }
           const notificationRef = db().doc(
             `kcb_payment_notifications/${receiptNumber}`,
           );
           const notification = await transaction.get(notificationRef);
-          if (!receiptNumber || !notification.exists) {
-            throw new HttpsError(
-              'data-loss',
-              'The unmatched STK callback is missing its quarantined receipt.',
-            );
-          }
-          const notificationData = kcbPaymentNotificationData(notification);
-          const notificationStatus = notificationData.status;
+          const notificationData = notification.exists
+            ? kcbPaymentNotificationData(notification)
+            : undefined;
+          const notificationStatus = notificationData?.status;
           const terminalReceiptMatchesRequest =
-            notificationStatus !== 'unresolved'
+            notificationStatus && notificationStatus !== 'unresolved'
               ? terminalNotificationMatchesStkRequest({
                 notificationStatus,
-                notificationMemberId: notificationData.memberId,
-                notificationStkRequestId: notificationData.stkRequestId,
-                allocations: notificationData.allocations ?? [],
+                notificationMemberId: notificationData?.memberId,
+                notificationStkRequestId: notificationData?.stkRequestId,
+                allocations: notificationData?.allocations ?? [],
                 requestId,
                 memberId: current.memberId,
                 contributionId: current.contributionId,
@@ -1291,7 +1293,7 @@ export const requestKcbStkPush = onCall(
               })
               : undefined;
           const terminalNotificationStatus =
-            notificationStatus !== 'unresolved'
+            notificationStatus && notificationStatus !== 'unresolved'
               ? terminalReceiptMatchesRequest
                 ? notificationStatus === 'reconciled'
                   ? 'reconciled'
@@ -1307,25 +1309,58 @@ export const requestKcbStkPush = onCall(
             requestPhone: current.phone,
           });
           if (!terminalNotificationStatus) {
-            transaction.set(
-              notificationRef,
-              {
-                billReference: current.invoiceNumber,
-                suggestedMemberId: current.memberId,
-                memberId: current.memberId,
-                contributionId: current.contributionId,
-                matchReason: callbackMatchesRequest
-                  ? 'authenticated_stk_request'
-                  : 'authenticated_stk_request_mismatch',
-                source: 'stk_callback',
-                stkRequestId: requestId,
-                requestedAmount: Number(current.amount),
-                reconciliationWarning: callbackMatchesRequest
-                  ? admin.firestore.FieldValue.delete()
-                  : 'payment_details_mismatch',
-              },
-              { merge: true },
-            );
+            const correlatedNotification = {
+              billReference: current.invoiceNumber,
+              suggestedMemberId: current.memberId,
+              memberId: current.memberId,
+              contributionId: current.contributionId,
+              matchReason: callbackMatchesRequest
+                ? 'authenticated_stk_request'
+                : 'authenticated_stk_request_mismatch',
+              source: 'stk_callback',
+              stkRequestId: requestId,
+              requestedAmount: Number(current.amount),
+            };
+            if (notification.exists) {
+              transaction.set(
+                notificationRef,
+                {
+                  ...correlatedNotification,
+                  reconciliationWarning: callbackMatchesRequest
+                    ? admin.firestore.FieldValue.delete()
+                    : 'payment_details_mismatch',
+                },
+                { merge: true },
+              );
+            } else {
+              transaction.create(
+                notificationRef,
+                validateDocumentWrite(
+                  kcbPaymentNotificationDocumentSchema,
+                  {
+                    providerTransactionId: receiptNumber,
+                    messageId: checkoutRequestId,
+                    channelCode: 'stk',
+                    ...correlatedNotification,
+                    payerPhone: String(unmatchedData.payerPhone ?? ''),
+                    payerName: '',
+                    amount: Number(unmatchedData.amount),
+                    currency: KCB_CURRENCY.value(),
+                    transactionDate: String(
+                      unmatchedData.transactionDate ?? '',
+                    ),
+                    transactionType: 'MPESA_STK',
+                    status: 'unresolved',
+                    provider: 'kcb_buni',
+                    ...(!callbackMatchesRequest
+                      ? { reconciliationWarning: 'payment_details_mismatch' }
+                      : {}),
+                    receivedAt: admin.firestore.FieldValue.serverTimestamp(),
+                  },
+                  notificationRef.path,
+                ),
+              );
+            }
           }
           const correlatedStatus =
             terminalNotificationStatus ?? 'succeeded_pending_reconciliation';
@@ -1355,6 +1390,36 @@ export const requestKcbStkPush = onCall(
             requestId,
             correlatedAt: admin.firestore.FieldValue.serverTimestamp(),
           });
+          transaction.create(
+            db().doc(`audit_events/stk-callback-${checkoutRequestId}`),
+            validateDocumentWrite(
+              auditEventDocumentSchema,
+              {
+                requestId,
+                actorId: 'system:kcb_callback',
+                action:
+                  correlatedStatus === 'outcome_unknown' ||
+                  !callbackMatchesRequest
+                    ? 'kcb_stk.callback_quarantined'
+                    : 'kcb_stk.callback_processed',
+                memberId: current.memberId,
+                targetId: checkoutRequestId,
+                changes: {
+                  status: correlatedStatus,
+                  providerTransactionId: receiptNumber,
+                  contributionId: current.contributionId,
+                  amount: Number(unmatchedData.amount),
+                  ...(!callbackMatchesRequest
+                    ? { reason: 'payment_details_mismatch' }
+                    : terminalReceiptMatchesRequest === false
+                      ? { reason: 'terminal_receipt_linkage_mismatch' }
+                      : {}),
+                },
+                createdAt: admin.firestore.FieldValue.serverTimestamp(),
+              },
+              `audit_events/stk-callback-${checkoutRequestId}`,
+            ),
+          );
           return correlatedStatus;
         }
         if (
@@ -1541,42 +1606,8 @@ export const kcbStkCallback = onRequest(
       if (!requestRef) {
         let linkedRequestId: string | undefined;
         if (callback.resultCode === 0) {
-          const notificationRef = db().doc(
-            `kcb_payment_notifications/${callback.receiptNumber}`,
-          );
           linkedRequestId = await db().runTransaction(async (transaction) => {
-            const [notification, unmatched] = await Promise.all([
-              transaction.get(notificationRef),
-              transaction.get(unmatchedRef),
-            ]);
-            if (!notification.exists) {
-              transaction.create(
-                notificationRef,
-                validateDocumentWrite(
-                  kcbPaymentNotificationDocumentSchema,
-                  {
-                    providerTransactionId: callback.receiptNumber,
-                    messageId: callback.checkoutRequestId,
-                    channelCode: 'stk',
-                    billReference: '',
-                    payerPhone: callback.payerPhone,
-                    payerName: '',
-                    amount: callback.amount,
-                    currency: KCB_CURRENCY.value(),
-                    transactionDate: callback.transactionDate,
-                    transactionType: 'MPESA_STK',
-                    status: 'unresolved',
-                    suggestedMemberId: null,
-                    matchReason: 'unmatched_stk_callback',
-                    provider: 'kcb_buni',
-                    source: 'stk_callback_unmatched',
-                    reconciliationWarning: 'pending_request_correlation',
-                    receivedAt: admin.firestore.FieldValue.serverTimestamp(),
-                  },
-                  notificationRef.path,
-                ),
-              );
-            }
+            const unmatched = await transaction.get(unmatchedRef);
             transaction.set(
               unmatchedRef,
               {
