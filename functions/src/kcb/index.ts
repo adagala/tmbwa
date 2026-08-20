@@ -1184,6 +1184,11 @@ export const requestKcbStkPush = onCall(
           : null;
       providerMerchantRequestId = merchantRequestId;
       providerCheckoutRequestId = checkoutRequestId;
+      const providerResponseStatus = accepted
+        ? merchantRequestId && checkoutRequestId
+          ? 'pending'
+          : 'outcome_unknown'
+        : 'rejected';
       const responseStored = await db().runTransaction(async (transaction) => {
         const unmatchedRef = checkoutRequestId
           ? db().doc(`kcb_stk_unmatched_callbacks/${checkoutRequestId}`)
@@ -1206,6 +1211,7 @@ export const requestKcbStkPush = onCall(
         }
         if (
           accepted &&
+          merchantRequestId &&
           checkoutRequestId &&
           unmatchedRef &&
           unmatched?.exists &&
@@ -1290,7 +1296,7 @@ export const requestKcbStkPush = onCall(
                 ? notificationStatus === 'reconciled'
                   ? 'reconciled'
                   : 'rejected'
-                : 'rejected'
+                : 'outcome_unknown'
               : undefined;
           const callbackMatchesRequest = unmatchedStkCallbackMatchesRequest({
             callbackMerchantRequestId: unmatchedData.merchantRequestId,
@@ -1328,7 +1334,7 @@ export const requestKcbStkPush = onCall(
             merchantRequestId,
             checkoutRequestId,
             providerTransactionId: receiptNumber,
-            ...(terminalNotificationStatus === 'rejected' &&
+            ...(terminalNotificationStatus === 'outcome_unknown' &&
             terminalReceiptMatchesRequest === false
               ? { callbackFailureReason: 'terminal_receipt_linkage_mismatch' }
               : {}),
@@ -1351,7 +1357,12 @@ export const requestKcbStkPush = onCall(
           });
           return correlatedStatus;
         }
-        if (accepted && checkoutRequestId && unmatchedRef) {
+        if (
+          accepted &&
+          merchantRequestId &&
+          checkoutRequestId &&
+          unmatchedRef
+        ) {
           transaction.set(
             unmatchedRef,
             {
@@ -1365,9 +1376,14 @@ export const requestKcbStkPush = onCall(
           );
         }
         transaction.update(requestRef, {
-          status: accepted ? 'pending' : 'rejected',
+          status: providerResponseStatus,
           merchantRequestId,
           checkoutRequestId,
+          ...(accepted && providerResponseStatus === 'outcome_unknown'
+            ? {
+                failureCategory: 'provider_response_missing_correlation_ids',
+              }
+            : {}),
           responseCode: body.response?.ResponseCode ?? null,
           responseDescription:
             body.response?.ResponseDescription ??
@@ -1376,7 +1392,7 @@ export const requestKcbStkPush = onCall(
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         });
         transaction.update(lockRef, {
-          status: accepted ? 'pending' : 'rejected',
+          status: providerResponseStatus,
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         });
         return 'stored';
@@ -1403,10 +1419,10 @@ export const requestKcbStkPush = onCall(
           'KCB reported that the STK request did not complete.',
         );
       }
-      if (!accepted || !checkoutRequestId) {
+      if (!accepted || !merchantRequestId || !checkoutRequestId) {
         throw new HttpsError(
           'failed-precondition',
-          'KCB did not accept the STK request.',
+          'KCB did not return a complete accepted STK response.',
         );
       }
       return {
