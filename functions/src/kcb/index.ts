@@ -1377,7 +1377,13 @@ export const requestKcbStkPush = onCall(
           });
           if (!terminalNotificationStatus) {
             const correlatedNotification = {
+              messageId: checkoutRequestId,
+              channelCode: 'stk',
               billReference: current.invoiceNumber,
+              payerPhone: String(unmatchedData.payerPhone ?? ''),
+              amount: Number(unmatchedData.amount),
+              transactionDate: String(unmatchedData.transactionDate ?? ''),
+              transactionType: 'MPESA_STK',
               suggestedMemberId: current.memberId,
               memberId: current.memberId,
               contributionId: current.contributionId,
@@ -1385,6 +1391,7 @@ export const requestKcbStkPush = onCall(
                 ? 'authenticated_stk_request'
                 : 'authenticated_stk_request_mismatch',
               source: 'stk_callback',
+              provider: 'kcb_buni',
               stkRequestId: requestId,
               requestedAmount: Number(current.amount),
             };
@@ -1406,19 +1413,10 @@ export const requestKcbStkPush = onCall(
                   kcbPaymentNotificationDocumentSchema,
                   {
                     providerTransactionId: receiptNumber,
-                    messageId: checkoutRequestId,
-                    channelCode: 'stk',
                     ...correlatedNotification,
-                    payerPhone: String(unmatchedData.payerPhone ?? ''),
                     payerName: '',
-                    amount: Number(unmatchedData.amount),
                     currency: KCB_CURRENCY.value(),
-                    transactionDate: String(
-                      unmatchedData.transactionDate ?? '',
-                    ),
-                    transactionType: 'MPESA_STK',
                     status: 'unresolved',
-                    provider: 'kcb_buni',
                     ...(!callbackMatchesRequest
                       ? { reconciliationWarning: 'payment_details_mismatch' }
                       : {}),
