@@ -117,10 +117,11 @@ firebase functions:secrets:set KCB_CONSUMER_SECRET
 ### 3) Deploy the lock-aware STK entry points first
 
 ```bash
+firebase deploy --only firestore:indexes --project <project-id>
 firebase deploy --only functions:requestKcbStkPush,functions:kcbStkCallback,functions:resolveKcbStkUnknownOutcome --project <project-id>
 ```
 
-This prevents new lockless requests while the legacy active-request migration runs.
+Wait for the `kcb_stk_requests(memberId, contributionId)` index to finish building before deploying the Functions. This scopes legacy-request protection to one member contribution and prevents new lockless requests while the migration runs.
 
 ### 4) Backfill every active legacy STK lock
 
@@ -133,7 +134,7 @@ GOOGLE_CLOUD_PROJECT=<project-id> npm run migrate:stk-locks -- --apply
 cd ..
 ```
 
-Lease-less legacy `initiating` requests receive an expired recovery lease, allowing the original request ID to retry safely. Re-run the dry-run and require it to report the expected active locks before continuing.
+Lease-less legacy `initiating` requests receive an expired recovery lease, allowing the original request ID to retry safely. Each write transaction re-reads the request and lock, skips newly terminal requests, releases any stale owned lock, and refuses new ownership conflicts. Re-run the dry-run after any interrupted or failed apply and require it to report the expected active locks before continuing.
 
 ### 5) Deploy guarded mutations, rules, and hosting
 

@@ -80,29 +80,64 @@ const backfillActiveStkLocks = async () => {
   });
   if (!apply || !plans.length) return;
 
-  for (let offset = 0; offset < plans.length; offset += 200) {
-    const batch = firestore.batch();
-    plans.slice(offset, offset + 200).forEach((plan) => {
+  for (const plan of plans) {
+    const result = await firestore.runTransaction(async (transaction) => {
+      const [currentRequestSnapshot, currentLock] = await Promise.all([
+        transaction.get(plan.requestSnapshot.ref),
+        transaction.get(plan.lockRef),
+      ]);
+      if (!currentRequestSnapshot.exists) return 'request deleted';
+      const currentRequest = kcbStkRequestData(currentRequestSnapshot);
+      const currentLockData = currentLock.data();
+      const currentLockIsActive =
+        typeof currentLockData?.status === 'string' &&
+        isActiveStkRequestStatus(currentLockData.status);
+      if (!isActiveStkRequestStatus(currentRequest.status)) {
+        if (
+          currentLockIsActive &&
+          currentLockData?.requestId === currentRequestSnapshot.id
+        ) {
+          transaction.update(plan.lockRef, {
+            status: currentRequest.status,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            migrationBackfilledAt:
+              admin.firestore.FieldValue.serverTimestamp(),
+          });
+          return `terminal (${currentRequest.status}); stale lock released`;
+        }
+        return `terminal (${currentRequest.status}); skipped`;
+      }
       if (
-        plan.request.status === 'initiating' &&
-        !plan.request.leaseExpiresAt
+        currentLockIsActive &&
+        currentLockData?.requestId !== currentRequestSnapshot.id
       ) {
-        batch.update(plan.requestSnapshot.ref, {
-          leaseExpiresAt: plan.leaseExpiresAt,
+        throw new Error(
+          `Refusing migration: ${plan.lockRef.path} became owned by ${String(currentLockData?.requestId)} instead of ${currentRequestSnapshot.id}.`,
+        );
+      }
+      const leaseExpiresAt =
+        currentRequest.status === 'initiating'
+          ? (currentRequest.leaseExpiresAt ??
+            admin.firestore.Timestamp.fromMillis(Date.now() - 1))
+          : undefined;
+      if (
+        currentRequest.status === 'initiating' &&
+        !currentRequest.leaseExpiresAt
+      ) {
+        transaction.update(currentRequestSnapshot.ref, {
+          leaseExpiresAt,
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         });
       }
-      batch.set(
+      transaction.set(
         plan.lockRef,
         {
-          requestId: plan.requestSnapshot.id,
-          status: plan.request.status,
-          amount: Number(plan.request.amount),
-          ...(plan.leaseExpiresAt
-            ? { leaseExpiresAt: plan.leaseExpiresAt }
-            : {}),
-          ...(plan.request.dispatchExpiresAt
-            ? { dispatchExpiresAt: plan.request.dispatchExpiresAt }
+          requestId: currentRequestSnapshot.id,
+          status: currentRequest.status,
+          amount: Number(currentRequest.amount),
+          ...(leaseExpiresAt ? { leaseExpiresAt } : {}),
+          ...(currentRequest.dispatchExpiresAt
+            ? { dispatchExpiresAt: currentRequest.dispatchExpiresAt }
             : {}),
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
           migrationBackfilledAt:
@@ -110,8 +145,9 @@ const backfillActiveStkLocks = async () => {
         },
         { merge: true },
       );
+      return `active (${currentRequest.status}); lock ensured`;
     });
-    await batch.commit();
+    console.log(`${plan.requestSnapshot.id}: ${result}`);
   }
 };
 

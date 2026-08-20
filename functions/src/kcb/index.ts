@@ -984,6 +984,7 @@ export const requestKcbStkPush = onCall(
     const lockRef = stkContributionLockRef(memberId, contributionId);
     const contributionStkRequestsQuery = db()
       .collection('kcb_stk_requests')
+      .where('memberId', '==', memberId)
       .where('contributionId', '==', contributionId);
     const preparation = await db().runTransaction(async (transaction) => {
       const [existing, member, contribution, lock, contributionStkRequests] =

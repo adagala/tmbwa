@@ -25,6 +25,14 @@
       ]
     },
     {
+      "collectionGroup": "kcb_stk_requests",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "memberId", "order": "ASCENDING" },
+        { "fieldPath": "contributionId", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "notification_deliveries",
       "queryScope": "COLLECTION",
       "fields": [
@@ -46,9 +54,7 @@
     {
       "collectionGroup": "contributions",
       "fieldPath": "balance",
-      "indexes": [
-        { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }
-      ]
+      "indexes": [{ "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }]
     },
     {
       "collectionGroup": "payments",
