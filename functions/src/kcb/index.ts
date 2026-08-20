@@ -1007,12 +1007,23 @@ export const requestKcbStkPush = onCall(
         isActiveStkRequestStatus(existingLockStatus);
       if (!hasActiveLock && legacyActiveRequest) {
         const legacy = kcbStkRequestData(legacyActiveRequest);
+        const legacyLeaseExpiresAt =
+          legacy.status === 'initiating'
+            ? (legacy.leaseExpiresAt ??
+              admin.firestore.Timestamp.fromMillis(Date.now() - 1))
+            : undefined;
+        if (legacy.status === 'initiating' && !legacy.leaseExpiresAt) {
+          transaction.update(legacyActiveRequest.ref, {
+            leaseExpiresAt: legacyLeaseExpiresAt,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+        }
         transaction.set(lockRef, {
           requestId: legacyActiveRequest.id,
           status: legacy.status,
           amount: Number(legacy.amount),
-          ...(legacy.leaseExpiresAt
-            ? { leaseExpiresAt: legacy.leaseExpiresAt }
+          ...(legacyLeaseExpiresAt
+            ? { leaseExpiresAt: legacyLeaseExpiresAt }
             : {}),
           ...(legacy.dispatchExpiresAt
             ? { dispatchExpiresAt: legacy.dispatchExpiresAt }

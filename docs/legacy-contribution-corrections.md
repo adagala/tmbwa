@@ -32,7 +32,7 @@ Deploy the affected Functions before or together with hosting:
 firebase deploy --only functions:recordContributionPayment,functions:adjustMemberBalance,functions:correctLegacyContribution,functions:reverseLegacyContributionCorrection,functions:listLegacyContributionInventory,hosting --project dev
 ```
 
-No new secrets, parameters, Firestore indexes, or destructive migrations are required.
+No new secrets, parameters, Firestore indexes, or destructive migrations are required. The STK rollout does require the idempotent active-request lock backfill documented below.
 
 ## Member STK contribution flow
 
@@ -114,13 +114,36 @@ firebase functions:secrets:set KCB_CONSUMER_KEY
 firebase functions:secrets:set KCB_CONSUMER_SECRET
 ```
 
-### 3) Deploy only affected Functions plus hosting
+### 3) Deploy the lock-aware STK entry points first
 
 ```bash
-firebase deploy --only functions:reconcileKcbPayment,functions:allocateKcbPaymentCredit,functions:rejectKcbPayment,functions:resolveKcbStkUnknownOutcome,functions:requestKcbStkPush,functions:kcbStkCallback,functions:reverseContributionPayment,functions:correctLegacyContribution,functions:reverseLegacyContributionCorrection,functions:removeContribution,functions:deleteMemberSafely,functions:deleteMember,firestore:rules,hosting --project <project-id>
+firebase deploy --only functions:requestKcbStkPush,functions:kcbStkCallback,functions:resolveKcbStkUnknownOutcome --project <project-id>
 ```
 
-### 4) Post-deploy verification
+This prevents new lockless requests while the legacy active-request migration runs.
+
+### 4) Backfill every active legacy STK lock
+
+Use Application Default Credentials for the target project. Run the dry-run first; it fails without writing if duplicate active requests or a conflicting active lock require manual investigation.
+
+```bash
+cd functions
+GOOGLE_CLOUD_PROJECT=<project-id> npm run migrate:stk-locks
+GOOGLE_CLOUD_PROJECT=<project-id> npm run migrate:stk-locks -- --apply
+cd ..
+```
+
+Lease-less legacy `initiating` requests receive an expired recovery lease, allowing the original request ID to retry safely. Re-run the dry-run and require it to report the expected active locks before continuing.
+
+### 5) Deploy guarded mutations, rules, and hosting
+
+```bash
+firebase deploy --only functions:reconcileKcbPayment,functions:allocateKcbPaymentCredit,functions:rejectKcbPayment,functions:reverseContributionPayment,functions:correctLegacyContribution,functions:reverseLegacyContributionCorrection,functions:removeContribution,functions:deleteMemberSafely,functions:deleteMember,firestore:rules,hosting --project <project-id>
+```
+
+Do not deploy these guarded mutation handlers before the backfill completes successfully.
+
+### 6) Post-deploy verification
 
 - Verify member STK request from the profile contribution dialog.
 - Confirm callback updates one `kcb_stk_requests/{requestId}` document status exactly once.
