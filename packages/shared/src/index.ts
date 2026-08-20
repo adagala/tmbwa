@@ -258,6 +258,7 @@ export const kcbStkRequestDocumentSchema = z.object({
   updatedAt: z.unknown().optional(),
   callbackReceivedAt: z.unknown().optional(),
   leaseExpiresAt: z.unknown().optional(),
+  retryCount: z.number().int().nonnegative().optional(),
 }).passthrough();
 
 export const notificationEventDocumentSchema = z.object({

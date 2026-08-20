@@ -31,6 +31,7 @@ import {
   acknowledgement,
   isActiveStkRequestStatus,
   isLockedStkReconciliation,
+  isRecoverableStkLeaseStatus,
   isSameStkRequestPayload,
   isStkInitiationLeaseExpired,
   isSuccessfulStkDuplicateStatus,
@@ -687,11 +688,52 @@ export const rejectKcbPayment = onCall(async (request) => {
     if (!notification.exists) {
       throw new HttpsError('not-found', 'KCB payment notification not found.');
     }
-    if (kcbPaymentNotificationData(notification).status !== 'unresolved') {
+    const notificationData = kcbPaymentNotificationData(notification);
+    if (notificationData.status !== 'unresolved') {
       throw new HttpsError(
         'failed-precondition',
         'Only unresolved notifications can be rejected.',
       );
+    }
+    let linkedStkRequest:
+      | {
+        ref: FirebaseFirestore.DocumentReference;
+        data: ReturnType<typeof kcbStkRequestData>;
+        lockRef: FirebaseFirestore.DocumentReference;
+        ownsLock: boolean;
+      }
+      | undefined;
+    if (notificationData.source === 'stk_callback') {
+      const stkRequestId =
+        typeof notificationData.stkRequestId === 'string'
+          ? notificationData.stkRequestId
+          : '';
+      if (!stkRequestId) {
+        throw new HttpsError(
+          'failed-precondition',
+          'This STK notification is missing its linked request.',
+        );
+      }
+      const stkRequestRef = db().doc(`kcb_stk_requests/${stkRequestId}`);
+      const stkRequestSnapshot = await transaction.get(stkRequestRef);
+      if (!stkRequestSnapshot.exists) {
+        throw new HttpsError(
+          'failed-precondition',
+          'The linked STK request no longer exists.',
+        );
+      }
+      const stkRequest = kcbStkRequestData(stkRequestSnapshot);
+      const lockRef = stkContributionLockRef(
+        stkRequest.memberId,
+        stkRequest.contributionId,
+      );
+      const lockSnapshot = await transaction.get(lockRef);
+      linkedStkRequest = {
+        ref: stkRequestRef,
+        data: stkRequest,
+        lockRef,
+        ownsLock: lockSnapshot.data()?.requestId === stkRequestId,
+      };
     }
     transaction.create(commandRef, {
       type: 'rejectKcbPayment',
@@ -704,6 +746,20 @@ export const rejectKcbPayment = onCall(async (request) => {
       rejectedBy: actorId,
       rejectedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
+    if (linkedStkRequest) {
+      transaction.update(linkedStkRequest.ref, {
+        status: 'rejected',
+        rejectionReason: reason,
+        rejectedBy: actorId,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      if (linkedStkRequest.ownsLock) {
+        transaction.update(linkedStkRequest.lockRef, {
+          status: 'rejected',
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      }
+    }
     transaction.create(
       db().doc(`audit_events/${requestId}`),
       validateDocumentWrite(
@@ -712,7 +768,7 @@ export const rejectKcbPayment = onCall(async (request) => {
           requestId,
           actorId,
           action: 'kcb_payment.rejected',
-          memberId: '',
+          memberId: linkedStkRequest?.data.memberId ?? '',
           targetId: providerTransactionId,
           changes: { reason },
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -808,7 +864,7 @@ export const requestKcbStkPush = onCall(
         if (isSuccessfulStkDuplicateStatus(stored.status)) {
           return { duplicate: stored };
         }
-        if (stored.status === 'initiating') {
+        if (isRecoverableStkLeaseStatus(stored.status)) {
           const leaseExpired = isStkInitiationLeaseExpired(
             timestampMillis(stored.leaseExpiresAt),
             Date.now(),
@@ -819,10 +875,13 @@ export const requestKcbStkPush = onCall(
               Date.now() + STK_INITIATION_LEASE_MS,
             );
             transaction.update(requestRef, {
+              status: 'initiating',
               leaseExpiresAt,
+              retryCount: admin.firestore.FieldValue.increment(1),
               updatedAt: admin.firestore.FieldValue.serverTimestamp(),
             });
             transaction.update(lockRef, {
+              status: 'initiating',
               leaseExpiresAt,
               updatedAt: admin.firestore.FieldValue.serverTimestamp(),
             });
@@ -834,13 +893,9 @@ export const requestKcbStkPush = onCall(
           }
           throw new HttpsError(
             'unavailable',
-            'This STK request is still being initiated. Try again shortly.',
-          );
-        }
-        if (stored.status === 'outcome_unknown') {
-          throw new HttpsError(
-            'unavailable',
-            'The provider outcome is still unknown. Wait for confirmation before retrying.',
+            stored.status === 'outcome_unknown'
+              ? 'The provider outcome is still unknown. Try again after the recovery lease expires.'
+              : 'This STK request is still being initiated. Try again shortly.',
           );
         }
         throw new HttpsError(
@@ -899,6 +954,7 @@ export const requestKcbStkPush = onCall(
         messageId,
         status: 'initiating',
         leaseExpiresAt,
+        retryCount: 0,
         requestedBy: requesterId,
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
       });
@@ -1003,11 +1059,20 @@ export const requestKcbStkPush = onCall(
           : providerDispatchStarted
             ? 'outcome_unknown'
             : 'failed';
+      const recoveryLeaseExpiresAt =
+        failureStatus === 'outcome_unknown'
+          ? admin.firestore.Timestamp.fromMillis(
+            Date.now() + STK_INITIATION_LEASE_MS,
+          )
+          : undefined;
       await db().runTransaction(async (transaction) => {
         const lock = await transaction.get(lockRef);
         const lockData = lock.data() as { requestId?: unknown } | undefined;
         transaction.update(requestRef, {
           status: failureStatus,
+          ...(recoveryLeaseExpiresAt
+            ? { leaseExpiresAt: recoveryLeaseExpiresAt }
+            : {}),
           ...(providerMerchantRequestId
             ? { merchantRequestId: providerMerchantRequestId }
             : {}),
@@ -1025,6 +1090,9 @@ export const requestKcbStkPush = onCall(
         if (lockData?.requestId === requestId) {
           transaction.update(lockRef, {
             status: failureStatus,
+            ...(recoveryLeaseExpiresAt
+              ? { leaseExpiresAt: recoveryLeaseExpiresAt }
+              : {}),
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
           });
         }

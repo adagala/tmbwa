@@ -2,6 +2,7 @@ import { generateKeyPairSync, createSign } from 'crypto';
 import { describe, expect, it } from 'vitest';
 import {
   acknowledgement, isActiveStkRequestStatus, isLockedStkReconciliation,
+  isRecoverableStkLeaseStatus,
   isSameStkRequestPayload, isStkInitiationLeaseExpired,
   isSuccessfulStkDuplicateStatus,
   normalizeKenyanPhone, parseKcbTransactionDate, parseStkCallback,
@@ -178,6 +179,9 @@ describe('KCB Till notification contract', () => {
   });
 
   it('recovers initiating requests only after their lease expires', () => {
+    expect(isRecoverableStkLeaseStatus('initiating')).toBe(true);
+    expect(isRecoverableStkLeaseStatus('outcome_unknown')).toBe(true);
+    expect(isRecoverableStkLeaseStatus('pending')).toBe(false);
     expect(isStkInitiationLeaseExpired(1_000, 1_000)).toBe(true);
     expect(isStkInitiationLeaseExpired(1_001, 1_000)).toBe(false);
     expect(isStkInitiationLeaseExpired(undefined, 1_000)).toBe(false);
