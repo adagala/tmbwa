@@ -1204,7 +1204,13 @@ export const requestKcbStkPush = onCall(
         })) {
           return false;
         }
-        if (accepted && checkoutRequestId && unmatchedRef && unmatched?.exists) {
+        if (
+          accepted &&
+          checkoutRequestId &&
+          unmatchedRef &&
+          unmatched?.exists &&
+          Number.isInteger(Number(unmatched.data()?.resultCode))
+        ) {
           const unmatchedData = unmatched.data() as {
             merchantRequestId?: unknown;
             receiptNumber?: unknown;
@@ -1344,6 +1350,19 @@ export const requestKcbStkPush = onCall(
             correlatedAt: admin.firestore.FieldValue.serverTimestamp(),
           });
           return correlatedStatus;
+        }
+        if (accepted && checkoutRequestId && unmatchedRef) {
+          transaction.set(
+            unmatchedRef,
+            {
+              requestId,
+              merchantRequestId,
+              checkoutRequestId,
+              status: 'awaiting_callback',
+              registeredAt: admin.firestore.FieldValue.serverTimestamp(),
+            },
+            { merge: true },
+          );
         }
         transaction.update(requestRef, {
           status: accepted ? 'pending' : 'rejected',
@@ -1494,20 +1513,22 @@ export const kcbStkCallback = onRequest(
     }
     try {
       const callback = parseStkCallback(request.body);
+      const unmatchedRef = db().doc(
+        `kcb_stk_unmatched_callbacks/${callback.checkoutRequestId}`,
+      );
       const matches = await db()
         .collection('kcb_stk_requests')
         .where('checkoutRequestId', '==', callback.checkoutRequestId)
         .limit(1)
         .get();
-      if (matches.empty) {
-        const unmatchedRef = db().doc(
-          `kcb_stk_unmatched_callbacks/${callback.checkoutRequestId}`,
-        );
+      let requestRef = matches.empty ? undefined : matches.docs[0].ref;
+      if (!requestRef) {
+        let linkedRequestId: string | undefined;
         if (callback.resultCode === 0) {
           const notificationRef = db().doc(
             `kcb_payment_notifications/${callback.receiptNumber}`,
           );
-          await db().runTransaction(async (transaction) => {
+          linkedRequestId = await db().runTransaction(async (transaction) => {
             const [notification, unmatched] = await Promise.all([
               transaction.get(notificationRef),
               transaction.get(unmatchedRef),
@@ -1540,8 +1561,9 @@ export const kcbStkCallback = onRequest(
                 ),
               );
             }
-            if (!unmatched.exists) {
-              transaction.create(unmatchedRef, {
+            transaction.set(
+              unmatchedRef,
+              {
                 merchantRequestId: callback.merchantRequestId,
                 checkoutRequestId: callback.checkoutRequestId,
                 receiptNumber: callback.receiptNumber,
@@ -1550,40 +1572,63 @@ export const kcbStkCallback = onRequest(
                 transactionDate: callback.transactionDate,
                 resultCode: callback.resultCode,
                 resultDescription: callback.resultDescription,
-                status: 'pending_correlation',
+                status:
+                  unmatched.data()?.status === 'correlated'
+                    ? 'correlated'
+                    : 'pending_correlation',
                 receivedAt: admin.firestore.FieldValue.serverTimestamp(),
-              });
-            }
+              },
+              { merge: true },
+            );
+            const registeredRequestId = unmatched.data()?.requestId;
+            return typeof registeredRequestId === 'string'
+              ? registeredRequestId
+              : undefined;
           });
           logger.warn('Quarantined unmatched successful KCB STK callback.', {
             checkoutRequestId: callback.checkoutRequestId,
             receiptNumber: callback.receiptNumber,
           });
         } else {
-          await db().runTransaction(async (transaction) => {
+          linkedRequestId = await db().runTransaction(async (transaction) => {
             const unmatched = await transaction.get(unmatchedRef);
-            if (!unmatched.exists) {
-              transaction.create(unmatchedRef, {
+            transaction.set(
+              unmatchedRef,
+              {
                 merchantRequestId: callback.merchantRequestId,
                 checkoutRequestId: callback.checkoutRequestId,
                 resultCode: callback.resultCode,
                 resultDescription: callback.resultDescription,
-                status: 'pending_correlation',
+                status:
+                  unmatched.data()?.status === 'correlated'
+                    ? 'correlated'
+                    : 'pending_correlation',
                 receivedAt: admin.firestore.FieldValue.serverTimestamp(),
-              });
-            }
+              },
+              { merge: true },
+            );
+            const registeredRequestId = unmatched.data()?.requestId;
+            return typeof registeredRequestId === 'string'
+              ? registeredRequestId
+              : undefined;
           });
           logger.warn('Quarantined unmatched unsuccessful KCB STK callback.', {
             checkoutRequestId: callback.checkoutRequestId,
             resultCode: callback.resultCode,
           });
         }
-        response.status(200).json({ ResultCode: 0, ResultDesc: 'Accepted' });
-        return;
+        if (!linkedRequestId) {
+          response.status(200).json({ ResultCode: 0, ResultDesc: 'Accepted' });
+          return;
+        }
+        requestRef = db().doc(`kcb_stk_requests/${linkedRequestId}`);
       }
-      const requestRef = matches.docs[0].ref;
+      const correlatedRequestRef = requestRef;
+      if (!correlatedRequestRef) {
+        throw new Error('The STK callback request handshake is incomplete.');
+      }
       await db().runTransaction(async (transaction) => {
-        const snapshot = await transaction.get(requestRef);
+        const snapshot = await transaction.get(correlatedRequestRef);
         const pending = kcbStkRequestData(snapshot);
         if (pending.callbackReceivedAt) return;
         const lockRef = stkContributionLockRef(
@@ -1603,7 +1648,7 @@ export const kcbStkCallback = onRequest(
         const merchantRequestMismatch =
           callback.merchantRequestId !== pending.merchantRequestId;
         if (merchantRequestMismatch && callback.resultCode !== 0) {
-          transaction.update(requestRef, {
+          transaction.update(correlatedRequestRef, {
             status: 'rejected',
             resultCode: callback.resultCode,
             resultDescription: callback.resultDescription,
@@ -1635,7 +1680,7 @@ export const kcbStkCallback = onRequest(
         }
         if (callback.resultCode !== 0) {
           const status = stkFailureStatus(callback.resultCode);
-          transaction.update(requestRef, {
+          transaction.update(correlatedRequestRef, {
             status,
             resultCode: callback.resultCode,
             resultDescription: callback.resultDescription,
@@ -1753,7 +1798,7 @@ export const kcbStkCallback = onRequest(
               );
             }
           }
-          transaction.update(requestRef, {
+          transaction.update(correlatedRequestRef, {
             status: quarantinedStatus,
             ...(callback.receiptNumber
               ? { providerTransactionId: callback.receiptNumber }
@@ -1818,7 +1863,7 @@ export const kcbStkCallback = onRequest(
                   ? 'reconciled'
                   : 'rejected'
                 : 'outcome_unknown';
-            transaction.update(requestRef, {
+            transaction.update(correlatedRequestRef, {
               status: terminalStatus,
               providerTransactionId: callback.receiptNumber,
               resultCode: callback.resultCode,
@@ -1909,7 +1954,7 @@ export const kcbStkCallback = onRequest(
             ),
           );
         }
-        transaction.update(requestRef, {
+        transaction.update(correlatedRequestRef, {
           status: 'succeeded_pending_reconciliation',
           providerTransactionId: callback.receiptNumber,
           resultCode: callback.resultCode,
