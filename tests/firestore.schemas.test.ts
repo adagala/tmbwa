@@ -164,6 +164,12 @@ describe('Firestore document schemas', () => {
     expect(
       kcbStkRequestDocumentSchema.safeParse({
         ...baseRequest,
+        status: 'dispatching',
+      }).success,
+    ).toBe(true);
+    expect(
+      kcbStkRequestDocumentSchema.safeParse({
+        ...baseRequest,
         status: 'unknown_status',
       }).success,
     ).toBe(false);

@@ -228,6 +228,7 @@ export const kcbPaymentNotificationDocumentSchema = z.object({
 
 export const kcbStkRequestStatusSchema = z.enum([
   'initiating',
+  'dispatching',
   'outcome_unknown',
   'pending',
   'succeeded_pending_reconciliation',

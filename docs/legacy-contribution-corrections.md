@@ -42,7 +42,7 @@ Member contribution payment uses the KCB STK request and callback flow and remai
 
 - Members can request STK only for their own contribution unless the caller is an administrator.
 - The request is idempotent by `requestId`. Reusing an existing `requestId` is accepted only when `memberId`, `contributionId`, and `amount` are identical.
-- Stale initiating retries retain the original provider `messageId` and invoice number. Ambiguous `outcome_unknown` requests are never redispatched and remain locked until an administrator verifies the provider outcome and resolves them.
+- Stale pre-dispatch `initiating` retries retain the original provider `messageId` and invoice number. Before the provider call, the request is durably moved to `dispatching`; `dispatching` and `outcome_unknown` requests are never redispatched and remain locked until an administrator verifies the provider outcome and resolves them.
 - Member status must be active.
 - Phone target is always the member profile phone (`members/{memberId}.phonenumber`) after Kenyan phone normalization.
 - `amount` must be a positive integer and cannot exceed the contribution balance.

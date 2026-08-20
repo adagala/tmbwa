@@ -8,6 +8,7 @@ import {
   normalizeKenyanPhone, parseKcbTransactionDate, parseStkCallback,
   parseTillNotification, permitsUnsignedSandboxNotification,
   secureTokenMatches, stkFailureStatus, stkPaymentMatchesPendingRequest,
+  terminalNotificationMatchesStkRequest,
   verifyKcbSignature,
 } from '../functions/src/kcb/domain';
 import {
@@ -158,6 +159,7 @@ describe('KCB Till notification contract', () => {
 
   it('blocks concurrent STK requests until the active request is terminal', () => {
     expect(isActiveStkRequestStatus('initiating')).toBe(true);
+    expect(isActiveStkRequestStatus('dispatching')).toBe(true);
     expect(isActiveStkRequestStatus('outcome_unknown')).toBe(true);
     expect(isActiveStkRequestStatus('pending')).toBe(true);
     expect(isActiveStkRequestStatus('succeeded_pending_reconciliation')).toBe(true);
@@ -185,6 +187,28 @@ describe('KCB Till notification contract', () => {
     expect(isStkInitiationLeaseExpired(1_000, 1_000)).toBe(true);
     expect(isStkInitiationLeaseExpired(1_001, 1_000)).toBe(false);
     expect(isStkInitiationLeaseExpired(undefined, 1_000)).toBe(false);
+  });
+
+  it('releases terminal receipt locks only for matching STK linkage', () => {
+    const request = {
+      requestId: 'stk-1', memberId: 'member-1',
+      contributionId: '2026-08-01', amount: 500,
+    };
+    expect(terminalNotificationMatchesStkRequest({
+      ...request, notificationStatus: 'reconciled',
+      notificationMemberId: 'member-1', notificationStkRequestId: undefined,
+      allocations: [{ contributionId: '2026-08-01', amount: 500 }],
+    })).toBe(true);
+    expect(terminalNotificationMatchesStkRequest({
+      ...request, notificationStatus: 'reconciled',
+      notificationMemberId: 'member-2', notificationStkRequestId: undefined,
+      allocations: [{ contributionId: 'different', amount: 500 }],
+    })).toBe(false);
+    expect(terminalNotificationMatchesStkRequest({
+      ...request, notificationStatus: 'rejected',
+      notificationMemberId: undefined, notificationStkRequestId: 'stk-1',
+      allocations: [],
+    })).toBe(true);
   });
 });
 

@@ -210,6 +210,7 @@ export const isLockedStkReconciliation = (args: {
 export const isActiveStkRequestStatus = (status: string) =>
   [
     'initiating',
+    'dispatching',
     'outcome_unknown',
     'pending',
     'succeeded_pending_reconciliation',
@@ -220,6 +221,27 @@ export const isSuccessfulStkDuplicateStatus = (status: string) =>
 
 export const isRecoverableStkLeaseStatus = (status: string) =>
   status === 'initiating';
+
+export const terminalNotificationMatchesStkRequest = (args: {
+  notificationStatus: string;
+  notificationMemberId: string | undefined;
+  notificationStkRequestId: string | undefined;
+  allocations: Array<{ contributionId: string; amount: number }>;
+  requestId: string;
+  memberId: string;
+  contributionId: string;
+  amount: number;
+}) => {
+  if (args.notificationStkRequestId === args.requestId) return true;
+  if (args.notificationStatus !== 'reconciled') return false;
+  const allocation = args.allocations[0];
+  return (
+    args.notificationMemberId === args.memberId &&
+    args.allocations.length === 1 &&
+    allocation?.contributionId === args.contributionId &&
+    Number(allocation.amount) === Number(args.amount)
+  );
+};
 
 export const isStkInitiationLeaseExpired = (
   leaseExpiresAtMillis: number | undefined,
