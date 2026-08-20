@@ -1006,13 +1006,20 @@ export const requestKcbStkPush = onCall(
       const hasActiveLock =
         typeof existingLockStatus === 'string' &&
         isActiveStkRequestStatus(existingLockStatus);
+      let stagedLegacyRequestId: string | undefined;
+      let stagedLegacyLeaseExpiresAt:
+        | admin.firestore.Timestamp
+        | undefined;
       if (!hasActiveLock && legacyActiveRequest) {
         const legacy = kcbStkRequestData(legacyActiveRequest);
         const legacyLeaseExpiresAt =
           legacy.status === 'initiating'
-            ? (legacy.leaseExpiresAt ??
-              admin.firestore.Timestamp.fromMillis(Date.now() - 1))
+            ? admin.firestore.Timestamp.fromMillis(
+              timestampMillis(legacy.leaseExpiresAt) ?? Date.now() - 1,
+            )
             : undefined;
+        stagedLegacyRequestId = legacyActiveRequest.id;
+        stagedLegacyLeaseExpiresAt = legacyLeaseExpiresAt;
         if (legacy.status === 'initiating' && !legacy.leaseExpiresAt) {
           transaction.update(legacyActiveRequest.ref, {
             leaseExpiresAt: legacyLeaseExpiresAt,
@@ -1051,11 +1058,19 @@ export const requestKcbStkPush = onCall(
         }
         if (isRecoverableStkLeaseStatus(stored.status)) {
           const leaseExpired = isStkInitiationLeaseExpired(
-            timestampMillis(stored.leaseExpiresAt),
+            timestampMillis(
+              stored.leaseExpiresAt ??
+                (stagedLegacyRequestId === requestId
+                  ? stagedLegacyLeaseExpiresAt
+                  : undefined),
+            ),
             Date.now(),
           );
           const lockData = lock.data() as { requestId?: unknown } | undefined;
-          if (leaseExpired && lockData?.requestId === requestId) {
+          const ownsExistingOrStagedLock =
+            lockData?.requestId === requestId ||
+            stagedLegacyRequestId === requestId;
+          if (leaseExpired && ownsExistingOrStagedLock) {
             const leaseExpiresAt = admin.firestore.Timestamp.fromMillis(
               Date.now() + STK_INITIATION_LEASE_MS,
             );
