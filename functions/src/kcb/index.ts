@@ -982,13 +982,46 @@ export const requestKcbStkPush = onCall(
       `members/${memberId}/contributions/${contributionId}`,
     );
     const lockRef = stkContributionLockRef(memberId, contributionId);
+    const contributionStkRequestsQuery = db()
+      .collection('kcb_stk_requests')
+      .where('contributionId', '==', contributionId);
     const preparation = await db().runTransaction(async (transaction) => {
-      const [existing, member, contribution, lock] = await Promise.all([
-        transaction.get(requestRef),
-        transaction.get(memberRef),
-        transaction.get(contributionRef),
-        transaction.get(lockRef),
-      ]);
+      const [existing, member, contribution, lock, contributionStkRequests] =
+        await Promise.all([
+          transaction.get(requestRef),
+          transaction.get(memberRef),
+          transaction.get(contributionRef),
+          transaction.get(lockRef),
+          transaction.get(contributionStkRequestsQuery),
+        ]);
+      const legacyActiveRequest = contributionStkRequests.docs.find((item) => {
+        const stored = kcbStkRequestData(item);
+        return (
+          stored.memberId === memberId &&
+          isActiveStkRequestStatus(stored.status)
+        );
+      });
+      const existingLockStatus = lock.data()?.status;
+      const hasActiveLock =
+        typeof existingLockStatus === 'string' &&
+        isActiveStkRequestStatus(existingLockStatus);
+      if (!hasActiveLock && legacyActiveRequest) {
+        const legacy = kcbStkRequestData(legacyActiveRequest);
+        transaction.set(lockRef, {
+          requestId: legacyActiveRequest.id,
+          status: legacy.status,
+          amount: Number(legacy.amount),
+          ...(legacy.leaseExpiresAt
+            ? { leaseExpiresAt: legacy.leaseExpiresAt }
+            : {}),
+          ...(legacy.dispatchExpiresAt
+            ? { dispatchExpiresAt: legacy.dispatchExpiresAt }
+            : {}),
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          backfilledFromLegacyRequest: true,
+        });
+      }
       if (existing.exists) {
         const stored = kcbStkRequestData(existing);
         if (!isSameStkRequestPayload(stored, {
@@ -1053,6 +1086,9 @@ export const requestKcbStkPush = onCall(
       if (!member.exists || !contribution.exists) {
         throw new HttpsError('not-found', 'Member or contribution not found.');
       }
+      if (legacyActiveRequest) {
+        return { blockedByLegacyRequestId: legacyActiveRequest.id };
+      }
       if (lock.exists) {
         const lockData = lock.data() as { status?: unknown };
         if (
@@ -1115,6 +1151,12 @@ export const requestKcbStkPush = onCall(
       });
       return { phone, invoiceNumber, messageId };
     });
+    if ('blockedByLegacyRequestId' in preparation) {
+      throw new HttpsError(
+        'already-exists',
+        'An active legacy STK request was locked for this contribution. Resolve it before requesting another prompt.',
+      );
+    }
     if ('duplicate' in preparation) {
       return { ...preparation.duplicate, duplicate: true };
     }
@@ -1668,11 +1710,36 @@ export const kcbStkCallback = onRequest(
         .limit(1)
         .get();
       let requestRef = matches.empty ? undefined : matches.docs[0].ref;
+      let orphanedDispatchRequestId: string | undefined;
+      if (!requestRef && callback.resultCode === 0) {
+        const dispatchingRequests = await db()
+          .collection('kcb_stk_requests')
+          .where('status', '==', 'dispatching')
+          .get();
+        const candidates = dispatchingRequests.docs.filter((item) => {
+          const stored = kcbStkRequestData(item);
+          return stkPaymentMatchesPendingRequest({
+            callbackAmount: callback.amount,
+            pendingAmount: Number(stored.amount),
+            callbackPhone: callback.payerPhone,
+            pendingPhone: stored.phone,
+            receiptNumber: callback.receiptNumber,
+          });
+        });
+        if (candidates.length === 1) {
+          orphanedDispatchRequestId = candidates[0].id;
+        }
+      }
       if (!requestRef) {
         let linkedRequestId: string | undefined;
         if (callback.resultCode === 0) {
           linkedRequestId = await db().runTransaction(async (transaction) => {
             const unmatched = await transaction.get(unmatchedRef);
+            const registeredRequestId = unmatched.data()?.requestId;
+            const handshakeRequestId =
+              typeof registeredRequestId === 'string'
+                ? registeredRequestId
+                : orphanedDispatchRequestId;
             transaction.set(
               unmatchedRef,
               {
@@ -1684,6 +1751,9 @@ export const kcbStkCallback = onRequest(
                 transactionDate: callback.transactionDate,
                 resultCode: callback.resultCode,
                 resultDescription: callback.resultDescription,
+                ...(handshakeRequestId
+                  ? { requestId: handshakeRequestId }
+                  : {}),
                 status:
                   unmatched.data()?.status === 'correlated'
                     ? 'correlated'
@@ -1692,10 +1762,7 @@ export const kcbStkCallback = onRequest(
               },
               { merge: true },
             );
-            const registeredRequestId = unmatched.data()?.requestId;
-            return typeof registeredRequestId === 'string'
-              ? registeredRequestId
-              : undefined;
+            return handshakeRequestId;
           });
           logger.warn('Quarantined unmatched successful KCB STK callback.', {
             checkoutRequestId: callback.checkoutRequestId,
@@ -1730,6 +1797,13 @@ export const kcbStkCallback = onRequest(
           });
         }
         if (!linkedRequestId) {
+          if (callback.resultCode === 0) {
+            response.status(503).json({
+              ResultCode: 1,
+              ResultDesc: 'Callback stored; request correlation is pending',
+            });
+            return;
+          }
           response.status(200).json({ ResultCode: 0, ResultDesc: 'Accepted' });
           return;
         }

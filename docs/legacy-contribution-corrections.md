@@ -82,6 +82,9 @@ Deploy from a reviewed branch state after tests pass.
 
 ### 1) Pre-deploy checks
 
+- The first new STK request for a contribution checks legacy active requests. If an `initiating`, `dispatching`, `outcome_unknown`, `pending`, or `succeeded_pending_reconciliation` request predates payment locks, the callable backfills its lock and refuses to send another prompt.
+- Successful callbacks whose provider response was lost are correlated only when exactly one `dispatching` request matches the callback amount and phone. Non-unique orphan callbacks remain quarantined and return a retryable response until correlation is available.
+
 ```bash
 npm ci
 npm ci --prefix functions
