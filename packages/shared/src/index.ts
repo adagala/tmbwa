@@ -216,6 +216,7 @@ export const kcbPaymentNotificationDocumentSchema = z.object({
   memberId: z.string().optional(),
   contributionId: z.string().optional(),
   stkRequestId: z.string().optional(),
+  requestedAmount: z.number().positive().optional(),
   paymentId: z.string().optional(),
   receiptNumber: z.string().optional(),
   allocations: z.array(z.object({
@@ -260,6 +261,8 @@ export const kcbStkRequestDocumentSchema = z.object({
   updatedAt: z.unknown().optional(),
   callbackReceivedAt: z.unknown().optional(),
   leaseExpiresAt: z.unknown().optional(),
+  dispatchStartedAt: z.unknown().optional(),
+  dispatchExpiresAt: z.unknown().optional(),
   retryCount: z.number().int().nonnegative().optional(),
 }).passthrough();
 

@@ -267,6 +267,25 @@ export default function KcbReconciliationPage() {
       });
       return next;
     });
+    setAllocationDrafts((current) => {
+      const next = { ...current };
+      payments.forEach((payment) => {
+        if (
+          next[payment.providerTransactionId] === undefined &&
+          payment.contributionId &&
+          payment.requestedAmount
+        ) {
+          next[payment.providerTransactionId] = [
+            {
+              id: crypto.randomUUID(),
+              contributionId: payment.contributionId,
+              amount: String(Math.min(payment.amount, payment.requestedAmount)),
+            },
+          ];
+        }
+      });
+      return next;
+    });
     suggestions.forEach(({ memberId }) => {
       void loadMemberContributions(memberId);
     });

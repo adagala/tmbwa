@@ -5,7 +5,8 @@ import {
   isRecoverableStkLeaseStatus,
   isSameStkRequestPayload, isStkInitiationLeaseExpired,
   isSuccessfulStkDuplicateStatus,
-  normalizeKenyanPhone, parseKcbTransactionDate, parseStkCallback,
+  lockedStkAllocationAmount, normalizeKenyanPhone,
+  ownsExpectedStkTransition, parseKcbTransactionDate, parseStkCallback,
   parseTillNotification, permitsUnsignedSandboxNotification,
   secureTokenMatches, stkFailureStatus, stkPaymentMatchesPendingRequest,
   terminalNotificationMatchesStkRequest,
@@ -209,6 +210,24 @@ describe('KCB Till notification contract', () => {
       notificationMemberId: undefined, notificationStkRequestId: 'stk-1',
       allocations: [],
     })).toBe(true);
+  });
+
+  it('applies STK state transitions only while request and lock still match', () => {
+    expect(ownsExpectedStkTransition({
+      requestStatus: 'dispatching', expectedStatus: 'dispatching',
+      requestId: 'stk-1', lockRequestId: 'stk-1', lockStatus: 'dispatching',
+    })).toBe(true);
+    expect(ownsExpectedStkTransition({
+      requestStatus: 'failed', expectedStatus: 'dispatching',
+      requestId: 'stk-1', lockRequestId: 'stk-1', lockStatus: 'failed',
+    })).toBe(false);
+  });
+
+  it('allocates STK overpayments to the contribution and reserves the excess', () => {
+    expect(lockedStkAllocationAmount(600, 500, 500)).toBe(500);
+    expect(lockedStkAllocationAmount(400, 500, 500)).toBe(400);
+    expect(lockedStkAllocationAmount(600, 500, 450)).toBe(450);
+    expect(() => lockedStkAllocationAmount(0, 500, 500)).toThrow();
   });
 });
 

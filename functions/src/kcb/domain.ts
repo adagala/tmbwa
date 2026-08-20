@@ -243,6 +243,32 @@ export const terminalNotificationMatchesStkRequest = (args: {
   );
 };
 
+export const ownsExpectedStkTransition = (args: {
+  requestStatus: string;
+  expectedStatus: string;
+  requestId: string;
+  lockRequestId: unknown;
+  lockStatus: unknown;
+}) =>
+  args.requestStatus === args.expectedStatus &&
+  args.lockRequestId === args.requestId &&
+  args.lockStatus === args.expectedStatus;
+
+export const lockedStkAllocationAmount = (
+  callbackAmount: number,
+  requestedAmount: number,
+  outstandingAmount: number,
+) => {
+  if (
+    !Number.isFinite(callbackAmount) || callbackAmount <= 0 ||
+    !Number.isFinite(requestedAmount) || requestedAmount <= 0 ||
+    !Number.isFinite(outstandingAmount) || outstandingAmount <= 0
+  ) {
+    throw new Error('STK allocation inputs must be positive amounts.');
+  }
+  return Math.min(callbackAmount, requestedAmount, outstandingAmount);
+};
+
 export const isStkInitiationLeaseExpired = (
   leaseExpiresAtMillis: number | undefined,
   nowMillis: number,
