@@ -10,6 +10,7 @@ import {
   parseTillNotification, permitsUnsignedSandboxNotification,
   secureTokenMatches, stkFailureStatus, stkPaymentMatchesPendingRequest,
   terminalNotificationMatchesStkRequest,
+  unmatchedStkCallbackMatchesRequest,
   verifyKcbSignature,
 } from '../functions/src/kcb/domain';
 import {
@@ -228,6 +229,21 @@ describe('KCB Till notification contract', () => {
     expect(lockedStkAllocationAmount(400, 500, 500)).toBe(400);
     expect(lockedStkAllocationAmount(600, 500, 450)).toBe(450);
     expect(() => lockedStkAllocationAmount(0, 500, 500)).toThrow();
+  });
+
+  it('correlates quarantined callbacks only to the exact provider request', () => {
+    const request = {
+      requestMerchantRequestId: 'merchant-1', requestAmount: 500,
+      requestPhone: '+254711000000',
+    };
+    expect(unmatchedStkCallbackMatchesRequest({
+      ...request, callbackMerchantRequestId: 'merchant-1',
+      callbackAmount: 500, callbackPhone: '+254711000000',
+    })).toBe(true);
+    expect(unmatchedStkCallbackMatchesRequest({
+      ...request, callbackMerchantRequestId: 'merchant-2',
+      callbackAmount: 500, callbackPhone: '+254711000000',
+    })).toBe(false);
   });
 });
 

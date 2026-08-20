@@ -269,6 +269,18 @@ export const lockedStkAllocationAmount = (
   return Math.min(callbackAmount, requestedAmount, outstandingAmount);
 };
 
+export const unmatchedStkCallbackMatchesRequest = (args: {
+  callbackMerchantRequestId: unknown;
+  callbackAmount: unknown;
+  callbackPhone: unknown;
+  requestMerchantRequestId: string | null;
+  requestAmount: number;
+  requestPhone: string;
+}) =>
+  args.callbackMerchantRequestId === args.requestMerchantRequestId &&
+  Number(args.callbackAmount) === Number(args.requestAmount) &&
+  args.callbackPhone === args.requestPhone;
+
 export const isStkInitiationLeaseExpired = (
   leaseExpiresAtMillis: number | undefined,
   nowMillis: number,
