@@ -205,5 +205,10 @@ export const stkPaymentMatchesPendingRequest = (args: {
 
 export const isLockedStkReconciliation = (args: {
   source: string | undefined;
-  lockedContributionId: string | undefined;
-}) => args.source === 'stk_callback' && !!args.lockedContributionId;
+}) => args.source === 'stk_callback';
+
+export const isActiveStkRequestStatus = (status: string) =>
+  ['initiating', 'pending', 'succeeded_pending_reconciliation'].includes(status);
+
+export const isSuccessfulStkDuplicateStatus = (status: string) =>
+  ['pending', 'succeeded_pending_reconciliation'].includes(status);

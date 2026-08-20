@@ -215,6 +215,7 @@ export const kcbPaymentNotificationDocumentSchema = z.object({
   receivedAt: z.unknown().optional(),
   memberId: z.string().optional(),
   contributionId: z.string().optional(),
+  stkRequestId: z.string().optional(),
   paymentId: z.string().optional(),
   receiptNumber: z.string().optional(),
   allocations: z.array(z.object({

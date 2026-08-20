@@ -1,7 +1,8 @@
 import { generateKeyPairSync, createSign } from 'crypto';
 import { describe, expect, it } from 'vitest';
 import {
-  acknowledgement, isLockedStkReconciliation, isSameStkRequestPayload,
+  acknowledgement, isActiveStkRequestStatus, isLockedStkReconciliation,
+  isSameStkRequestPayload, isSuccessfulStkDuplicateStatus,
   normalizeKenyanPhone, parseKcbTransactionDate, parseStkCallback,
   parseTillNotification, permitsUnsignedSandboxNotification,
   secureTokenMatches, stkFailureStatus, stkPaymentMatchesPendingRequest,
@@ -144,16 +145,34 @@ describe('KCB Till notification contract', () => {
   it('identifies STK-origin contribution locks for reconciliation guards', () => {
     expect(isLockedStkReconciliation({
       source: 'stk_callback',
-      lockedContributionId: '2026-08-01',
     })).toBe(true);
     expect(isLockedStkReconciliation({
       source: 'till_notification',
-      lockedContributionId: '2026-08-01',
     })).toBe(false);
     expect(isLockedStkReconciliation({
       source: 'stk_callback',
-      lockedContributionId: undefined,
-    })).toBe(false);
+    })).toBe(true);
+  });
+
+  it('blocks concurrent STK requests until the active request is terminal', () => {
+    expect(isActiveStkRequestStatus('initiating')).toBe(true);
+    expect(isActiveStkRequestStatus('pending')).toBe(true);
+    expect(isActiveStkRequestStatus('succeeded_pending_reconciliation')).toBe(true);
+    expect(isActiveStkRequestStatus('failed')).toBe(false);
+    expect(isActiveStkRequestStatus('rejected')).toBe(false);
+    expect(isActiveStkRequestStatus('cancelled')).toBe(false);
+    expect(isActiveStkRequestStatus('timed_out')).toBe(false);
+    expect(isActiveStkRequestStatus('reconciled')).toBe(false);
+  });
+
+  it('reports only accepted STK duplicates as successful', () => {
+    expect(isSuccessfulStkDuplicateStatus('pending')).toBe(true);
+    expect(isSuccessfulStkDuplicateStatus('succeeded_pending_reconciliation')).toBe(true);
+    expect(isSuccessfulStkDuplicateStatus('initiating')).toBe(false);
+    expect(isSuccessfulStkDuplicateStatus('failed')).toBe(false);
+    expect(isSuccessfulStkDuplicateStatus('rejected')).toBe(false);
+    expect(isSuccessfulStkDuplicateStatus('cancelled')).toBe(false);
+    expect(isSuccessfulStkDuplicateStatus('timed_out')).toBe(false);
   });
 });
 
