@@ -208,7 +208,20 @@ export const isLockedStkReconciliation = (args: {
 }) => args.source === 'stk_callback';
 
 export const isActiveStkRequestStatus = (status: string) =>
-  ['initiating', 'pending', 'succeeded_pending_reconciliation'].includes(status);
+  [
+    'initiating',
+    'outcome_unknown',
+    'pending',
+    'succeeded_pending_reconciliation',
+  ].includes(status);
 
 export const isSuccessfulStkDuplicateStatus = (status: string) =>
   ['pending', 'succeeded_pending_reconciliation'].includes(status);
+
+export const isStkInitiationLeaseExpired = (
+  leaseExpiresAtMillis: number | undefined,
+  nowMillis: number,
+) =>
+  typeof leaseExpiresAtMillis === 'number' &&
+  Number.isFinite(leaseExpiresAtMillis) &&
+  leaseExpiresAtMillis <= nowMillis;

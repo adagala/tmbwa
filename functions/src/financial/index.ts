@@ -26,10 +26,32 @@ import {
   paymentData,
   validateDocumentWrite,
 } from '../firestoreData';
+import { isActiveStkRequestStatus } from '../kcb/domain';
 
 type CommandData = Record<string, unknown>;
 
 const db = () => admin.firestore();
+
+const stkContributionLockRef = (memberId: string, contributionId: string) =>
+  db().doc(
+    `members/${memberId}/contributions/${contributionId}/payment_locks/stk`,
+  );
+
+const assertNoActiveStkLock = (
+  snapshot: FirebaseFirestore.DocumentSnapshot,
+) => {
+  if (!snapshot.exists) return;
+  const lock = snapshot.data() as { status?: unknown };
+  if (
+    typeof lock.status === 'string' &&
+    isActiveStkRequestStatus(lock.status)
+  ) {
+    throw new HttpsError(
+      'failed-precondition',
+      'This contribution has an active STK payment request.',
+    );
+  }
+};
 
 const requireAdministrator = (auth: { uid: string; token: Record<string, unknown> } | undefined) => {
   if (!auth) throw new HttpsError('unauthenticated', 'Sign in is required.');
@@ -128,12 +150,21 @@ export const reverseContributionPayment = onCall(async (request) => {
     }
     const contributionRefs = allocations.map(({ contributionId }) =>
       db().doc(`members/${memberId}/contributions/${contributionId}`));
-    const contributionSnapshots = await Promise.all(
-      contributionRefs.map((ref) => transaction.get(ref)),
+    const lockRefs = allocations.map(({ contributionId }) =>
+      stkContributionLockRef(memberId, contributionId));
+    const relatedSnapshots = await Promise.all([
+      ...contributionRefs.map((ref) => transaction.get(ref)),
+      ...lockRefs.map((ref) => transaction.get(ref)),
+    ]);
+    const contributionSnapshots = relatedSnapshots.slice(
+      0,
+      contributionRefs.length,
     );
+    const lockSnapshots = relatedSnapshots.slice(contributionRefs.length);
     if (contributionSnapshots.some((item) => !item.exists)) {
       throw new HttpsError('not-found', 'Contribution not found.');
     }
+    lockSnapshots.forEach(assertNoActiveStkLock);
     const contributions = contributionSnapshots.map(contributionData);
     writeCommand(transaction, command.ref, 'reverseContributionPayment', actorId);
     transaction.delete(paymentRef);
@@ -324,12 +355,14 @@ export const correctLegacyContribution = onCall(async (request) => {
     if (command.exists) return { requestId, duplicate: true };
     const memberRef = db().doc(`members/${memberId}`);
     const contributionRef = db().doc(`members/${memberId}/contributions/${contributionId}`);
-    const [memberSnapshot, contributionSnapshot] = await Promise.all([
+    const [memberSnapshot, contributionSnapshot, stkLockSnapshot] = await Promise.all([
       transaction.get(memberRef), transaction.get(contributionRef),
+      transaction.get(stkContributionLockRef(memberId, contributionId)),
     ]);
     if (!memberSnapshot.exists || !contributionSnapshot.exists) {
       throw new HttpsError('not-found', 'Member or contribution not found.');
     }
+    assertNoActiveStkLock(stkLockSnapshot);
     memberData(memberSnapshot);
     const contribution = contributionData(contributionSnapshot);
     if (hasLinkedPaymentHistory(contribution.payments)) {
@@ -420,8 +453,12 @@ export const reverseLegacyContributionCorrection = onCall(async (request) => {
     if (correction.reversed) throw new HttpsError('failed-precondition', 'Correction is already reversed.');
     const contributionId = String(correction.contributionId);
     const contributionRef = db().doc(`members/${memberId}/contributions/${contributionId}`);
-    const contributionSnapshot = await transaction.get(contributionRef);
+    const [contributionSnapshot, stkLockSnapshot] = await Promise.all([
+      transaction.get(contributionRef),
+      transaction.get(stkContributionLockRef(memberId, contributionId)),
+    ]);
     if (!contributionSnapshot.exists) throw new HttpsError('not-found', 'Contribution not found.');
+    assertNoActiveStkLock(stkLockSnapshot);
     const contribution = contributionData(contributionSnapshot);
     if (!correction.before || !correction.after || !canReverseLegacyCorrection(
       contribution.active_legacy_correction_id,
@@ -520,8 +557,12 @@ export const removeContribution = onCall(async (request) => {
       return { requestId, duplicate: true };
     }
     const contributionRef = db().doc(`members/${memberId}/contributions/${contributionId}`);
-    const contributionSnapshot = await transaction.get(contributionRef);
+    const [contributionSnapshot, stkLockSnapshot] = await Promise.all([
+      transaction.get(contributionRef),
+      transaction.get(stkContributionLockRef(memberId, contributionId)),
+    ]);
     if (!contributionSnapshot.exists) throw new HttpsError('not-found', 'Contribution not found.');
+    assertNoActiveStkLock(stkLockSnapshot);
     const contribution = contributionData(contributionSnapshot);
     if (hasLegacyCorrectionHistory(contribution.legacy_corrections)) {
       throw new HttpsError(

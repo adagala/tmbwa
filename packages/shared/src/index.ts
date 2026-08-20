@@ -228,6 +228,7 @@ export const kcbPaymentNotificationDocumentSchema = z.object({
 
 export const kcbStkRequestStatusSchema = z.enum([
   'initiating',
+  'outcome_unknown',
   'pending',
   'succeeded_pending_reconciliation',
   'failed',
@@ -256,6 +257,7 @@ export const kcbStkRequestDocumentSchema = z.object({
   createdAt: z.unknown().optional(),
   updatedAt: z.unknown().optional(),
   callbackReceivedAt: z.unknown().optional(),
+  leaseExpiresAt: z.unknown().optional(),
 }).passthrough();
 
 export const notificationEventDocumentSchema = z.object({

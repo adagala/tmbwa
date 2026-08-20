@@ -2,7 +2,8 @@ import { generateKeyPairSync, createSign } from 'crypto';
 import { describe, expect, it } from 'vitest';
 import {
   acknowledgement, isActiveStkRequestStatus, isLockedStkReconciliation,
-  isSameStkRequestPayload, isSuccessfulStkDuplicateStatus,
+  isSameStkRequestPayload, isStkInitiationLeaseExpired,
+  isSuccessfulStkDuplicateStatus,
   normalizeKenyanPhone, parseKcbTransactionDate, parseStkCallback,
   parseTillNotification, permitsUnsignedSandboxNotification,
   secureTokenMatches, stkFailureStatus, stkPaymentMatchesPendingRequest,
@@ -156,6 +157,7 @@ describe('KCB Till notification contract', () => {
 
   it('blocks concurrent STK requests until the active request is terminal', () => {
     expect(isActiveStkRequestStatus('initiating')).toBe(true);
+    expect(isActiveStkRequestStatus('outcome_unknown')).toBe(true);
     expect(isActiveStkRequestStatus('pending')).toBe(true);
     expect(isActiveStkRequestStatus('succeeded_pending_reconciliation')).toBe(true);
     expect(isActiveStkRequestStatus('failed')).toBe(false);
@@ -173,6 +175,12 @@ describe('KCB Till notification contract', () => {
     expect(isSuccessfulStkDuplicateStatus('rejected')).toBe(false);
     expect(isSuccessfulStkDuplicateStatus('cancelled')).toBe(false);
     expect(isSuccessfulStkDuplicateStatus('timed_out')).toBe(false);
+  });
+
+  it('recovers initiating requests only after their lease expires', () => {
+    expect(isStkInitiationLeaseExpired(1_000, 1_000)).toBe(true);
+    expect(isStkInitiationLeaseExpired(1_001, 1_000)).toBe(false);
+    expect(isStkInitiationLeaseExpired(undefined, 1_000)).toBe(false);
   });
 });
 
