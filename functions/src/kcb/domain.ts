@@ -210,9 +210,9 @@ export const canAutomaticallyAllocateStkPayment = (args: {
   requestId: string;
   lockRequestId: unknown;
   lockStatus: unknown;
-  notificationExists: boolean;
+  notificationConflict: boolean;
 }) =>
-  !args.notificationExists &&
+  !args.notificationConflict &&
   Number(args.callbackAmount) === Number(args.requestedAmount) &&
   Number(args.requestedAmount) === Number(args.outstandingAmount) &&
   args.lockRequestId === args.requestId &&

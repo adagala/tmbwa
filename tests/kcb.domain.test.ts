@@ -157,7 +157,7 @@ describe('KCB Till notification contract', () => {
       requestId: 'stk-request-1',
       lockRequestId: 'stk-request-1',
       lockStatus: 'pending',
-      notificationExists: false,
+      notificationConflict: false,
     };
     expect(canAutomaticallyAllocateStkPayment(eligiblePayment)).toBe(true);
     expect(canAutomaticallyAllocateStkPayment({
@@ -173,7 +173,26 @@ describe('KCB Till notification contract', () => {
       ...eligiblePayment, lockStatus: 'reconciled',
     })).toBe(false);
     expect(canAutomaticallyAllocateStkPayment({
-      ...eligiblePayment, notificationExists: true,
+      ...eligiblePayment, notificationConflict: true,
+    })).toBe(false);
+  });
+
+  it('keeps a correlated early callback eligible unless its receipt conflicts', () => {
+    const correlatedEarlyCallback = {
+      callbackAmount: 500,
+      requestedAmount: 500,
+      outstandingAmount: 500,
+      requestId: 'stk-request-1',
+      lockRequestId: 'stk-request-1',
+      lockStatus: 'dispatching',
+      notificationConflict: false,
+    };
+    expect(
+      canAutomaticallyAllocateStkPayment(correlatedEarlyCallback),
+    ).toBe(true);
+    expect(canAutomaticallyAllocateStkPayment({
+      ...correlatedEarlyCallback,
+      notificationConflict: true,
     })).toBe(false);
   });
 

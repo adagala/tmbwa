@@ -1275,6 +1275,7 @@ export const requestKcbStkPush = onCall(
           ? 'pending'
           : 'outcome_unknown'
         : 'rejected';
+      const correlatedAutomaticPaymentId = db().collection('_').doc().id;
       const responseStored = await db().runTransaction(async (transaction) => {
         const unmatchedRef = checkoutRequestId
           ? db().doc(`kcb_stk_unmatched_callbacks/${checkoutRequestId}`)
@@ -1445,6 +1446,215 @@ export const requestKcbStkPush = onCall(
             requestAmount: Number(current.amount),
             requestPhone: current.phone,
           });
+          const memberRef = db().doc(`members/${current.memberId}`);
+          const contributionRef = db().doc(
+            `members/${current.memberId}/contributions/${current.contributionId}`,
+          );
+          const [memberSnapshot, contributionSnapshot] =
+            callbackMatchesRequest && !terminalNotificationStatus
+              ? await Promise.all([
+                transaction.get(memberRef),
+                transaction.get(contributionRef),
+              ])
+              : [undefined, undefined];
+          const notificationConflict = notification.exists && (
+            notificationStatus !== 'unresolved' ||
+            notificationData?.stkRequestId !== requestId
+          );
+          if (
+            callbackMatchesRequest &&
+            memberSnapshot?.exists &&
+            contributionSnapshot?.exists &&
+            canAutomaticallyAllocateStkPayment({
+              callbackAmount: Number(unmatchedData.amount),
+              requestedAmount: Number(current.amount),
+              outstandingAmount: Number(
+                contributionData(contributionSnapshot).balance,
+              ),
+              requestId,
+              lockRequestId: lockData?.requestId,
+              lockStatus: lockData?.status,
+              notificationConflict,
+            })
+          ) {
+            const member = memberData(memberSnapshot);
+            const actorId = 'system:kcb_stk_callback';
+            const paymentId = correlatedAutomaticPaymentId;
+            const internalReceiptNumber = `TMBWA-${paymentId.toUpperCase()}`;
+            const paymentPath =
+              `members/${current.memberId}/payments/${paymentId}`;
+            const payment = validateDocumentWrite(
+              paymentDocumentSchema,
+              {
+                payment_id: paymentId,
+                referencenumber: receiptNumber,
+                amount: Number(unmatchedData.amount),
+                paymentdate: admin.firestore.Timestamp.fromDate(
+                  parseKcbTransactionDate(
+                    String(unmatchedData.transactionDate ?? ''),
+                  ),
+                ),
+                created_at: admin.firestore.Timestamp.now(),
+                member_id: current.memberId,
+                contribution_id: current.contributionId,
+                firstname: member.firstname,
+                lastname: member.lastname,
+                contribution_amount: Number(unmatchedData.amount),
+                payment_type: 'contribution',
+                allocations: [{
+                  contribution_id: current.contributionId,
+                  amount: Number(unmatchedData.amount),
+                }],
+                unallocated_amount: 0,
+                credit_reserved: true,
+                payment_source: 'kcb_buni',
+                provider_transaction_id: receiptNumber,
+                payer_phone: String(unmatchedData.payerPhone ?? ''),
+                action_by: actorId,
+                request_id: requestId,
+                receipt_number: internalReceiptNumber,
+              },
+              paymentPath,
+            );
+            const reconciledNotification = validateDocumentWrite(
+              kcbPaymentNotificationDocumentSchema,
+              {
+                providerTransactionId: receiptNumber,
+                messageId: checkoutRequestId,
+                channelCode: 'stk',
+                billReference: current.invoiceNumber,
+                payerPhone: String(unmatchedData.payerPhone ?? ''),
+                payerName: '',
+                amount: Number(unmatchedData.amount),
+                currency: KCB_CURRENCY.value(),
+                transactionDate: String(unmatchedData.transactionDate ?? ''),
+                transactionType: 'MPESA_STK',
+                status: 'reconciled',
+                suggestedMemberId: current.memberId,
+                memberId: current.memberId,
+                contributionId: current.contributionId,
+                matchReason: 'authenticated_stk_request_auto_allocated',
+                provider: 'kcb_buni',
+                source: 'stk_callback',
+                stkRequestId: requestId,
+                requestedAmount: Number(current.amount),
+                allocations: [{
+                  contributionId: current.contributionId,
+                  amount: Number(unmatchedData.amount),
+                }],
+                unallocatedAmount: 0,
+                creditReserved: true,
+                paymentId,
+                receiptNumber: internalReceiptNumber,
+                receivedAt: notificationData?.receivedAt ??
+                  admin.firestore.FieldValue.serverTimestamp(),
+                reconciledAt: admin.firestore.FieldValue.serverTimestamp(),
+                reconciledBy: actorId,
+              },
+              notificationRef.path,
+            );
+            if (notification.exists) {
+              transaction.set(
+                notificationRef,
+                reconciledNotification,
+                { merge: true },
+              );
+            } else {
+              transaction.create(notificationRef, reconciledNotification);
+            }
+            transaction.create(db().doc(paymentPath), payment);
+            transaction.update(contributionRef, {
+              payments: admin.firestore.FieldValue.arrayUnion(payment),
+              balance: 0,
+              paid: PAYMENT_STATUS.PAID,
+            });
+            transaction.set(
+              db().doc(`monthly_stats/${current.contributionId}`),
+              {
+                contribution: admin.firestore.FieldValue.increment(
+                  Number(unmatchedData.amount),
+                ),
+                month: current.contributionId,
+              },
+              { merge: true },
+            );
+            transaction.update(memberRef, {
+              balance: admin.firestore.FieldValue.increment(
+                Number(unmatchedData.amount),
+              ),
+              contributionBalance: admin.firestore.FieldValue.increment(
+                Number(unmatchedData.amount),
+              ),
+            });
+            transaction.update(requestRef, {
+              status: 'reconciled',
+              merchantRequestId,
+              checkoutRequestId,
+              providerTransactionId: receiptNumber,
+              resultCode: Number(unmatchedData.resultCode),
+              resultDescription: unmatchedData.resultDescription ?? null,
+              responseCode: body.response?.ResponseCode ?? null,
+              responseDescription:
+                body.response?.ResponseDescription ??
+                body.header?.statusDescription ??
+                null,
+              callbackReceivedAt: admin.firestore.FieldValue.serverTimestamp(),
+              reconciledAt: admin.firestore.FieldValue.serverTimestamp(),
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+            transaction.update(lockRef, {
+              status: 'reconciled',
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+            transaction.update(unmatchedRef, {
+              status: 'correlated',
+              requestId,
+              correlatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+            const auditPath =
+              `audit_events/stk-auto-reconcile-${checkoutRequestId}`;
+            transaction.create(
+              db().doc(auditPath),
+              validateDocumentWrite(
+                auditEventDocumentSchema,
+                {
+                  requestId,
+                  actorId,
+                  action: 'kcb_payment.auto_reconciled',
+                  memberId: current.memberId,
+                  targetId: paymentId,
+                  changes: {
+                    providerTransactionId: receiptNumber,
+                    contributionId: current.contributionId,
+                    amount: Number(unmatchedData.amount),
+                    receiptNumber: internalReceiptNumber,
+                    callbackArrivedBeforeProviderResponse: true,
+                  },
+                  createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                },
+                auditPath,
+              ),
+            );
+            const eventPath =
+              `notification_events/payment-reconciled-${paymentId}`;
+            transaction.create(
+              db().doc(eventPath),
+              validateDocumentWrite(
+                notificationEventDocumentSchema,
+                {
+                  type: 'payment.reconciled',
+                  memberId: current.memberId,
+                  paymentId,
+                  receiptNumber: internalReceiptNumber,
+                  amount: Number(unmatchedData.amount),
+                  source: 'kcb_buni',
+                  createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                },
+                eventPath,
+              ),
+            );
+            return 'reconciled';
+          }
           if (!terminalNotificationStatus) {
             const correlatedNotification = {
               messageId: checkoutRequestId,
@@ -2169,7 +2379,7 @@ export const kcbStkCallback = onRequest(
               requestId: pending.requestId,
               lockRequestId: lockData?.requestId,
               lockStatus: lock.data()?.status,
-              notificationExists: false,
+              notificationConflict: false,
             })
           ) {
             const member = memberData(memberSnapshot);
