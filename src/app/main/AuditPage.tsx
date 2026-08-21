@@ -13,6 +13,7 @@ import useUser from '@/hooks/useUser';
 import { Navigate } from 'react-router-dom';
 import { AuditEvent, auditEventSchema } from 'tmbwa-shared/firebase';
 import { parseDocument } from 'tmbwa-shared';
+import { formatNairobiDateTime } from '@/lib/financialReporting';
 
 export default function AuditPage() {
   const { role } = useUser();
@@ -55,7 +56,9 @@ export default function AuditPage() {
             <span>Target: {event.targetId}</span>
             <span>Actor: {event.actorId}</span>
             <span>
-              {event.createdAt?.toDate().toLocaleString('en-KE') ?? 'Pending'}
+              {event.createdAt
+                ? formatNairobiDateTime(event.createdAt.toDate())
+                : 'Pending'}
             </span>
             <dl className="grid gap-1 sm:col-span-2 lg:col-span-5">
               {Object.entries(event.changes ?? {}).map(([key, value]) => (

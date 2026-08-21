@@ -16,6 +16,8 @@ import { Label } from '@/components/Label';
 import { toast } from '@/hooks/useToast';
 import { correctLegacyContribution } from '@/lib/firebase/financial';
 import { Contribution } from 'tmbwa-shared/firebase';
+import { DatePicker } from '@/components/DatePicker';
+import { calendarDate, calendarDateValue } from '@/lib/financialReporting';
 
 export const DialogLegacyContributionCorrection = ({
   contribution,
@@ -127,11 +129,12 @@ export const DialogLegacyContributionCorrection = ({
                 <Label htmlFor="legacy-date">
                   Original payment date (optional)
                 </Label>
-                <Input
+                <DatePicker
                   id="legacy-date"
-                  type="date"
-                  value={paymentDate}
-                  onChange={(event) => setPaymentDate(event.target.value)}
+                  placeholder="Select payment date"
+                  enableYearNavigation
+                  value={calendarDate(paymentDate)}
+                  onChange={(date) => setPaymentDate(calendarDateValue(date))}
                 />
               </div>
             </div>

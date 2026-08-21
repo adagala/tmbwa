@@ -12,12 +12,61 @@ export const kenyaMoney = new Intl.NumberFormat('en-KE', {
   currency: 'KES',
   minimumFractionDigits: 2,
 });
+
+const NAIROBI_TIME_ZONE = 'Africa/Nairobi';
+
+const monthFormatter = new Intl.DateTimeFormat('en-KE', {
+  month: 'short',
+  year: 'numeric',
+  timeZone: NAIROBI_TIME_ZONE,
+});
+
+const dateFormatter = new Intl.DateTimeFormat('en-CA', {
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  timeZone: NAIROBI_TIME_ZONE,
+});
+
+const dateTimeFormatter = new Intl.DateTimeFormat('en-KE', {
+  year: 'numeric',
+  month: 'short',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hour12: false,
+  timeZone: NAIROBI_TIME_ZONE,
+});
+
+const monthStartDate = (month: string) =>
+  new Date(`${month.slice(0, 7)}-01T00:00:00+03:00`);
+
+export const formatNairobiMonth = (date: Date) => monthFormatter.format(date);
+
+export const formatNairobiDate = (date: Date) => dateFormatter.format(date);
+
+export const formatNairobiDateTime = (date: Date) =>
+  dateTimeFormatter.format(date);
+
+export const calendarDateValue = (date: Date | undefined) =>
+  date
+    ? `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+    : '';
+
+export const calendarDate = (value: string) => {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return undefined;
+  const date = new Date(
+    Number(match[1]),
+    Number(match[2]) - 1,
+    Number(match[3]),
+  );
+  return Number.isNaN(date.getTime()) ? undefined : date;
+};
+
 export const monthLabel = (month: string) =>
-  new Intl.DateTimeFormat('en-KE', {
-    month: 'short',
-    year: 'numeric',
-    timeZone: 'Africa/Nairobi',
-  }).format(new Date(`${month.slice(0, 7)}-01T00:00:00+03:00`));
+  formatNairobiMonth(monthStartDate(month));
 export const timestampDate = (value: Payment['paymentdate']) =>
   value instanceof Date
     ? value

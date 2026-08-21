@@ -23,13 +23,19 @@ import {
   PaymentStatus,
 } from 'tmbwa-shared';
 import { getMonthlyMembersContributions } from '@/lib/firebase/firestore';
-import { getMonth, months, years } from '@/lib/utils';
+import {
+  getCurrentMonthNumber,
+  getCurrentYear,
+  getMonth,
+  months,
+  years,
+} from '@/lib/utils';
 import debounce from 'lodash.debounce';
 import { Avatar } from '@/components/Avatar';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
-const currentYear = new Date().getFullYear().toString();
-const currentMonth = String(new Date().getMonth() + 1).padStart(2, '0');
+const currentYear = getCurrentYear();
+const currentMonth = getCurrentMonthNumber();
 
 export default function ContributionsPage() {
   const navigate = useNavigate();

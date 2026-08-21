@@ -599,6 +599,8 @@ const SingleDatePicker = ({
   return (
     <PopoverPrimitives.Root open={open} onOpenChange={onOpenChange}>
       <Trigger
+        id={props.id}
+        type="button"
         placeholder={placeholder}
         disabled={disabled}
         className={className}
@@ -895,6 +897,8 @@ const RangeDatePicker = ({
   return (
     <PopoverPrimitives.Root open={open} onOpenChange={onOpenChange}>
       <Trigger
+        id={props.id}
+        type="button"
         placeholder={placeholder}
         disabled={disabled}
         className={className}
