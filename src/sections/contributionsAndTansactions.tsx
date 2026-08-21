@@ -16,8 +16,9 @@ import {
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { printStatement } from '@/lib/memberDocuments';
 import { Button } from '@/components/Button';
-import { Input } from '@/components/Input';
 import { Label } from '@/components/Label';
+import { DatePicker } from '@/components/DatePicker';
+import { calendarDate, calendarDateValue } from '@/lib/financialReporting';
 
 interface ContributionsAndTransactionsProps
   extends React.ComponentPropsWithoutRef<'div'> {
@@ -79,22 +80,24 @@ const ContributionsAndTransactions = React.forwardRef<
         <div className="flex flex-wrap items-end gap-3 rounded border p-3">
           <div className="space-y-1">
             <Label htmlFor="statement-from">Statement from</Label>
-            <Input
+            <DatePicker
               id="statement-from"
               className="mt-1"
-              type="date"
-              value={statementFrom}
-              onChange={(event) => setStatementFrom(event.target.value)}
+              placeholder="Select start date"
+              enableYearNavigation
+              value={calendarDate(statementFrom)}
+              onChange={(date) => setStatementFrom(calendarDateValue(date))}
             />
           </div>
           <div className="space-y-1">
             <Label htmlFor="statement-to">To</Label>
-            <Input
+            <DatePicker
               id="statement-to"
               className="mt-1"
-              type="date"
-              value={statementTo}
-              onChange={(event) => setStatementTo(event.target.value)}
+              placeholder="Select end date"
+              enableYearNavigation
+              value={calendarDate(statementTo)}
+              onChange={(date) => setStatementTo(calendarDateValue(date))}
             />
           </div>
           <Button

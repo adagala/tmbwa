@@ -46,15 +46,37 @@ export const getMemberInitials = (fullName: string | null | undefined) => {
   return initials?.join('') || '';
 };
 
+const NAIROBI_TIME_ZONE = 'Africa/Nairobi';
+
+const dateParts = (date: Date, options: Intl.DateTimeFormatOptions) => {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: NAIROBI_TIME_ZONE,
+    ...options,
+  });
+  const parts = formatter.formatToParts(date);
+  const year = parts.find((part) => part.type === 'year')?.value;
+  const month = parts.find((part) => part.type === 'month')?.value;
+  if (!year || !month) {
+    throw new Error('Unable to derive Nairobi date parts.');
+  }
+  return { year, month };
+};
+
 export const getMonth = (_date?: string) => {
   const date = _date ? new Date(_date) : new Date();
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const { year, month } = dateParts(date, {
+    year: 'numeric',
+    month: '2-digit',
+  });
   return `${year}-${month}-01`;
 };
 
+export const getCurrentYear = () => getMonth().slice(0, 4);
+
+export const getCurrentMonthNumber = () => getMonth().slice(5, 7);
+
 const firstContributionYear = 2024;
-const currentYear = new Date().getFullYear();
+const currentYear = Number(getCurrentYear());
 export const years = Array.from(
   { length: currentYear - firstContributionYear + 2 },
   (_, index) => String(firstContributionYear + index),

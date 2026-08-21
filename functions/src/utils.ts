@@ -3,9 +3,17 @@ import { randomBytes } from 'node:crypto';
 export const createBootstrapPassword = () => randomBytes(32).toString('base64url');
 
 export const getCurrentMonth = () => {
-  const date = new Date();
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Africa/Nairobi',
+    year: 'numeric',
+    month: '2-digit',
+  });
+  const parts = formatter.formatToParts(new Date());
+  const year = parts.find((part) => part.type === 'year')?.value;
+  const month = parts.find((part) => part.type === 'month')?.value;
+  if (!year || !month) {
+    throw new Error('Unable to derive current Nairobi month.');
+  }
   return `${year}-${month}-01`;
 };
 

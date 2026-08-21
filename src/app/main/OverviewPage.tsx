@@ -7,27 +7,20 @@ import { AreaChart } from '@/components/AreaChart';
 import { useEffect, useState } from 'react';
 import { getMonthlyStats, getRecentPayments } from '@/lib/firebase/firestore';
 import { Avatar } from '@/components/Avatar';
+import { formatNairobiMonth, monthLabel } from '@/lib/financialReporting';
+import { getCurrentMonthNumber, getCurrentYear } from '@/lib/utils';
 
 export default function OverviewPage() {
   const [payments, setPayments] = useState<Payment[]>([]);
   const [monthlyStats, setMonthlyStats] = useState<MonthlyStats[]>([]);
-  const currentMonth = new Date().toLocaleDateString('en-US', {
-    month: 'long',
-  });
-  const currentMonthShort = new Date().toLocaleDateString('en-US', {
-    month: '2-digit',
-  });
-  const currentYear = new Date().toLocaleDateString('en-US', {
-    year: 'numeric',
-  });
+  const currentMonth = formatNairobiMonth(new Date());
+  const currentMonthShort = getCurrentMonthNumber();
+  const currentYear = getCurrentYear();
   const currentMonthStats = monthlyStats.find(
     (stat) => stat.month === `${currentYear}-${currentMonthShort}-01`,
   );
   const chartdata = monthlyStats.map((stats) => ({
-    date: new Intl.DateTimeFormat('en-US', {
-      month: 'short',
-      year: '2-digit',
-    }).format(new Date(stats.month)),
+    date: monthLabel(stats.month),
     Billed: stats.amount,
     Collected: stats.contribution,
   }));

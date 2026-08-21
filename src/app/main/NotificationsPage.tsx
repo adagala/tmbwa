@@ -12,6 +12,7 @@ import {
   subscribeToNotificationPreference,
   updateNotificationPreference,
 } from '@/lib/firebase/notifications';
+import { formatNairobiDateTime } from '@/lib/financialReporting';
 
 export default function NotificationsPage() {
   const { user, role } = useUser();
@@ -118,8 +119,9 @@ export default function NotificationsPage() {
                 <h3 className="font-semibold">{notification.title}</h3>
                 <p className="mt-1 text-sm">{notification.body}</p>
                 <p className="mt-2 text-xs text-gray-500">
-                  {notification.createdAt?.toDate().toLocaleString('en-KE') ??
-                    'Sending'}
+                  {notification.createdAt
+                    ? formatNairobiDateTime(notification.createdAt.toDate())
+                    : 'Sending'}
                 </p>
               </div>
               {!notification.read && user ? (

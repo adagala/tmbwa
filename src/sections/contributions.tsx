@@ -7,6 +7,7 @@ import { DialogContributionDetails } from '@/components/ui/contributions/DialogC
 import { Avatar } from '@/components/Avatar';
 import { DialogAddContribution } from '@/components/ui/contributions/DialogAddContribution';
 import useUser from '@/hooks/useUser';
+import { monthLabel } from '@/lib/financialReporting';
 
 interface ContributionsProps extends React.ComponentPropsWithoutRef<'div'> {
   member: Member;
@@ -44,20 +45,10 @@ const Contributions = React.forwardRef<HTMLDivElement, ContributionsProps>(
               }}
             >
               <div className="flex min-w-0 gap-x-4">
-                <Avatar
-                  initial={new Date(contribution.month)
-                    .toLocaleDateString('en-US', {
-                      year: 'numeric',
-                      month: 'long',
-                    })
-                    .charAt(0)}
-                />
+                <Avatar initial={monthLabel(contribution.month).charAt(0)} />
                 <div className="min-w-0 flex flex-auto items-center">
                   <p className="text-sm font-semibold leading-6 text-gray-900 dark:text-gray-200">
-                    {new Date(contribution.month).toLocaleDateString('en-US', {
-                      year: 'numeric',
-                      month: 'short',
-                    })}
+                    {monthLabel(contribution.month)}
                   </p>
                 </div>
               </div>

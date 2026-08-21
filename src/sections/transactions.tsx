@@ -1,11 +1,12 @@
 import React from 'react';
 import { Payment, Member } from 'tmbwa-shared/firebase';
-import { FirebaseTimestamp, PaymentTypeEnum } from 'tmbwa-shared';
+import { PaymentTypeEnum } from 'tmbwa-shared';
 import { RiWalletLine } from '@remixicon/react';
 import { List, ListItem } from '@/components/List';
 import { Badge } from '@/components/Badge';
 import { Button } from '@/components/Button';
 import { printReceipt, receiptNumber } from '@/lib/memberDocuments';
+import { formatNairobiDateTime, timestampDate } from '@/lib/financialReporting';
 
 interface TransactionsProps extends React.ComponentPropsWithoutRef<'div'> {
   member: Member;
@@ -35,16 +36,11 @@ const Transactions = React.forwardRef<HTMLDivElement, TransactionsProps>(
                   <div className="min-w-0 flex flex-auto items-center">
                     <div className="text-sm font-semibold leading-6 text-gray-900 dark:text-gray-200 flex">
                       <div className="w-48">
-                        {new Date(
-                          (payment.paymentdate as FirebaseTimestamp).seconds *
-                            1000,
-                        ).toLocaleDateString('en-US', {
-                          year: 'numeric',
-                          month: 'short',
-                          day: '2-digit',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
+                        {timestampDate(payment.paymentdate)
+                          ? formatNairobiDateTime(
+                              timestampDate(payment.paymentdate)!,
+                            )
+                          : 'Pending'}
                       </div>
                       <div className="w-20">
                         <Badge

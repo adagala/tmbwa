@@ -27,6 +27,7 @@ import {
   validateDocumentWrite,
 } from '../firestoreData';
 import { isActiveStkRequestStatus } from '../kcb/domain';
+import { getCurrentMonth } from '../utils';
 
 type CommandData = Record<string, unknown>;
 
@@ -342,7 +343,7 @@ export const correctLegacyContribution = onCall(async (request) => {
   } catch (error) {
     throw new HttpsError('invalid-argument', (error as Error).message);
   }
-  if (contributionId > new Date().toISOString().slice(0, 7) + '-01') {
+  if (contributionId > getCurrentMonth()) {
     throw new HttpsError('invalid-argument', 'Future contributions cannot be corrected.');
   }
   const reference = typeof data.reference === 'string' ? data.reference.trim() : '';

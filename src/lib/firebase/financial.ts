@@ -86,7 +86,7 @@ export const correctLegacyContribution = ({
     reference,
     notes,
     originalPaymentDateMillis: originalPaymentDate
-      ? new Date(`${originalPaymentDate}T12:00:00`).getTime()
+      ? new Date(`${originalPaymentDate}T12:00:00+03:00`).getTime()
       : undefined,
   });
 

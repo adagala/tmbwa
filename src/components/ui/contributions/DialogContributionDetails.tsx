@@ -11,7 +11,7 @@ import {
   DialogTrigger,
 } from '@/components/Dialog';
 import { Contribution, Member } from 'tmbwa-shared/firebase';
-import { ContributionStatusEnum, FirebaseTimestamp } from 'tmbwa-shared';
+import { ContributionStatusEnum } from 'tmbwa-shared';
 import { Badge } from '@/components/Badge';
 import { Label } from '@/components/Label';
 import { RiCoinsLine, RiSafe2Line, RiShoppingBag3Line } from '@remixicon/react';
@@ -22,6 +22,11 @@ import { DialogDeleteContribution } from './DialogDeleteContribution';
 import { DialogReverseLegacyCorrection } from './DialogReverseLegacyCorrection';
 import { requestKcbStkPush } from '@/lib/firebase/kcb';
 import { useToast } from '@/hooks/useToast';
+import {
+  formatNairobiDate,
+  monthLabel,
+  timestampDate,
+} from '@/lib/financialReporting';
 
 export const DialogContributionDetails = ({
   contribution,
@@ -130,15 +135,7 @@ export const DialogContributionDetails = ({
                           Month
                         </dt>
                         <dd className="mt-1 text-sm leading-6 text-gray-700 dark:text-gray-300 sm:col-span-2 sm:mt-0 capitalize">
-                          {contribution
-                            ? new Date(contribution?.month)?.toLocaleDateString(
-                                'en-US',
-                                {
-                                  year: 'numeric',
-                                  month: 'long',
-                                },
-                              )
-                            : '-'}
+                          {contribution ? monthLabel(contribution.month) : '-'}
                         </dd>
                       </div>
                       <div className="px-4 py-3 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-0">
@@ -218,14 +215,11 @@ export const DialogContributionDetails = ({
                             Payment date
                           </dt>
                           <dd className="mt-1 text-sm leading-6 text-gray-700 dark:text-gray-400 sm:col-span-2 sm:mt-0">
-                            {new Date(
-                              (payment.paymentdate as FirebaseTimestamp)
-                                .seconds * 1000,
-                            ).toLocaleDateString('en-US', {
-                              year: 'numeric',
-                              month: 'long',
-                              day: '2-digit',
-                            })}
+                            {timestampDate(payment.paymentdate)
+                              ? formatNairobiDate(
+                                  timestampDate(payment.paymentdate)!,
+                                )
+                              : 'Pending'}
                           </dd>
                         </div>
                       </dl>
