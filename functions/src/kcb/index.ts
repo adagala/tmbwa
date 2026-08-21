@@ -29,6 +29,7 @@ import {
 } from '../firestoreData';
 import {
   acknowledgement,
+  canAutomaticallyAllocateStkPayment,
   isActiveStkRequestStatus,
   isLockedStkReconciliation,
   isManuallyResolvableStkUnknownOutcome,
@@ -1840,6 +1841,7 @@ export const kcbStkCallback = onRequest(
       if (!correlatedRequestRef) {
         throw new Error('The STK callback request handshake is incomplete.');
       }
+      const automaticPaymentId = db().collection('_').doc().id;
       await db().runTransaction(async (transaction) => {
         const snapshot = await transaction.get(correlatedRequestRef);
         const pending = kcbStkRequestData(snapshot);
@@ -2147,6 +2149,186 @@ export const kcbStkCallback = onRequest(
             { merge: true },
           );
         } else {
+          const memberRef = db().doc(`members/${pending.memberId}`);
+          const contributionRef = db().doc(
+            `members/${pending.memberId}/contributions/${pending.contributionId}`,
+          );
+          const [memberSnapshot, contributionSnapshot] = await Promise.all([
+            transaction.get(memberRef),
+            transaction.get(contributionRef),
+          ]);
+          if (
+            memberSnapshot.exists &&
+            contributionSnapshot.exists &&
+            canAutomaticallyAllocateStkPayment({
+              callbackAmount: Number(callback.amount),
+              requestedAmount: Number(pending.amount),
+              outstandingAmount: Number(
+                contributionData(contributionSnapshot).balance,
+              ),
+              requestId: pending.requestId,
+              lockRequestId: lockData?.requestId,
+              lockStatus: lock.data()?.status,
+              notificationExists: false,
+            })
+          ) {
+            const member = memberData(memberSnapshot);
+            const actorId = 'system:kcb_stk_callback';
+            const receiptNumber =
+              `TMBWA-${automaticPaymentId.toUpperCase()}`;
+            const paymentPath =
+              `members/${pending.memberId}/payments/${automaticPaymentId}`;
+            const payment = validateDocumentWrite(
+              paymentDocumentSchema,
+              {
+                payment_id: automaticPaymentId,
+                referencenumber: callback.receiptNumber,
+                amount: Number(callback.amount),
+                paymentdate: admin.firestore.Timestamp.fromDate(
+                  parseKcbTransactionDate(String(callback.transactionDate)),
+                ),
+                created_at: admin.firestore.Timestamp.now(),
+                member_id: pending.memberId,
+                contribution_id: pending.contributionId,
+                firstname: member.firstname,
+                lastname: member.lastname,
+                contribution_amount: Number(callback.amount),
+                payment_type: 'contribution',
+                allocations: [{
+                  contribution_id: pending.contributionId,
+                  amount: Number(callback.amount),
+                }],
+                unallocated_amount: 0,
+                credit_reserved: true,
+                payment_source: 'kcb_buni',
+                provider_transaction_id: callback.receiptNumber,
+                payer_phone: callback.payerPhone,
+                action_by: actorId,
+                request_id: pending.requestId,
+                receipt_number: receiptNumber,
+              },
+              paymentPath,
+            );
+            const reconciledNotification = {
+              providerTransactionId: callback.receiptNumber,
+              messageId: callback.checkoutRequestId,
+              channelCode: 'stk',
+              billReference: pending.invoiceNumber,
+              payerPhone: callback.payerPhone,
+              payerName: '',
+              amount: Number(callback.amount),
+              currency: KCB_CURRENCY.value(),
+              transactionDate: callback.transactionDate,
+              transactionType: 'MPESA_STK',
+              status: 'reconciled',
+              suggestedMemberId: pending.memberId,
+              memberId: pending.memberId,
+              contributionId: pending.contributionId,
+              matchReason: 'authenticated_stk_request_auto_allocated',
+              provider: 'kcb_buni',
+              source: 'stk_callback',
+              stkRequestId: snapshot.id,
+              requestedAmount: Number(pending.amount),
+              allocations: [{
+                contributionId: pending.contributionId,
+                amount: Number(callback.amount),
+              }],
+              unallocatedAmount: 0,
+              creditReserved: true,
+              paymentId: automaticPaymentId,
+              receiptNumber,
+              receivedAt: admin.firestore.FieldValue.serverTimestamp(),
+              reconciledAt: admin.firestore.FieldValue.serverTimestamp(),
+              reconciledBy: actorId,
+            };
+            transaction.create(
+              notificationRef,
+              validateDocumentWrite(
+                kcbPaymentNotificationDocumentSchema,
+                reconciledNotification,
+                notificationRef.path,
+              ),
+            );
+            transaction.create(db().doc(paymentPath), payment);
+            transaction.update(contributionRef, {
+              payments: admin.firestore.FieldValue.arrayUnion(payment),
+              balance: 0,
+              paid: PAYMENT_STATUS.PAID,
+            });
+            transaction.set(
+              db().doc(`monthly_stats/${pending.contributionId}`),
+              {
+                contribution: admin.firestore.FieldValue.increment(
+                  Number(callback.amount),
+                ),
+                month: pending.contributionId,
+              },
+              { merge: true },
+            );
+            transaction.update(memberRef, {
+              balance: admin.firestore.FieldValue.increment(
+                Number(callback.amount),
+              ),
+              contributionBalance: admin.firestore.FieldValue.increment(
+                Number(callback.amount),
+              ),
+            });
+            transaction.update(correlatedRequestRef, {
+              status: 'reconciled',
+              providerTransactionId: callback.receiptNumber,
+              resultCode: callback.resultCode,
+              resultDescription: callback.resultDescription,
+              callbackReceivedAt: admin.firestore.FieldValue.serverTimestamp(),
+              reconciledAt: admin.firestore.FieldValue.serverTimestamp(),
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+            transaction.update(lockRef, {
+              status: 'reconciled',
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+            const auditPath =
+              `audit_events/stk-auto-reconcile-${callback.checkoutRequestId}`;
+            transaction.create(
+              db().doc(auditPath),
+              validateDocumentWrite(
+                auditEventDocumentSchema,
+                {
+                  requestId: pending.requestId,
+                  actorId,
+                  action: 'kcb_payment.auto_reconciled',
+                  memberId: pending.memberId,
+                  targetId: automaticPaymentId,
+                  changes: {
+                    providerTransactionId: callback.receiptNumber,
+                    contributionId: pending.contributionId,
+                    amount: Number(callback.amount),
+                    receiptNumber,
+                  },
+                  createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                },
+                auditPath,
+              ),
+            );
+            const eventPath =
+              `notification_events/payment-reconciled-${automaticPaymentId}`;
+            transaction.create(
+              db().doc(eventPath),
+              validateDocumentWrite(
+                notificationEventDocumentSchema,
+                {
+                  type: 'payment.reconciled',
+                  memberId: pending.memberId,
+                  paymentId: automaticPaymentId,
+                  receiptNumber,
+                  amount: Number(callback.amount),
+                  source: 'kcb_buni',
+                  createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                },
+                eventPath,
+              ),
+            );
+            return;
+          }
           transaction.create(
             notificationRef,
             validateDocumentWrite(

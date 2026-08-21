@@ -203,6 +203,22 @@ export const stkPaymentMatchesPendingRequest = (args: {
   typeof args.receiptNumber === 'string' &&
   args.receiptNumber.trim().length > 0;
 
+export const canAutomaticallyAllocateStkPayment = (args: {
+  callbackAmount: number;
+  requestedAmount: number;
+  outstandingAmount: number;
+  requestId: string;
+  lockRequestId: unknown;
+  lockStatus: unknown;
+  notificationExists: boolean;
+}) =>
+  !args.notificationExists &&
+  Number(args.callbackAmount) === Number(args.requestedAmount) &&
+  Number(args.requestedAmount) === Number(args.outstandingAmount) &&
+  args.lockRequestId === args.requestId &&
+  typeof args.lockStatus === 'string' &&
+  isActiveStkRequestStatus(args.lockStatus);
+
 export const isLockedStkReconciliation = (args: {
   source: string | undefined;
 }) => args.source === 'stk_callback';
