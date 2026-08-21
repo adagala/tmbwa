@@ -1,7 +1,8 @@
 import { generateKeyPairSync, createSign } from 'crypto';
 import { describe, expect, it } from 'vitest';
 import {
-  acknowledgement, isActiveStkRequestStatus, isLockedStkReconciliation,
+  acknowledgement, canAutomaticallyAllocateStkPayment,
+  isActiveStkRequestStatus, isLockedStkReconciliation,
   isManuallyResolvableStkUnknownOutcome,
   isRecoverableStkLeaseStatus,
   isSameStkRequestPayload, isStkInitiationLeaseExpired,
@@ -145,6 +146,53 @@ describe('KCB Till notification contract', () => {
       callbackPhone: '+254711000000',
       pendingPhone: '+254711000000',
       receiptNumber: '',
+    })).toBe(false);
+  });
+
+  it('automatically allocates only exact full-balance STK payments with an owned active lock', () => {
+    const eligiblePayment = {
+      callbackAmount: 500,
+      requestedAmount: 500,
+      outstandingAmount: 500,
+      requestId: 'stk-request-1',
+      lockRequestId: 'stk-request-1',
+      lockStatus: 'pending',
+      notificationConflict: false,
+    };
+    expect(canAutomaticallyAllocateStkPayment(eligiblePayment)).toBe(true);
+    expect(canAutomaticallyAllocateStkPayment({
+      ...eligiblePayment, outstandingAmount: 1_000,
+    })).toBe(false);
+    expect(canAutomaticallyAllocateStkPayment({
+      ...eligiblePayment, outstandingAmount: 250,
+    })).toBe(false);
+    expect(canAutomaticallyAllocateStkPayment({
+      ...eligiblePayment, lockRequestId: 'another-request',
+    })).toBe(false);
+    expect(canAutomaticallyAllocateStkPayment({
+      ...eligiblePayment, lockStatus: 'reconciled',
+    })).toBe(false);
+    expect(canAutomaticallyAllocateStkPayment({
+      ...eligiblePayment, notificationConflict: true,
+    })).toBe(false);
+  });
+
+  it('keeps a correlated early callback eligible unless its receipt conflicts', () => {
+    const correlatedEarlyCallback = {
+      callbackAmount: 500,
+      requestedAmount: 500,
+      outstandingAmount: 500,
+      requestId: 'stk-request-1',
+      lockRequestId: 'stk-request-1',
+      lockStatus: 'dispatching',
+      notificationConflict: false,
+    };
+    expect(
+      canAutomaticallyAllocateStkPayment(correlatedEarlyCallback),
+    ).toBe(true);
+    expect(canAutomaticallyAllocateStkPayment({
+      ...correlatedEarlyCallback,
+      notificationConflict: true,
     })).toBe(false);
   });
 
