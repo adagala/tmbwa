@@ -1,17 +1,24 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import './index.css';
-import { RouterProvider } from 'react-router-dom';
-import { router } from './routes/routes.tsx';
-import { Toaster } from './components/Toaster';
+import MaintenancePage from './sections/MaintenancePage';
 
-ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
-    <div
-      className={`antialiased min-h-screen mx-auto max-w-screen-2xl dark:bg-gray-950 dark:text-gray-200`}
-    >
-      <RouterProvider router={router} />
-      <Toaster />
-    </div>
-  </React.StrictMode>,
-);
+const root = ReactDOM.createRoot(document.getElementById('root')!);
+
+if (import.meta.env.VITE_MAINTENANCE === 'true') {
+  root.render(
+    <React.StrictMode>
+      <MaintenancePage />
+    </React.StrictMode>,
+  );
+} else {
+  root.render(<div className="min-h-screen bg-gray-50 dark:bg-gray-950" />);
+
+  void import('./Application').then(({ default: Application }) => {
+    root.render(
+      <React.StrictMode>
+        <Application />
+      </React.StrictMode>,
+    );
+  });
+}

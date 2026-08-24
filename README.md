@@ -56,6 +56,7 @@ VITE_FIREBASE_STORAGE_BUCKET=example.appspot.com
 VITE_FIREBASE_MESSAGING_SENDER_ID=example
 VITE_FIREBASE_APP_ID=example
 VITE_FIREBASE_MEASUREMENT_ID=example
+VITE_MAINTENANCE=false
 ```
 
 Do not use production member data in development. Run the web app with `npm run dev`. The Firestore rules suite starts its own isolated emulator:
@@ -63,6 +64,11 @@ Do not use production member data in development. Run the web app with `npm run 
 ```bash
 npm run test
 ```
+
+Set `VITE_MAINTENANCE=true` and rebuild the frontend to replace every web route
+with the maintenance screen. Set it back to `false` and rebuild to restore the
+application. Because Vite embeds environment values at build time, changing the
+deployed environment without rebuilding does not change maintenance mode.
 
 ## Quality checks
 

@@ -3,6 +3,7 @@
 interface ImportMetaEnv {
   readonly VITE_APP_ENV?: string;
   readonly VITE_KCB_DEV_MOCK_ENABLED?: string;
+  readonly VITE_MAINTENANCE?: string;
 }
 
 interface ImportMeta {
