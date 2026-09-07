@@ -40,6 +40,27 @@ export type IncomingStkRequest = {
 
 type JsonObject = Record<string, unknown>;
 
+/** A callback validation failure with a message that is safe to return to KCB. */
+export class KcbNotificationValidationError extends Error {
+  /**
+   * Creates a validation error with a deliberately limited public message.
+   * @param {string} message Internal diagnostic detail.
+   * @param {string} publicMessage Safe provider-facing error category.
+   */
+  constructor(
+    message: string,
+    readonly publicMessage: string,
+  ) {
+    super(message);
+    this.name = 'KcbNotificationValidationError';
+  }
+}
+
+export const publicKcbNotificationErrorMessage = (error: unknown) =>
+  error instanceof KcbNotificationValidationError
+    ? error.publicMessage
+    : 'Invalid notification';
+
 const object = (value: unknown, field: string): JsonObject => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error(`${field} must be an object.`);

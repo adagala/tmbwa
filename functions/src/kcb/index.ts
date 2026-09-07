@@ -39,12 +39,14 @@ import {
   isStkInitiationLeaseExpired,
   isSuccessfulStkDuplicateStatus,
   lockedStkAllocationAmount,
+  KcbNotificationValidationError,
   normalizeKenyanPhone,
   ownsExpectedStkTransition,
   parseKcbTransactionDate,
   parseStkCallback,
   parseTillNotification,
   permitsUnsignedSandboxNotification,
+  publicKcbNotificationErrorMessage,
   secureTokenMatches,
   stkFailureStatus,
   stkPaymentMatchesPendingRequest,
@@ -205,7 +207,10 @@ export const kcbTillNotification = onRequest(
         notification.billReference,
         KCB_SHARED_REFERENCE.value(),
       )) {
-        throw new Error('Unexpected bill reference.');
+        throw new KcbNotificationValidationError(
+          'Unexpected bill reference.',
+          'Invalid bill reference',
+        );
       }
 
       const notificationRef = db().doc(
@@ -262,6 +267,7 @@ export const kcbTillNotification = onRequest(
           ),
         );
     } catch (error) {
+      const statusMessage = publicKcbNotificationErrorMessage(error);
       logger.warn('Rejected invalid KCB notification.', {
         reason: (error as Error).message,
         messageId,
@@ -275,7 +281,7 @@ export const kcbTillNotification = onRequest(
             conversationId,
             transactionId,
             false,
-            'Invalid notification',
+            statusMessage,
           ),
         );
     }
