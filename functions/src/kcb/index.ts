@@ -81,9 +81,6 @@ const KCB_STK_URL = defineString('KCB_STK_URL', {
   default: 'https://uat.buni.kcbgroup.com/mm/api/request/1.0.0/stkpush',
 });
 const KCB_STK_CALLBACK_URL = defineString('KCB_STK_CALLBACK_URL');
-const KCB_ORG_SHORTCODE = defineString('KCB_ORG_SHORTCODE', {
-  default: '522533',
-});
 const KCB_STK_ROUTE_CODE = defineString('KCB_STK_ROUTE_CODE', {
   default: '207',
 });
@@ -975,8 +972,10 @@ export const requestKcbStkPush = onCall(
     }
     callbackUrl.searchParams.set('token', KCB_STK_CALLBACK_TOKEN.value());
     const requestRef = db().doc(`kcb_stk_requests/${requestId}`);
-    const invoiceNumber =
+    const paymentReference =
       `TMB${randomUUID().replace(/-/g, '').slice(0, 9)}`.toUpperCase();
+    const invoiceNumber =
+      `${KCB_SHARED_REFERENCE.value()}#${paymentReference}`;
     const messageId = randomUUID().replace(/-/g, '').slice(0, 32);
     const memberRef = db().doc(`members/${memberId}`);
     const contributionRef = db().doc(
@@ -1246,7 +1245,7 @@ export const requestKcbStkPush = onCall(
           amount: String(amount),
           invoiceNumber: preparedInvoiceNumber,
           sharedShortCode: true,
-          orgShortCode: KCB_ORG_SHORTCODE.value(),
+          orgShortCode: '',
           orgPassKey: '',
           callbackUrl: callbackUrl.toString(),
           transactionDescription: 'TMBWA payment',

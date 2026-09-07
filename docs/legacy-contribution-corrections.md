@@ -103,7 +103,7 @@ The STK flow relies on these values in the target Firebase project:
 - `KCB_CONSUMER_SECRET`
 - `KCB_STK_URL`
 - `KCB_TOKEN_URL`
-- `KCB_ORG_SHORTCODE`
+- `KCB_SHARED_REFERENCE` (the account/till number used in STK invoice numbers)
 - `KCB_STK_ROUTE_CODE`
 
 If needed, set or rotate secrets before deploy:

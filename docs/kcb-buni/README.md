@@ -13,12 +13,12 @@ An accepted notification or STK request does not credit a member. Successful pro
 
 ## Non-secret runtime parameters
 
-- `KCB_SHARED_REFERENCE` (currently `7969138`)
+- `KCB_SHARED_REFERENCE` (the account/till number included at the start of STK
+  `invoiceNumber`; currently `7969138`)
 - `KCB_CURRENCY` (default `KES`)
 - `KCB_TOKEN_URL`
 - `KCB_STK_URL`
 - `KCB_STK_CALLBACK_URL`
-- `KCB_ORG_SHORTCODE` (currently `522533`)
 - `KCB_STK_ROUTE_CODE` (default `207`; confirm with KCB)
 - `APP_ENV` (default `production`; set to `development` only in the Firebase development project)
 - `KCB_DEV_MOCK_ENABLED` (default `false`; set to `true` only for Sandbox IPN testing)
