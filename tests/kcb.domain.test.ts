@@ -1,7 +1,8 @@
 import { generateKeyPairSync, createSign } from 'crypto';
 import { describe, expect, it } from 'vitest';
 import {
-  acknowledgement, canAutomaticallyAllocateStkPayment,
+  acknowledgement, billReferenceMatchesSharedReference,
+  canAutomaticallyAllocateStkPayment,
   isActiveStkRequestStatus, isLockedStkReconciliation,
   isManuallyResolvableStkUnknownOutcome,
   isRecoverableStkLeaseStatus,
@@ -42,6 +43,18 @@ describe('KCB Till notification contract', () => {
       messageId: 'message-1', providerTransactionId: 'FT25139M3RM6', billReference: '7969138',
       payerPhone: '+254711000000', payerName: 'PETER BOR', amount: 1000, currency: 'KES',
     });
+  });
+
+  it('accepts direct and server-generated STK bill references only', () => {
+    expect(billReferenceMatchesSharedReference('7969138', '7969138')).toBe(true);
+    expect(billReferenceMatchesSharedReference(
+      '7969138#TMB123456789', '7969138',
+    )).toBe(true);
+    expect(billReferenceMatchesSharedReference('79691380', '7969138')).toBe(false);
+    expect(billReferenceMatchesSharedReference(
+      'OTHER#TMB123456789', '7969138',
+    )).toBe(false);
+    expect(billReferenceMatchesSharedReference('anything', '')).toBe(false);
   });
 
   it('rejects malformed and non-positive payments', () => {

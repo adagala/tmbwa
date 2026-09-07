@@ -29,6 +29,7 @@ import {
 } from '../firestoreData';
 import {
   acknowledgement,
+  billReferenceMatchesSharedReference,
   canAutomaticallyAllocateStkPayment,
   isActiveStkRequestStatus,
   isLockedStkReconciliation,
@@ -200,7 +201,10 @@ export const kcbTillNotification = onRequest(
       if (notification.currency !== KCB_CURRENCY.value().toUpperCase()) {
         throw new Error('Unsupported currency.');
       }
-      if (notification.billReference !== KCB_SHARED_REFERENCE.value()) {
+      if (!billReferenceMatchesSharedReference(
+        notification.billReference,
+        KCB_SHARED_REFERENCE.value(),
+      )) {
         throw new Error('Unexpected bill reference.');
       }
 
@@ -260,6 +264,8 @@ export const kcbTillNotification = onRequest(
     } catch (error) {
       logger.warn('Rejected invalid KCB notification.', {
         reason: (error as Error).message,
+        messageId,
+        conversationId,
       });
       response
         .status(400)

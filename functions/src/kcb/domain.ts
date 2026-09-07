@@ -108,6 +108,16 @@ export const permitsUnsignedSandboxNotification = (
   sandboxIpnEnabled: string,
 ) => appEnvironment === 'development' && sandboxIpnEnabled === 'true';
 
+export const billReferenceMatchesSharedReference = (
+  billReference: string,
+  sharedReference: string,
+) => {
+  const expected = sharedReference.trim();
+  const received = billReference.trim();
+  return Boolean(expected) &&
+    (received === expected || received.startsWith(`${expected}#`));
+};
+
 export const secureTokenMatches = (provided: string, expected: string) => {
   const providedBytes = Buffer.from(provided);
   const expectedBytes = Buffer.from(expected);
