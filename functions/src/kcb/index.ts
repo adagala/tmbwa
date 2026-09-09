@@ -209,7 +209,7 @@ export const kcbTillNotification = onRequest(
       )) {
         throw new KcbNotificationValidationError(
           'Unexpected bill reference.',
-          'Invalid bill reference',
+          'Notification received, but bill reference does not match',
         );
       }
 
