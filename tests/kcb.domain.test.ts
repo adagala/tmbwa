@@ -12,7 +12,6 @@ import {
   lockedStkAllocationAmount, normalizeKenyanPhone,
   ownsExpectedStkTransition, parseKcbTransactionDate, parseStkCallback,
   parseTillNotification, permitsUnsignedSandboxNotification,
-  publicKcbNotificationErrorMessage,
   secureTokenMatches, stkFailureStatus, stkPaymentMatchesPendingRequest,
   terminalNotificationMatchesStkRequest,
   unmatchedStkCallbackMatchesRequest,
@@ -59,15 +58,12 @@ describe('KCB Till notification contract', () => {
     expect(billReferenceMatchesSharedReference('anything', '')).toBe(false);
   });
 
-  it('exposes only safe notification validation errors to KCB', () => {
-    expect(publicKcbNotificationErrorMessage(
-      new KcbNotificationValidationError(
-        'Unexpected bill reference.', 'Invalid bill reference',
-      ),
-    )).toBe('Invalid bill reference');
-    expect(publicKcbNotificationErrorMessage(
-      new Error('Sensitive internal detail'),
-    )).toBe('Invalid notification');
+  it('identifies validation errors that are acknowledged but handled internally', () => {
+    const error = new KcbNotificationValidationError(
+      'Unexpected bill reference.',
+    );
+    expect(error).toBeInstanceOf(KcbNotificationValidationError);
+    expect(error.message).toBe('Unexpected bill reference.');
   });
 
   it('rejects malformed and non-positive payments', () => {

@@ -46,7 +46,6 @@ import {
   parseStkCallback,
   parseTillNotification,
   permitsUnsignedSandboxNotification,
-  publicKcbNotificationErrorMessage,
   secureTokenMatches,
   stkFailureStatus,
   stkPaymentMatchesPendingRequest,
@@ -175,6 +174,7 @@ export const kcbTillNotification = onRequest(
     const transactionId = randomUUID();
     let messageId: string = transactionId;
     let conversationId: string | undefined;
+    let notificationReceived = false;
     try {
       const permitsUnsigned = permitsUnsignedSandboxNotification(
         APP_ENV.value(), KCB_DEV_MOCK_ENABLED.value(),
@@ -200,6 +200,7 @@ export const kcbTillNotification = onRequest(
       const notification = parseTillNotification(request.body);
       messageId = notification.messageId;
       conversationId = notification.conversationId;
+      notificationReceived = true;
       if (notification.currency !== KCB_CURRENCY.value().toUpperCase()) {
         throw new Error('Unsupported currency.');
       }
@@ -207,10 +208,7 @@ export const kcbTillNotification = onRequest(
         notification.billReference,
         KCB_SHARED_REFERENCE.value(),
       )) {
-        throw new KcbNotificationValidationError(
-          'Unexpected bill reference.',
-          'Notification received, but bill reference does not match',
-        );
+        throw new KcbNotificationValidationError('Unexpected bill reference.');
       }
 
       const notificationRef = db().doc(
@@ -267,12 +265,25 @@ export const kcbTillNotification = onRequest(
           ),
         );
     } catch (error) {
-      const statusMessage = publicKcbNotificationErrorMessage(error);
-      logger.warn('Rejected invalid KCB notification.', {
+      logger.warn('KCB notification processing failed.', {
         reason: (error as Error).message,
         messageId,
         conversationId,
       });
+      if (notificationReceived) {
+        response
+          .status(200)
+          .json(
+            acknowledgement(
+              messageId,
+              conversationId,
+              transactionId,
+              true,
+              'Notification received successfully',
+            ),
+          );
+        return;
+      }
       response
         .status(400)
         .json(
@@ -281,7 +292,7 @@ export const kcbTillNotification = onRequest(
             conversationId,
             transactionId,
             false,
-            statusMessage,
+            'Invalid notification',
           ),
         );
     }
