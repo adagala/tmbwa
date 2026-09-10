@@ -180,27 +180,16 @@ export const kcbTillNotification = onRequest(
         APP_ENV.value(), KCB_DEV_MOCK_ENABLED.value(),
       );
       const signature = request.get('signature') || '';
-      if (!permitsUnsigned && !verifyKcbSignature(
+      const signatureIsValid = permitsUnsigned || verifyKcbSignature(
         request.rawBody, signature, KCB_PUBLIC_KEY.value(),
-      )) {
-        logger.warn('Rejected KCB notification with an invalid signature.');
-        response
-          .status(401)
-          .json(
-            acknowledgement(
-              messageId,
-              undefined,
-              transactionId,
-              false,
-              'Invalid signature',
-            ),
-          );
-        return;
-      }
+      );
       const notification = parseTillNotification(request.body);
       messageId = notification.messageId;
       conversationId = notification.conversationId;
       notificationReceived = true;
+      if (!signatureIsValid) {
+        throw new KcbNotificationValidationError('Invalid signature.');
+      }
       if (notification.currency !== KCB_CURRENCY.value().toUpperCase()) {
         throw new Error('Unsupported currency.');
       }
