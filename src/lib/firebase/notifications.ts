@@ -1,6 +1,7 @@
 import {
   collection,
   doc,
+  getDocs,
   limit,
   onSnapshot,
   orderBy,
@@ -8,6 +9,8 @@ import {
   serverTimestamp,
   setDoc,
   updateDoc,
+  where,
+  writeBatch,
 } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from './clientApp';
@@ -85,6 +88,23 @@ export const markNotificationRead = (
   updateDoc(doc(db, `members/${memberId}/notifications/${notificationId}`), {
     read: true,
   });
+
+export const markAllNotificationsRead = async (memberId: string) => {
+  const snapshot = await getDocs(
+    query(
+      collection(db, `members/${memberId}/notifications`),
+      where('read', '==', false),
+    ),
+  );
+
+  for (let offset = 0; offset < snapshot.docs.length; offset += 500) {
+    const batch = writeBatch(db);
+    snapshot.docs.slice(offset, offset + 500).forEach((notification) => {
+      batch.update(notification.ref, { read: true });
+    });
+    await batch.commit();
+  }
+};
 
 export const subscribeToNotificationDeliveries = (
   callback: (items: NotificationDelivery[]) => void,
