@@ -4,9 +4,7 @@ import { MemberWithId } from '../types';
 import {
   MONTHLY_CONTRIBUTION,
   PAYMENT_STATUS,
-  contributionRateDocumentSchema,
   contributionDocumentSchema,
-  parseDocument,
   paymentDocumentSchema,
 } from 'tmbwa-shared';
 import { arrayToChunks, getCurrentMonth } from '../utils';
@@ -18,23 +16,6 @@ import {
 import { availableUnreservedBalance } from '../financial/domain';
 
 const db = () => admin.firestore();
-
-const getContributionAmount = async (month: string) => {
-  const configuration = await db().collection('contribution_rates')
-    .where('effectiveFrom', '<=', month)
-    .orderBy('effectiveFrom', 'desc')
-    .limit(1)
-    .get();
-  const amount = configuration.empty
-    ? MONTHLY_CONTRIBUTION
-    : parseDocument(
-      contributionRateDocumentSchema,
-      configuration.docs[0].data(),
-      configuration.docs[0].ref.path,
-    ).amount;
-  if (!Number.isFinite(amount) || amount <= 0) throw new Error('Invalid monthly contribution configuration.');
-  return amount;
-};
 
 const createForMember = async (member: MemberWithId, month: string, amount: number) =>
   db().runTransaction(async (transaction) => {
@@ -97,7 +78,7 @@ const createForMember = async (member: MemberWithId, month: string, amount: numb
   });
 
 export const generateMonthlyContributions = async (month = getCurrentMonth()) => {
-  const amount = await getContributionAmount(month);
+  const amount = MONTHLY_CONTRIBUTION;
   const membersSnapshot = await db().collection('members').where('status', '==', 'active').get();
   const members = membersSnapshot.docs.map(memberWithIdData) as MemberWithId[];
   let created = 0;
