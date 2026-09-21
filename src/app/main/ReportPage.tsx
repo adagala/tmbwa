@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { RiDownloadLine, RiFileTextLine } from '@remixicon/react';
 import { Card } from '@/components/Card';
 import { Button } from '@/components/Button';
-import { Input } from '@/components/Input';
+import { MonthPicker } from '@/components/MonthPicker';
 import { Label } from '@/components/Label';
 import {
   Select,
@@ -130,21 +130,23 @@ export default function ReportPage() {
       <Card className="grid gap-3 md:grid-cols-5">
         <div className="space-y-1">
           <Label htmlFor="report-from">From month</Label>
-          <Input
+          <MonthPicker
             id="report-from"
-            type="month"
+            placeholder="Select start month"
             value={filters.from}
-            onChange={(event) => set('from', event.target.value)}
+            onChange={(value) => set('from', value)}
+            toMonth={filters.to || undefined}
             className="mt-1 w-full"
           />
         </div>
         <div className="space-y-1">
           <Label htmlFor="report-to">To month</Label>
-          <Input
+          <MonthPicker
             id="report-to"
-            type="month"
+            placeholder="Select end month"
             value={filters.to}
-            onChange={(event) => set('to', event.target.value)}
+            onChange={(value) => set('to', value)}
+            fromMonth={filters.from || undefined}
             className="mt-1 w-full"
           />
         </div>
