@@ -1,6 +1,7 @@
 import { Badge } from '@/components/Badge';
 import { Tooltip } from '@/components/Tooltip';
 import { DialogMembershipFeeUpdate } from '@/components/ui/members/DialogMembershipFeeUpdate';
+import { MemberStatusBadge } from '@/components/ui/members/MemberStatusBadge';
 import useUser from '@/hooks/useUser';
 import { Member } from 'tmbwa-shared/firebase';
 import {
@@ -38,6 +39,14 @@ export function Profile({
           </dt>
           <dd className="mt-1 text-sm leading-6 text-gray-700 dark:text-gray-300 sm:col-span-2 sm:mt-0">
             {member.firstname} {member.lastname}
+          </dd>
+        </div>
+        <div className="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-0">
+          <dt className="text-sm font-medium leading-6 text-gray-900 dark:text-gray-100">
+            Lifecycle status
+          </dt>
+          <dd className="mt-1 text-sm leading-6 text-gray-700 dark:text-gray-300 sm:col-span-2 sm:mt-0">
+            <MemberStatusBadge status={member.status} />
           </dd>
         </div>
         <div className="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-0">

@@ -7,7 +7,12 @@ import {
   RiUserForbidLine,
 } from '@remixicon/react';
 import { Member } from 'tmbwa-shared/firebase';
-import { member_roles, MemberRole } from 'tmbwa-shared';
+import {
+  member_roles,
+  member_status,
+  MemberRole,
+  MemberStatus,
+} from 'tmbwa-shared';
 import { Input } from '@/components/Input';
 import {
   Select,
@@ -30,6 +35,9 @@ export default function MembersPage() {
   const { role } = useUser();
   const [selectedRole, setSelectedRole] = React.useState<MemberRole | ''>('');
   const [selectedFeeStatus, setSelectedFeeStatus] = React.useState('');
+  const [selectedStatus, setSelectedStatus] = React.useState<MemberStatus | ''>(
+    '',
+  );
   const [searchValue, setSearchValue] = React.useState('');
   const [querySearch, setQuerySearch] = React.useState('');
   const [members, setMembers] = React.useState<Member[]>([]);
@@ -66,6 +74,7 @@ export default function MembersPage() {
     if (
       querySearch.length < 1 &&
       selectedRole === '' &&
+      selectedStatus === '' &&
       selectedFeeStatus === ''
     ) {
       setMembers(allMembers);
@@ -76,6 +85,9 @@ export default function MembersPage() {
           member.firstname.match(regex) || member.lastname.match(regex);
         const isEmailMatch = member.email.match(regex);
         const isRoleMatch = !selectedRole ? true : member.role === selectedRole;
+        const isStatusMatch = !selectedStatus
+          ? true
+          : member.status === selectedStatus;
         const isFeesPaid = selectedFeeStatus === 'paid';
         const isWinMatch =
           querySearch.length < 1 ? true : member.win === querySearch;
@@ -85,12 +97,19 @@ export default function MembersPage() {
         return (
           (isNameMatch || isEmailMatch || isWinMatch) &&
           isRoleMatch &&
+          isStatusMatch &&
           isFeeStatusMatch
         );
       });
       setMembers(filteredMembers);
     }
-  }, [querySearch, selectedRole, selectedFeeStatus]);
+  }, [
+    allMembers,
+    querySearch,
+    selectedRole,
+    selectedStatus,
+    selectedFeeStatus,
+  ]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -136,6 +155,30 @@ export default function MembersPage() {
           </div>
           <div className="flex-1 flex flex-col gap-2 sm:flex-row">
             <Select
+              name="status"
+              value={selectedStatus}
+              onValueChange={(status: MemberStatus) =>
+                setSelectedStatus(status)
+              }
+            >
+              <SelectTrigger id="status" name="status" className="capitalize">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                {member_status.map((status) => (
+                  <SelectItem
+                    key={status}
+                    value={status}
+                    className="capitalize"
+                  >
+                    {status}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex-1 flex flex-col gap-2 sm:flex-row">
+            <Select
               name="feeStatus"
               value={selectedFeeStatus}
               onValueChange={(feeStatus) => setSelectedFeeStatus(feeStatus)}
@@ -170,6 +213,7 @@ export default function MembersPage() {
               setSearchValue('');
               setQuerySearch('');
               setSelectedFeeStatus('');
+              setSelectedStatus('');
             }}
           >
             Reset filter
