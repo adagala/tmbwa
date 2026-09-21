@@ -1,4 +1,4 @@
-import * as admin from 'firebase-admin';
+import { admin } from './firebaseAdmin';
 admin.initializeApp();
 
 import * as Member from './members';

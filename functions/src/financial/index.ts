@@ -1,4 +1,4 @@
-import * as admin from 'firebase-admin';
+import { admin } from '../firebaseAdmin';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import {
   MONTHLY_CONTRIBUTION,

@@ -1,4 +1,4 @@
-import * as admin from 'firebase-admin';
+import { admin } from '../firebaseAdmin';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { MemberWithId } from '../types';
 import {

@@ -1,4 +1,4 @@
-import * as admin from 'firebase-admin';
+import { admin } from '../../firebaseAdmin';
 import { MemberContribution, MemberWithId } from '../../types';
 import { PAYMENT_STATUS } from 'tmbwa-shared';
 import { memberWithIdData } from '../../firestoreData';

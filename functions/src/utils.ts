@@ -1,4 +1,4 @@
-import * as admin from 'firebase-admin';
+import { admin } from './firebaseAdmin';
 import { randomBytes } from 'node:crypto';
 export const createBootstrapPassword = () => randomBytes(32).toString('base64url');
 

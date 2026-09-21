@@ -1,4 +1,4 @@
-import * as admin from 'firebase-admin';
+import { admin, Timestamp } from '../firebaseAdmin';
 import { createHash, randomUUID } from 'crypto';
 import { defineSecret, defineString } from 'firebase-functions/params';
 import { HttpsError, onCall, onRequest } from 'firebase-functions/v2/https';
@@ -1020,7 +1020,7 @@ export const requestKcbStkPush = onCall(
         isActiveStkRequestStatus(existingLockStatus);
       let stagedLegacyRequestId: string | undefined;
       let stagedLegacyLeaseExpiresAt:
-        | admin.firestore.Timestamp
+        | Timestamp
         | undefined;
       if (!hasActiveLock && legacyActiveRequest) {
         const legacy = kcbStkRequestData(legacyActiveRequest);

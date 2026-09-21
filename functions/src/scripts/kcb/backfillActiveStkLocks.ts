@@ -1,4 +1,4 @@
-import * as admin from 'firebase-admin';
+import { admin } from '../../firebaseAdmin';
 import { isActiveStkRequestStatus } from '../../kcb/domain';
 import { kcbStkRequestData } from '../../firestoreData';
 

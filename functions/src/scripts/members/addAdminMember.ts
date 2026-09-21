@@ -1,4 +1,4 @@
-import * as admin from 'firebase-admin';
+import { admin } from '../../firebaseAdmin';
 import { Member, MonthlyStats, Stats } from '../../types';
 import {
   GENDER,
