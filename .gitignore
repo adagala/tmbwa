@@ -15,6 +15,7 @@ functions/lib-scripts
 *.local
 .firebase/
 *-debug.log
+design-explorations/
 
 # Editor directories and files
 !.vscode/extensions.json
