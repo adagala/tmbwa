@@ -14,6 +14,7 @@ import {
 } from 'tmbwa-shared';
 import {
   parseContributionDocument,
+  parseMemberDocument,
   parsePaymentDocument,
 } from 'tmbwa-shared/firebase';
 
@@ -89,6 +90,13 @@ describe('Firestore document schemas', () => {
         'members/member-1',
       ),
     ).toThrow(/members\/member-1/);
+  });
+
+  it('defaults legacy member documents without a status to active on read', () => {
+    const legacyMember = { ...member, status: undefined };
+
+    expect(parseMemberDocument('member-1', legacyMember).status).toBe('active');
+    expect(memberDocumentSchema.safeParse(legacyMember).success).toBe(false);
   });
 
   it('rejects invalid notification delivery counters', () => {

@@ -52,6 +52,10 @@ export const memberSchema = memberFormSchema.merge(
   }),
 );
 
+const memberReadSchema = memberSchema.extend({
+  status: StatusEnum.default('active'),
+});
+
 export const paymentFormSchema = z.object({
   referencenumber: z
     .string()
@@ -145,7 +149,11 @@ export const auditEventSchema = auditEventDocumentSchema.extend({
 });
 
 export const parseMemberDocument = (id: string, data: unknown) =>
-  parseDocument(memberSchema, { member_id: id, ...(data as object) }, `members/${id}`);
+  parseDocument(
+    memberReadSchema,
+    { member_id: id, ...(data as object) },
+    `members/${id}`,
+  );
 
 const normalizePaymentDocument = (id: string, data: unknown, path: string) => {
   return parseDocument(
