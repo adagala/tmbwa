@@ -90,7 +90,10 @@ export const memberBaseSchema = z.object({
   membernumber: z
     .string()
     .min(1, 'Admission number cannot be empty')
-    .regex(/^\d{5}\/\d{2}$/, 'Admission number format required is 00000/24'),
+    .regex(
+      /^\d{4,6}\/\d{2}$/,
+      'Admission number must have 4 to 6 digits, a forward slash, then 2 digits',
+    ),
   win: z.string().min(1, 'Welfare Identification Number cannot be empty'),
   phonenumber: z.string().min(1, 'Phone number cannot be empty'),
   gender: GenderEnum,
