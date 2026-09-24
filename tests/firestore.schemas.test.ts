@@ -150,6 +150,8 @@ describe('Firestore document schemas', () => {
     const parsedContribution = parseContributionDocument('2026-08-01', {
       ...member,
       member_id: 'member-1',
+      membernumber: '123/24',
+      phonenumber: '',
       paid: 'paid',
       amount: 500,
       balance: 0,
@@ -161,6 +163,9 @@ describe('Firestore document schemas', () => {
     expect(parsedPayment.action_by).toBe('');
     expect(parsedPayment.created_at).toEqual(legacyPayment.paymentdate);
     expect(parsedContribution.action_by).toBe('');
+    expect(parsedContribution.membernumber).toBe('123/24');
+    expect(parsedContribution.phonenumber).toBe('');
+    expect(parsedContribution.status).toBe('active');
     expect(parsedContribution.payments[0].payment_type).toBe('contribution');
   });
 

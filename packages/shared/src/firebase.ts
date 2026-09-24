@@ -122,6 +122,9 @@ const paymentReadSchema = paymentDocumentSchema.extend({
 
 const contributionReadSchema = contributionDocumentSchema.extend({
   member_id: z.string(),
+  membernumber: z.string().min(1, 'Admission number cannot be empty'),
+  phonenumber: z.string(),
+  status: StatusEnum.default('active'),
   datejoined: z.union([z.date(), z.instanceof(Timestamp)]).optional(),
   createat: z.instanceof(Timestamp).optional(),
   createdat: z.union([z.date(), z.instanceof(Timestamp)]).optional(),
