@@ -16,6 +16,7 @@ import RoleLandingRoute from './RoleLandingRoute';
 import AuditPage from '../app/main/AuditPage';
 import KcbReconciliationPage from '../app/main/KcbReconciliationPage';
 import NotificationsPage from '../app/main/NotificationsPage';
+import UserGuidePage from '../app/main/UserGuidePage';
 
 export const router = createBrowserRouter([
   {
@@ -83,6 +84,10 @@ export const router = createBrowserRouter([
       {
         path: 'notifications',
         element: <NotificationsPage />,
+      },
+      {
+        path: 'help/user-guide',
+        element: <UserGuidePage />,
       },
     ],
   },

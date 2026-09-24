@@ -8,6 +8,7 @@ import {
   RiHistoryLine,
   RiBankCardLine,
   RiNotification3Line,
+  RiBookOpenLine,
 } from '@remixicon/react';
 
 export const siteConfig = {
@@ -21,6 +22,7 @@ export const siteConfig = {
     contributions: '/contributions',
     profile: '/profile',
     settings: '/settings',
+    userGuide: '/help/user-guide',
   },
   externalLink: {},
 };
@@ -60,5 +62,10 @@ export const navigation = [
     name: 'Notifications',
     href: '/notifications',
     icon: RiNotification3Line,
+  },
+  {
+    name: 'Help & user guides',
+    href: siteConfig.baseLinks.userGuide,
+    icon: RiBookOpenLine,
   },
 ] as const;

@@ -134,4 +134,6 @@ If exposure is suspected: stop deployment, revoke or rotate the credential, remo
 - **A financial retry appears duplicated:** callers must reuse the request ID until a definitive response; inspect `financial_commands` and `audit_events`.
 - **Member cannot sign in:** only `active` members are enabled; lifecycle transitions revoke existing refresh tokens.
 
-Further detail: [authorization](./docs/authorization.md), [account provisioning](./docs/account-provisioning.md), [audit events](./docs/audit-events.md), and [monthly contributions](./docs/monthly-contributions.md).
+User documentation: [member guide](./docs/member-user-guide.md) and [administrator guide](./docs/administrator-user-guide.md).
+
+Technical documentation: [authorization](./docs/authorization.md), [account provisioning](./docs/account-provisioning.md), [audit events](./docs/audit-events.md), and [monthly contributions](./docs/monthly-contributions.md).
