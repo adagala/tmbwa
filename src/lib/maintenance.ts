@@ -1,19 +1,30 @@
-import type { UIMatch } from 'react-router-dom';
+import {
+  RemixiconComponentType,
+  RiBookOpenLine,
+  RiUserLine,
+} from '@remixicon/react';
+import { matchPath, type UIMatch } from 'react-router-dom';
 
 export const isMaintenanceMode = import.meta.env.VITE_MAINTENANCE === 'true';
 
-export type MaintenanceRouteHandle = {
-  availableDuringMaintenance?: boolean;
+export type MaintenanceAvailablePage = {
+  label: string;
+  to: string;
+  icon: RemixiconComponentType;
 };
 
-// Opt a route into staying reachable while maintenance mode is on.
-export const availableDuringMaintenance: MaintenanceRouteHandle = {
-  availableDuringMaintenance: true,
-};
+// Pages that stay reachable while maintenance mode is on. They are also listed
+// on the maintenance screen.
+export const maintenanceAvailablePages: MaintenanceAvailablePage[] = [
+  { label: 'User guide', to: '/help/user-guide', icon: RiBookOpenLine },
+  { label: 'Profile', to: '/profile', icon: RiUserLine },
+];
 
 export function isRouteAvailableDuringMaintenance(matches: UIMatch[]) {
   const leaf = matches[matches.length - 1];
-  const handle = leaf?.handle as MaintenanceRouteHandle | undefined;
+  if (!leaf) return false;
 
-  return handle?.availableDuringMaintenance === true;
+  return maintenanceAvailablePages.some((page) =>
+    matchPath({ path: page.to, end: true }, leaf.pathname),
+  );
 }
