@@ -18,11 +18,13 @@ import KcbReconciliationPage from '../app/main/KcbReconciliationPage';
 import NotificationsPage from '../app/main/NotificationsPage';
 import UserGuidePage from '../app/main/UserGuidePage';
 import AdministratorRoute from './AdministratorRoute';
+import RouteErrorPage from './RouteErrorPage';
 
 export const router = createBrowserRouter([
   {
     path: 'auth',
     element: <PublicRoute element={<AuthLayout />} />,
+    errorElement: <RouteErrorPage />,
     children: [
       {
         index: true,
@@ -41,6 +43,7 @@ export const router = createBrowserRouter([
   {
     path: '/',
     element: <ProtectedRoute element={<MainLayout />} />,
+    errorElement: <RouteErrorPage />,
     children: [
       {
         index: true,
