@@ -152,12 +152,12 @@ export default function AuditPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <header className="mt-6 flex items-start gap-3">
-        <div className="rounded-lg bg-guardsman-red-50 p-2 text-guardsman-red-600 dark:bg-guardsman-red-950 dark:text-guardsman-red-400">
+      <header className="mt-6 flex items-start gap-1">
+        <div className="rounded-lg pt-1 font-bold text-guardsman-red-600 dark:bg-guardsman-red-950 dark:text-guardsman-red-400">
           <RiHistoryLine className="size-6" aria-hidden="true" />
         </div>
         <div>
-          <h1 className="text-xl font-bold text-gray-900 dark:text-gray-50">
+          <h1 className="text-xl font-bold text-guardsman-red-600">
             Audit trail
           </h1>
           <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">

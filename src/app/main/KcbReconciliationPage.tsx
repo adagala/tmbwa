@@ -32,6 +32,7 @@ import {
   subscribeToUnresolvedKcbPayments,
 } from '@/lib/firebase/kcb';
 import { Member, parseMemberDocument } from 'tmbwa-shared/firebase';
+import { RiExchange2Line } from '@remixicon/react';
 
 const devSimulatorEnabled =
   import.meta.env.VITE_APP_ENV === 'development' &&
@@ -547,13 +548,18 @@ export default function KcbReconciliationPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="mt-6 text-xl font-bold text-guardsman-red-600">
-          KCB payment reconciliation
-        </h1>
-        <p className="mt-1 text-sm text-gray-600">
-          Review Paybill notifications before they change a member balance.
-        </p>
+      <div className="mt-6 flex items-start gap-3">
+        <span className="rounded-lg p-1 font-bold text-guardsman-red-600 dark:text-guardsman-red-400">
+          <RiExchange2Line aria-hidden="true" className="size-6" />
+        </span>
+        <div>
+          <h1 className="text-xl font-bold text-guardsman-red-600 dark:text-guardsman-red-400">
+            KCB Payment Reconciliation
+          </h1>
+          <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+            Review Paybill notifications before they change a member balance.
+          </p>
+        </div>
       </div>
       {error ? (
         <p

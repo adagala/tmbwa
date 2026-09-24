@@ -366,11 +366,11 @@ export default function NotificationsPage() {
   return (
     <div className="flex flex-col gap-6 pb-8">
       <div className="mt-6 flex items-start gap-3">
-        <span className="rounded-lg bg-guardsman-red-50 p-2 text-guardsman-red-600 dark:bg-guardsman-red-950/30 dark:text-guardsman-red-400">
-          <RiNotification3Line aria-hidden="true" className="size-5" />
+        <span className="rounded-lg p-1 font-bold text-guardsman-red-600 dark:text-guardsman-red-400">
+          <RiNotification3Line aria-hidden="true" className="size-6" />
         </span>
         <div>
-          <h1 className="text-xl font-bold text-gray-900 dark:text-gray-50">
+          <h1 className="text-xl font-bold text-guardsman-red-600 dark:text-guardsman-red-400">
             Notifications
           </h1>
           <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">

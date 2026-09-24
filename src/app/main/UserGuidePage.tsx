@@ -13,11 +13,11 @@ export default function UserGuidePage() {
   return (
     <div className="flex flex-col gap-6 pb-10">
       <div className="mt-6 flex items-start gap-3">
-        <span className="rounded-lg bg-guardsman-red-50 p-2 text-guardsman-red-600 dark:bg-guardsman-red-950/30 dark:text-guardsman-red-400">
-          <RiBookOpenLine aria-hidden="true" className="size-5" />
+        <span className="rounded-lg p-1 font-bold text-guardsman-red-600 dark:text-guardsman-red-400">
+          <RiBookOpenLine aria-hidden="true" className="size-6" />
         </span>
         <div>
-          <h1 className="text-xl font-bold text-gray-900 dark:text-gray-50">
+          <h1 className="text-xl font-bold text-guardsman-red-600 dark:text-guardsman-red-400">
             Help and user guides
           </h1>
           <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
@@ -33,8 +33,8 @@ export default function UserGuidePage() {
             aria-label="User guide type"
             className="grid w-full grid-cols-2 sm:inline-grid sm:w-auto"
           >
-            <TabsTrigger value="member">Member guide</TabsTrigger>
-            <TabsTrigger value="administrator">Administrator guide</TabsTrigger>
+            <TabsTrigger value="member">Member Guide</TabsTrigger>
+            <TabsTrigger value="administrator">Administrator Guide</TabsTrigger>
           </TabsList>
         ) : null}
         <TabsContent value="member" className="mt-4">
