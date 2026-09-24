@@ -19,6 +19,7 @@ import NotificationsPage from '../app/main/NotificationsPage';
 import UserGuidePage from '../app/main/UserGuidePage';
 import AdministratorRoute from './AdministratorRoute';
 import RouteErrorPage from './RouteErrorPage';
+import { availableDuringMaintenance } from '@/lib/maintenance';
 
 export const router = createBrowserRouter([
   {
@@ -92,6 +93,7 @@ export const router = createBrowserRouter([
       {
         path: 'help/user-guide',
         element: <UserGuidePage />,
+        handle: availableDuringMaintenance,
       },
     ],
   },
