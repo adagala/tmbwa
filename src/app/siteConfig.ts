@@ -47,16 +47,19 @@ export const navigation = [
     name: 'Report',
     href: '/report',
     icon: RiFileTextLine,
+    administratorOnly: true,
   },
   {
     name: 'Audit trail',
     href: '/audit',
     icon: RiHistoryLine,
+    administratorOnly: true,
   },
   {
     name: 'KCB Reconciliation',
     href: '/kcb-reconciliation',
     icon: RiExchange2Line,
+    administratorOnly: true,
   },
   {
     name: 'Notifications',

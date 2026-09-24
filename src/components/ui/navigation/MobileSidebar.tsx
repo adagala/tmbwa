@@ -12,9 +12,11 @@ import {
 import { cx, focusRing } from '@/lib/utils';
 import { RiMenuLine } from '@remixicon/react';
 import { Link, useLocation } from 'react-router-dom';
+import useUser from '@/hooks/useUser';
 
 export default function MobileSidebar() {
   const { pathname } = useLocation();
+  const { role } = useUser();
   const isActive = (itemHref: string) => {
     if (itemHref === siteConfig.baseLinks.settings) {
       return pathname.startsWith('/settings');
@@ -46,28 +48,34 @@ export default function MobileSidebar() {
               className="flex flex-1 flex-col space-y-10"
             >
               <ul role="list" className="space-y-1.5">
-                {navigation.map((item) => (
-                  <li key={item.name}>
-                    <DrawerClose asChild>
-                      <Link
-                        to={item.href}
-                        className={cx(
-                          isActive(item.href)
-                            ? 'text-guardsman-red-500 dark:text-guardsman-red-400'
-                            : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 hover:dark:text-gray-50',
-                          'flex items-center gap-x-2.5 rounded-md px-2 py-1.5 text-base font-medium transition hover:bg-gray-100 sm:text-sm hover:dark:bg-gray-900',
-                          focusRing,
-                        )}
-                      >
-                        <item.icon
-                          className="size-5 shrink-0"
-                          aria-hidden="true"
-                        />
-                        {item.name}
-                      </Link>
-                    </DrawerClose>
-                  </li>
-                ))}
+                {navigation
+                  .filter(
+                    (item) =>
+                      !('administratorOnly' in item) ||
+                      role === 'administrator',
+                  )
+                  .map((item) => (
+                    <li key={item.name}>
+                      <DrawerClose asChild>
+                        <Link
+                          to={item.href}
+                          className={cx(
+                            isActive(item.href)
+                              ? 'text-guardsman-red-500 dark:text-guardsman-red-400'
+                              : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 hover:dark:text-gray-50',
+                            'flex items-center gap-x-2.5 rounded-md px-2 py-1.5 text-base font-medium transition hover:bg-gray-100 sm:text-sm hover:dark:bg-gray-900',
+                            focusRing,
+                          )}
+                        >
+                          <item.icon
+                            className="size-5 shrink-0"
+                            aria-hidden="true"
+                          />
+                          {item.name}
+                        </Link>
+                      </DrawerClose>
+                    </li>
+                  ))}
               </ul>
             </nav>
           </DrawerBody>
