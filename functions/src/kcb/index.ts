@@ -77,10 +77,10 @@ const KCB_CURRENCY = defineString('KCB_CURRENCY', { default: 'KES' });
 const KCB_CONSUMER_KEY = defineSecret('KCB_CONSUMER_KEY');
 const KCB_CONSUMER_SECRET = defineSecret('KCB_CONSUMER_SECRET');
 const KCB_TOKEN_URL = defineString('KCB_TOKEN_URL', {
-  default: 'https://uat.buni.kcbgroup.com/token?grant_type=client_credentials',
+  default: 'https://api.buni.kcbgroup.com/token?grant_type=client_credentials',
 });
 const KCB_STK_URL = defineString('KCB_STK_URL', {
-  default: 'https://uat.buni.kcbgroup.com/mm/api/request/1.0.0/stkpush',
+  default: 'https://api.buni.kcbgroup.com/mm/api/request/1.0.0/stkpush',
 });
 const KCB_STK_CALLBACK_URL = defineString('KCB_STK_CALLBACK_URL');
 const KCB_STK_ROUTE_CODE = defineString('KCB_STK_ROUTE_CODE', {
