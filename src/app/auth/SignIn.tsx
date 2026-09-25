@@ -10,10 +10,12 @@ import { UserSchema, userSchema } from 'tmbwa-shared';
 import { toast } from '@/hooks/useToast';
 import { InputErrorMessage } from '@/components/ui/InputErrorMessage';
 import { signInWithEmailAndPassword } from '@/lib/firebase/auth';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { getPostSignInPath } from '@/routes/authRedirect';
 
 export default function LogIn() {
   const navigate = useNavigate();
+  const location = useLocation();
 
   const {
     register,
@@ -29,8 +31,11 @@ export default function LogIn() {
     signInWithEmailAndPassword(data)
       .then(async (credential) => {
         const token = await credential.user.getIdTokenResult();
+        const requestedPath = getPostSignInPath(location.state);
         navigate(
-          token.claims.role === 'administrator' ? '/overview' : '/profile',
+          requestedPath ??
+            (token.claims.role === 'administrator' ? '/overview' : '/profile'),
+          { replace: true },
         );
       })
       .catch(() => {
