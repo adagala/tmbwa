@@ -84,7 +84,13 @@ function SummaryTile({
   );
 }
 
-export function MemberAccount({ member }: { member: Member }) {
+export function MemberAccount({
+  member,
+  ownProfile = false,
+}: {
+  member: Member;
+  ownProfile?: boolean;
+}) {
   const { role } = useUser();
   const [searchParams, setSearchParams] = useSearchParams();
   const [contributions, setContributions] = useState<Contribution[]>([]);
@@ -194,7 +200,7 @@ export function MemberAccount({ member }: { member: Member }) {
         <TabsContent value="details">
           <Profile
             member={member}
-            ownProile={false}
+            ownProile={ownProfile}
             showAccountSummary={false}
           />
         </TabsContent>
