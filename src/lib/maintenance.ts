@@ -1,6 +1,7 @@
 import {
   RemixiconComponentType,
   RiBookOpenLine,
+  RiSettings5Line,
   RiUserLine,
 } from '@remixicon/react';
 import { matchPath, type UIMatch } from 'react-router-dom';
@@ -18,6 +19,7 @@ export type MaintenanceAvailablePage = {
 export const maintenanceAvailablePages: MaintenanceAvailablePage[] = [
   { label: 'User guide', to: '/help/user-guide', icon: RiBookOpenLine },
   { label: 'Profile', to: '/profile', icon: RiUserLine },
+  { label: 'Settings', to: '/settings', icon: RiSettings5Line },
 ];
 
 export function isRouteAvailableDuringMaintenance(matches: UIMatch[]) {
