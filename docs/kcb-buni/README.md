@@ -4,7 +4,7 @@ This directory contains the official KCB Buni Swagger exports and supporting not
 
 ## Implemented endpoints
 
-- `kcbTillNotification`: Paybill/Till callback. KCB Sandbox sends unsigned mock notifications; production authentication remains fail-closed pending KCB's confirmed contract.
+- `kcbTillNotification`: Paybill/Till callback. KCB signs every production notification with SHA256withRSA over the request body in the `Signature` header; the callback verifies it with `KCB_PUBLIC_KEY`. Notifications with a missing or invalid signature are acknowledged to KCB but not stored, and are logged with reason `Invalid signature.` KCB Sandbox sends unsigned mock notifications.
 - `kcbStkCallback`: M-PESA Express result callback. Configure its deployed HTTPS URL as `KCB_STK_CALLBACK_URL`.
 - `requestKcbStkPush`: authenticated callable function used to initiate an optional STK prompt.
 - `reconcileKcbPayment` and `rejectKcbPayment`: administrator-only callable reconciliation commands.
@@ -22,7 +22,7 @@ An accepted notification or STK request does not credit a member. Successful pro
 - `KCB_STK_ROUTE_CODE` (default `207`; confirm with KCB)
 - `APP_ENV` (default `production`; set to `development` only in the Firebase development project)
 - `KCB_DEV_MOCK_ENABLED` (default `false`; set to `true` only for Sandbox IPN testing)
-- `KCB_PUBLIC_KEY` (required only when the provider contract uses RSA callback signatures)
+- `KCB_PUBLIC_KEY` (required in UAT and production; the PEM KCB supplied as `kcb_prod_h2h_public_key.pem`)
 
 Use environment-specific Firebase parameter configuration for URLs and identifiers.
 
@@ -45,6 +45,10 @@ firebase functions:secrets:access KCB_PUBLIC_KEY
 ```
 
 Copy the complete public PEM into `functions/.env.<firebase-project-id>` as a quoted multiline `KCB_PUBLIC_KEY` value. Do not commit environment-specific configuration. Complete this migration before deploying; otherwise signed Till callbacks fail closed with HTTP 401. After the updated default codebase is deployed and callback verification is confirmed, the obsolete Secret Manager version can be removed according to the project's credential-retirement process.
+
+## Source IP allowlist
+
+KCB sends Till notifications only from `196.216.222.14`, `196.216.222.15`, `196.216.223.14`, and `196.216.223.15`. The allowlist is not enforced yet: behind Google's front end, `request.ip` and the leftmost `X-Forwarded-For` entries can be supplied by the caller. Each request logs `KCB notification source.` with `sourceIp` and `forwardedFor`; once real KCB traffic confirms which entry holds the true client address, enforce the allowlist in addition to the signature.
 
 ## Before UAT or production
 
