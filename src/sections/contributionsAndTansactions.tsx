@@ -14,11 +14,7 @@ import {
   getMemberPayments,
 } from '@/lib/firebase/firestore';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import { printStatement } from '@/lib/memberDocuments';
-import { Button } from '@/components/Button';
-import { Label } from '@/components/Label';
-import { DatePicker } from '@/components/DatePicker';
-import { calendarDate, calendarDateValue } from '@/lib/financialReporting';
+import { StatementPrint } from './statementPrint';
 
 interface ContributionsAndTransactionsProps
   extends React.ComponentPropsWithoutRef<'div'> {
@@ -34,8 +30,6 @@ const ContributionsAndTransactions = React.forwardRef<
   const [searchParams] = useSearchParams();
   const [contributions, setContributions] = useState<Contribution[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
-  const [statementFrom, setStatementFrom] = useState('');
-  const [statementTo, setStatementTo] = useState('');
   const tab = searchParams.get('tab') as MemberTab;
   const [currentTab] = useState<MemberTab>(tab || 'contributions');
 
@@ -77,44 +71,11 @@ const ContributionsAndTransactions = React.forwardRef<
           <RiSettings5Line className="size-6 shrink-0" aria-hidden="true" />
           Settings
         </div>
-        <div className="flex flex-wrap items-end gap-3 rounded border p-3">
-          <div className="space-y-1">
-            <Label htmlFor="statement-from">Statement from</Label>
-            <DatePicker
-              id="statement-from"
-              className="mt-1"
-              placeholder="Select start date"
-              enableYearNavigation
-              value={calendarDate(statementFrom)}
-              onChange={(date) => setStatementFrom(calendarDateValue(date))}
-            />
-          </div>
-          <div className="space-y-1">
-            <Label htmlFor="statement-to">To</Label>
-            <DatePicker
-              id="statement-to"
-              className="mt-1"
-              placeholder="Select end date"
-              enableYearNavigation
-              value={calendarDate(statementTo)}
-              onChange={(date) => setStatementTo(calendarDateValue(date))}
-            />
-          </div>
-          <Button
-            type="button"
-            onClick={() =>
-              printStatement(
-                member,
-                contributions,
-                payments,
-                statementFrom,
-                statementTo,
-              )
-            }
-          >
-            Print statement
-          </Button>
-        </div>
+        <StatementPrint
+          member={member}
+          contributions={contributions}
+          payments={payments}
+        />
         <Tabs defaultValue={currentTab}>
           <TabsList variant="line">
             <TabsTrigger
