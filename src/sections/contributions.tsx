@@ -30,6 +30,11 @@ const Contributions = React.forwardRef<HTMLDivElement, ContributionsProps>(
             <DialogAddContribution member={member} />
           )}
         </div>
+        {contributions.length === 0 ? (
+          <p className="mt-4 rounded-md border border-dashed border-gray-200 px-4 py-8 text-center text-sm text-gray-500 dark:border-gray-800 dark:text-gray-400">
+            No contributions recorded yet.
+          </p>
+        ) : null}
         <List className="mt-4">
           {contributions.map((contribution) => (
             <ListItem

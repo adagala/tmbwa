@@ -33,7 +33,13 @@ import {
 } from '@/lib/firebase/firestore';
 import { Checkbox } from '@/components/Checkbox';
 
-export const DialogMemberForm = ({ member }: { member?: Member }) => {
+export const DialogMemberForm = ({
+  member,
+  triggerButton,
+}: {
+  member?: Member;
+  triggerButton?: React.ReactNode;
+}) => {
   const [open, setOpen] = React.useState(false);
   const [isLoading, setIsLoading] = React.useState(false);
   const [role, setRole] = React.useState<MemberRole>();
@@ -117,19 +123,21 @@ export const DialogMemberForm = ({ member }: { member?: Member }) => {
       <div className="flex justify-center">
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
-            <Button
-              className="h-10 whitespace-nowrap w-full sm:w-auto gap-1"
-              variant="primary"
-            >
-              {member ? (
-                'Update'
-              ) : (
-                <>
-                  <RiAddLine className="size-4" />
-                  Add <span className="hidden sm:flex">member</span>
-                </>
-              )}
-            </Button>
+            {triggerButton ?? (
+              <Button
+                className="h-10 whitespace-nowrap w-full sm:w-auto gap-1"
+                variant="primary"
+              >
+                {member ? (
+                  'Update'
+                ) : (
+                  <>
+                    <RiAddLine className="size-4" />
+                    Add <span className="hidden sm:flex">member</span>
+                  </>
+                )}
+              </Button>
+            )}
           </DialogTrigger>
           <DialogContent className="sm:max-w-lg">
             <form onSubmit={handleSubmit(onSubmit)}>

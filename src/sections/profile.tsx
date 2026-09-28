@@ -13,9 +13,11 @@ import {
 export function Profile({
   member,
   ownProile,
+  showAccountSummary = true,
 }: {
   member: Member;
   ownProile: boolean;
+  showAccountSummary?: boolean;
 }) {
   const { role } = useUser();
   const accountState =
@@ -93,53 +95,57 @@ export function Profile({
             </div>
           </>
         ) : null}
-        <div className="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-0">
-          <dt className="text-sm font-medium leading-6 text-gray-900 dark:text-gray-100">
-            Membership Fees
-          </dt>
-          <dd className="mt-1 text-sm leading-6 text-gray-700 dark:text-gray-300 sm:col-span-2 sm:mt-0 flex gap-1 items-center">
-            <Badge variant={member.isFeesPaid ? 'success' : 'error'}>
-              {member.isFeesPaid ? 'Paid' : 'Not paid'}
-            </Badge>
-            {role === 'administrator' ? (
-              <Tooltip showArrow={false} content="Update">
-                <DialogMembershipFeeUpdate member={member} />
-              </Tooltip>
-            ) : null}
-          </dd>
-        </div>
-        <div className="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-0">
-          <dt className="text-sm font-medium leading-6 text-gray-900 dark:text-gray-100">
-            Account balance
-          </dt>
-          <dd
-            className={`mt-1 text-sm leading-6 font-semibold sm:col-span-2 sm:mt-0 flex ${balanceColor}`}
-          >
-            {(member.balance || 0).toLocaleString()}{' '}
-            {accountState === 'positive' && (
-              <RiArrowUpDoubleLine className="size-6" />
-            )}
-            {accountState === 'negative' && (
-              <RiArrowDownDoubleLine className="size-6" />
-            )}
-            {accountState === 'neutral' && (
-              <RiSubtractLine className="size-6" />
-            )}
-          </dd>
-        </div>
-        <div className="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-0">
-          <dt className="text-sm font-medium leading-6 text-gray-900 dark:text-gray-100">
-            Total Contribution
-          </dt>
-          <dd
-            className={`mt-1 text-sm leading-6 font-semibold sm:col-span-2 sm:mt-0 flex text-gray-700 dark:text-gray-300`}
-          >
-            {(member.contributionBalance || 0).toLocaleString('en-US', {
-              style: 'currency',
-              currency: 'KES',
-            })}
-          </dd>
-        </div>
+        {showAccountSummary ? (
+          <>
+            <div className="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-0">
+              <dt className="text-sm font-medium leading-6 text-gray-900 dark:text-gray-100">
+                Membership Fees
+              </dt>
+              <dd className="mt-1 text-sm leading-6 text-gray-700 dark:text-gray-300 sm:col-span-2 sm:mt-0 flex gap-1 items-center">
+                <Badge variant={member.isFeesPaid ? 'success' : 'error'}>
+                  {member.isFeesPaid ? 'Paid' : 'Not paid'}
+                </Badge>
+                {role === 'administrator' ? (
+                  <Tooltip showArrow={false} content="Update">
+                    <DialogMembershipFeeUpdate member={member} />
+                  </Tooltip>
+                ) : null}
+              </dd>
+            </div>
+            <div className="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-0">
+              <dt className="text-sm font-medium leading-6 text-gray-900 dark:text-gray-100">
+                Account balance
+              </dt>
+              <dd
+                className={`mt-1 text-sm leading-6 font-semibold sm:col-span-2 sm:mt-0 flex ${balanceColor}`}
+              >
+                {(member.balance || 0).toLocaleString()}{' '}
+                {accountState === 'positive' && (
+                  <RiArrowUpDoubleLine className="size-6" />
+                )}
+                {accountState === 'negative' && (
+                  <RiArrowDownDoubleLine className="size-6" />
+                )}
+                {accountState === 'neutral' && (
+                  <RiSubtractLine className="size-6" />
+                )}
+              </dd>
+            </div>
+            <div className="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-0">
+              <dt className="text-sm font-medium leading-6 text-gray-900 dark:text-gray-100">
+                Total Contribution
+              </dt>
+              <dd
+                className={`mt-1 text-sm leading-6 font-semibold sm:col-span-2 sm:mt-0 flex text-gray-700 dark:text-gray-300`}
+              >
+                {(member.contributionBalance || 0).toLocaleString('en-US', {
+                  style: 'currency',
+                  currency: 'KES',
+                })}
+              </dd>
+            </div>
+          </>
+        ) : null}
       </dl>
     </div>
   );
