@@ -99,32 +99,35 @@ describe('Firestore document schemas', () => {
     expect(memberDocumentSchema.safeParse(legacyMember).success).toBe(false);
   });
 
-  it('accepts four- to six-digit admission numbers', () => {
+  it('accepts three- to eight-digit admission numbers', () => {
     expect(
       parseMemberDocument('member-1', {
         ...member,
-        membernumber: '0000/00',
+        membernumber: '5436/04',
       }).membernumber,
-    ).toBe('0000/00');
+    ).toBe('5436/04');
     expect(memberDocumentSchema.safeParse(member).success).toBe(true);
-    expect(
-      memberDocumentSchema.safeParse({
-        ...member,
-        membernumber: '000000/00',
-      }).success,
-    ).toBe(true);
-    expect(
-      memberDocumentSchema.safeParse({
-        ...member,
-        membernumber: '000/00',
-      }).success,
-    ).toBe(false);
-    expect(
-      memberDocumentSchema.safeParse({
-        ...member,
-        membernumber: '0000000/00',
-      }).success,
-    ).toBe(false);
+    for (const membernumber of [
+      '123/24',
+      '5436/04',
+      '00001/24',
+      '12345678/24',
+    ]) {
+      expect(
+        memberDocumentSchema.safeParse({ ...member, membernumber }).success,
+      ).toBe(true);
+    }
+    for (const membernumber of [
+      '12/24',
+      '123456789/24',
+      '5436/4',
+      '5436/004',
+      '5436-04',
+    ]) {
+      expect(
+        memberDocumentSchema.safeParse({ ...member, membernumber }).success,
+      ).toBe(false);
+    }
   });
 
   it('rejects invalid notification delivery counters', () => {
