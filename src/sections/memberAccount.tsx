@@ -1,6 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { Contribution, Member, Payment } from 'tmbwa-shared/firebase';
-import { ContributionStatusEnum } from 'tmbwa-shared';
+import {
+  ContributionStatusEnum,
+  missingContributionMonths,
+} from 'tmbwa-shared';
 import {
   RiAccountBoxLine,
   RiFileList3Line,
@@ -20,6 +23,7 @@ import {
   getMemberPayments,
 } from '@/lib/firebase/firestore';
 import { formatNairobiMonth, timestampDate } from '@/lib/financialReporting';
+import { getMonth } from '@/lib/utils';
 import { Contributions } from './contributions';
 import { Profile } from './profile';
 import { StatementPrint } from './statementPrint';
@@ -140,6 +144,17 @@ export function MemberAccount({
         ? 'text-red-600 dark:text-red-500'
         : undefined;
   const joined = joinedDate(member);
+  const missingMonths =
+    contributionsLoaded && joined
+      ? missingContributionMonths(
+          joined,
+          contributions.flatMap((contribution) => [
+            contribution.contribution_id,
+            contribution.month,
+          ]),
+          getMonth(),
+        )
+      : undefined;
   // The backend independently rejects inactive members and other members.
   const canTopUp =
     member.status === 'active' && (ownProfile || role === 'administrator');
@@ -222,7 +237,12 @@ export function MemberAccount({
           />
         </TabsContent>
         <TabsContent value="contributions">
-          <Contributions member={member} contributions={contributions} />
+          <Contributions
+            member={member}
+            contributions={contributions}
+            missingMonths={missingMonths}
+            joinDateUnknown={!joined}
+          />
         </TabsContent>
         <TabsContent value="transactions">
           <Transactions member={member} payments={payments} />

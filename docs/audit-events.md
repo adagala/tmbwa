@@ -5,3 +5,5 @@ Sensitive financial commands append an immutable event in `audit_events/{request
 Events contain the actor UID, action, affected member and target, safe financial deltas, and a server timestamp. They never contain credentials or authentication tokens. Client SDKs cannot create, edit, or delete events; administrators have read-only access.
 
 Current actions are `payment.recorded`, `payment.reversed`, `contribution.created`, `contribution.removed`, and `balance.adjusted`.
+
+Adding several missing months at once (`createContributions`) is one command but writes one `contribution.created` event per month, at `audit_events/{requestId}-{YYYY-MM-01}`. Each event's `changes` include the amount, the credit applied to that month, `batchRequestId` (the command's request ID) and `batchSize`.

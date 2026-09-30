@@ -14,6 +14,17 @@ describe('member notification domain', () => {
     expect(renderNotification({ type: 'contribution.arrears', contributionId: '2026-07-01' }).title).toBe('Contribution in arrears');
   });
 
+  it('summarises contributions added together in one message', () => {
+    expect(renderNotification({
+      type: 'contributions.created',
+      contributionIds: ['2026-05-01', '2026-06-01', '2026-07-01'],
+      balance: 1200,
+    })).toEqual({
+      title: 'Contributions added',
+      body: '3 contributions (2026-05-01 to 2026-07-01) were added to your account. KES 1,200 is now due.',
+    });
+  });
+
   it('uses bounded exponential retry delays', () => {
     expect(nextAttemptDelayMs(1)).toBe(60_000);
     expect(nextAttemptDelayMs(3)).toBe(240_000);

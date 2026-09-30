@@ -62,6 +62,8 @@ How a top-up is applied:
    - **Unpaid** — no payment has been allocated and the full amount remains due.
 4. Select a month to view its total amount, balance due, payment references, allocated amounts, and payment dates.
 
+If any month since you joined has no contribution recorded, a notice above the list names those months. Only an administrator can add them. Contact an administrator if you have questions about a listed month.
+
 ## View transactions and download a receipt
 
 1. Select **Profile**.

@@ -1,4 +1,4 @@
-import { PAYMENT_STATUS } from 'tmbwa-shared';
+import { MAX_CONTRIBUTION_MONTHS_PER_REQUEST, PAYMENT_STATUS } from 'tmbwa-shared';
 
 export type PaymentAllocation = { contributionId: string; amount: number };
 
@@ -221,4 +221,46 @@ export const applyBalanceAdjustment = (currentBalance: number, amount: number, t
   const nextBalance = currentBalance + (type === 'top_up' ? amount : -amount);
   if (nextBalance < 0) throw new Error('Deduction exceeds account balance.');
   return nextBalance;
+};
+
+// Accepts a Firestore Timestamp, a Date, or a serialized { seconds } value.
+export const timestampValueDate = (value: unknown) => {
+  if (value instanceof Date) return value;
+  if (value && typeof (value as { toDate?: unknown }).toDate === 'function') {
+    return (value as { toDate: () => Date }).toDate();
+  }
+  const seconds = (value as { seconds?: unknown } | undefined)?.seconds;
+  return typeof seconds === 'number' ? new Date(seconds * 1000) : undefined;
+};
+
+export const memberJoinedAt = (member: { datejoined?: unknown; createat?: unknown }) =>
+  timestampValueDate(member.datejoined) ?? timestampValueDate(member.createat);
+
+// Validates a bulk request against the server-computed missing months and
+// returns the months oldest first, so credit is applied to the oldest first.
+export const bulkContributionMonths = (requested: unknown, missingMonths: string[]) => {
+  if (!Array.isArray(requested) || requested.length === 0) {
+    throw new Error('Select at least one month.');
+  }
+  if (requested.length > MAX_CONTRIBUTION_MONTHS_PER_REQUEST) {
+    throw new Error(
+      `Add at most ${MAX_CONTRIBUTION_MONTHS_PER_REQUEST} months at a time.`,
+    );
+  }
+  const months = new Set<string>();
+  requested.forEach((month) => {
+    if (typeof month !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])-01$/.test(month)) {
+      throw new Error('Months must use YYYY-MM-01.');
+    }
+    if (months.has(month)) throw new Error('Each month can be selected only once.');
+    months.add(month);
+  });
+  const allowed = new Set(missingMonths);
+  const unavailable = [...months].filter((month) => !allowed.has(month)).sort();
+  if (unavailable.length) {
+    throw new Error(
+      `These months are already billed or outside the member's range: ${unavailable.join(', ')}.`,
+    );
+  }
+  return [...months].sort();
 };

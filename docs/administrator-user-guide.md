@@ -110,6 +110,19 @@ The exported file name includes the selected period. Account credit is reported 
 
 Allow pop-ups for TMBWA if the receipt or statement window does not open.
 
+## Add missing contribution months
+
+A member's **Contribution History** lists every month from the member's join month through the current month that has no contribution.
+
+1. Select **Members** and open the member.
+2. In the missing-months notice, select **Add missing months**.
+3. Select the months to add, or choose **Select all**. You can add up to 60 months at a time.
+4. Check the total and the estimated account credit, then select **Add months**.
+
+Each month is billed at KES 500. Any unreserved account credit pays the oldest selected month first. The months are added together: if any of them was added by someone else in the meantime, nothing is added and the error names the month. The member receives one notification covering all the months added.
+
+Months can only be added for active members. To add a month before the member's join date, use **Add contribution**. If the member has no join date, missing months can't be worked out and the notice says so.
+
 ## View notifications and monitor delivery
 
 1. Select **Notifications**.

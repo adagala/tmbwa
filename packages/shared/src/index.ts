@@ -22,6 +22,58 @@ export const PAYMENT_STATUS = {
   PARTIAL: 'partial',
 } as const;
 export const MONTHLY_CONTRIBUTION = 500;
+export const MAX_CONTRIBUTION_MONTHS_PER_REQUEST = 60;
+
+// ---------------------------------------------------------------------------
+// Contribution months
+// ---------------------------------------------------------------------------
+
+const nairobiMonthFormatter = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Africa/Nairobi',
+  year: 'numeric',
+  month: '2-digit',
+});
+
+// Contribution ids are `YYYY-MM-01`, but legacy ids may be `YYYY-MM`, so
+// months are compared by their `YYYY-MM` key.
+export const contributionMonthKey = (month: string) => month.slice(0, 7);
+
+export const nairobiContributionMonth = (date: Date) => {
+  const parts = nairobiMonthFormatter.formatToParts(date);
+  const year = parts.find((part) => part.type === 'year')?.value;
+  const month = parts.find((part) => part.type === 'month')?.value;
+  if (!year || !month) {
+    throw new Error('Unable to derive Nairobi month.');
+  }
+  return `${year}-${month}-01`;
+};
+
+// Every month from the member's join month through the current month that has
+// no contribution, oldest first, as `YYYY-MM-01`.
+export const missingContributionMonths = (
+  joinedAt: Date | null | undefined,
+  existingMonths: string[],
+  currentMonth: string,
+) => {
+  if (!joinedAt || Number.isNaN(joinedAt.getTime())) return [];
+  const existing = new Set(existingMonths.map(contributionMonthKey));
+  const lastKey = contributionMonthKey(currentMonth);
+  let [year, month] = contributionMonthKey(nairobiContributionMonth(joinedAt))
+    .split('-')
+    .map(Number);
+  const missing: string[] = [];
+  for (;;) {
+    const key = `${year}-${String(month).padStart(2, '0')}`;
+    if (key > lastKey) break;
+    if (!existing.has(key)) missing.push(`${key}-01`);
+    month += 1;
+    if (month > 12) {
+      month = 1;
+      year += 1;
+    }
+  }
+  return missing;
+};
 
 export const unallocatedPaymentAmount = (
   amount: number,
@@ -304,6 +356,7 @@ export const notificationEventDocumentSchema = z.object({
     'payment.reconciled',
     'payment.reversed',
     'contribution.created',
+    'contributions.created',
     'contribution.due',
     'contribution.arrears',
   ]),
@@ -311,6 +364,7 @@ export const notificationEventDocumentSchema = z.object({
   receiptNumber: z.string().optional(),
   amount: z.number().optional(),
   contributionId: z.string().optional(),
+  contributionIds: z.array(z.string()).optional(),
   balance: z.number().optional(),
   createdAt: z.unknown().optional(),
 }).passthrough();
