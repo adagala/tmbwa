@@ -48,6 +48,7 @@ import {
   parseTillNotification,
   permitsUnsignedSandboxNotification,
   secureTokenMatches,
+  stkCallbackSettlesRequest,
   stkFailureStatus,
   stkNotificationTarget,
   stkPaymentMatchesPendingRequest,
@@ -1056,6 +1057,19 @@ export const requestKcbStkPush = onCall(
         'amount must be a positive whole number.',
       );
     }
+    // The prompt may go to any number; the payer approving it with their PIN
+    // is the consent, and the paying phone is recorded on the payment.
+    let requestedPhone: string | undefined;
+    if (data.phone !== undefined) {
+      try {
+        requestedPhone = normalizeKenyanPhone(String(data.phone));
+      } catch {
+        throw new HttpsError(
+          'invalid-argument',
+          'phone must be a valid Kenyan mobile number.',
+        );
+      }
+    }
     const callbackUrl = new URL(KCB_STK_CALLBACK_URL.value());
     if (callbackUrl.protocol !== 'https:') {
       throw new HttpsError(
@@ -1154,6 +1168,7 @@ export const requestKcbStkPush = onCall(
           contributionId,
           purpose,
           amount,
+          phone: requestedPhone,
         })) {
           throw new HttpsError(
             'already-exists',
@@ -1265,7 +1280,7 @@ export const requestKcbStkPush = onCall(
       }
       let phone: string;
       try {
-        phone = normalizeKenyanPhone(memberRecord.phonenumber);
+        phone = requestedPhone ?? normalizeKenyanPhone(memberRecord.phonenumber);
       } catch {
         throw new HttpsError(
           'failed-precondition',
@@ -1562,10 +1577,8 @@ export const requestKcbStkPush = onCall(
           const callbackMatchesRequest = unmatchedStkCallbackMatchesRequest({
             callbackMerchantRequestId: unmatchedData.merchantRequestId,
             callbackAmount: unmatchedData.amount,
-            callbackPhone: unmatchedData.payerPhone,
             requestMerchantRequestId: merchantRequestId,
             requestAmount: Number(current.amount),
-            requestPhone: current.phone,
           });
           const notificationConflict = notification.exists && (
             notificationStatus !== 'unresolved' ||
@@ -2323,11 +2336,9 @@ export const kcbStkCallback = onRequest(
         }
         if (
           merchantRequestMismatch ||
-          !stkPaymentMatchesPendingRequest({
+          !stkCallbackSettlesRequest({
             callbackAmount: callback.amount,
             pendingAmount: Number(pending.amount),
-            callbackPhone: callback.payerPhone,
-            pendingPhone: pending.phone,
             receiptNumber: callback.receiptNumber,
           })
         ) {

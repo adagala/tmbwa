@@ -18,6 +18,7 @@ import { Label } from '@/components/Label';
 import { useToast } from '@/hooks/useToast';
 import { monthLabel } from '@/lib/financialReporting';
 import {
+  isKenyanMobileNumber,
   requestKcbAccountTopUp,
   subscribeToKcbStkRequestStatus,
 } from '@/lib/firebase/kcb';
@@ -52,7 +53,7 @@ const statusMessage = (status: string | undefined) => {
     return {
       variant: 'default' as const,
       title: 'Waiting for M-Pesa',
-      body: 'Approve the prompt on your phone to complete the top-up.',
+      body: 'Approve the prompt on the phone to complete the top-up.',
     };
   }
   if (status === 'reconciled') {
@@ -93,12 +94,14 @@ export const DialogAccountTopUp = ({
   const { toast } = useToast();
   const [open, setOpen] = React.useState(false);
   const [amountText, setAmountText] = React.useState('');
+  const [phone, setPhone] = React.useState(member.phonenumber);
   const [isRequesting, setIsRequesting] = React.useState(false);
   const [requestId, setRequestId] = React.useState<string>();
   const [status, setStatus] = React.useState<string>();
 
   const amount = Number(amountText);
   const isValidAmount = Number.isInteger(amount) && amount > 0;
+  const isValidPhone = isKenyanMobileNumber(phone);
   const preview = isValidAmount ? previewTopUp(amount, contributions) : null;
 
   React.useEffect(() => {
@@ -110,6 +113,7 @@ export const DialogAccountTopUp = ({
     setOpen(nextOpen);
     if (!nextOpen) {
       setAmountText('');
+      setPhone(member.phonenumber);
       setRequestId(undefined);
       setStatus(undefined);
     }
@@ -117,12 +121,13 @@ export const DialogAccountTopUp = ({
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!isValidAmount || isRequesting) return;
+    if (!isValidAmount || !isValidPhone || isRequesting) return;
     setIsRequesting(true);
     try {
       const result = await requestKcbAccountTopUp({
         memberId: member.member_id,
         amount,
+        phone,
       });
       setStatus(result.data.status);
       setRequestId(result.data.requestId);
@@ -197,6 +202,30 @@ export const DialogAccountTopUp = ({
                 ) : null}
               </div>
 
+              <div className="space-y-2">
+                <Label htmlFor="top-up-phone">M-Pesa phone number</Label>
+                <Input
+                  id="top-up-phone"
+                  type="tel"
+                  inputMode="tel"
+                  autoComplete="tel"
+                  placeholder="e.g. 0712345678"
+                  value={phone}
+                  onChange={(event) => setPhone(event.target.value)}
+                  hasError={!isValidPhone}
+                />
+                {isValidPhone ? (
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    The M-Pesa prompt is sent to this number. It can be any
+                    number; the payment is credited to this account.
+                  </p>
+                ) : (
+                  <p className="text-xs text-red-600 dark:text-red-500">
+                    Enter a valid Kenyan mobile number.
+                  </p>
+                )}
+              </div>
+
               {preview ? (
                 <div className="rounded-md border border-gray-200 p-3 text-sm dark:border-gray-800">
                   <div className="font-medium text-gray-900 dark:text-gray-50">
@@ -241,7 +270,7 @@ export const DialogAccountTopUp = ({
               <Button
                 className="w-full sm:w-fit"
                 type="submit"
-                disabled={!isValidAmount}
+                disabled={!isValidAmount || !isValidPhone}
                 isLoading={isRequesting}
                 loadingText="Requesting prompt..."
               >

@@ -17,8 +17,9 @@ Administrators can start an account top-up on a member's behalf, for example whe
 2. Confirm the member's identity, that their membership is **active**, and the amount they want to pay.
 3. Next to **Account balance**, select **Add funds**.
 4. Enter the amount in whole shillings and review how it will be used. The preview shows unpaid contributions settled oldest first and any amount held for future contributions.
-5. Select **Send M-Pesa prompt**. The prompt goes to the phone number registered to the member, and the member must approve it with their own M-Pesa PIN.
-6. Keep the dialog open to follow the status, or check the member's **Account balance** and **Transactions** later.
+5. Check **M-Pesa phone number**. It starts as the member's registered number; change it if someone else is paying for the member.
+6. Select **Send M-Pesa prompt**. The payer approves it with the M-Pesa PIN on that phone, and the payment is credited to the member whichever number paid. The paying number is recorded on the payment.
+7. Keep the dialog open to follow the status, or check the member's **Account balance** and **Transactions** later.
 
 The preview is for display only. TMBWA recalculates the allocation when the payment arrives, so the result can differ if the member's contributions change in the meantime. You cannot choose which months a top-up pays.
 

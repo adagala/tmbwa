@@ -104,7 +104,11 @@ const callable = (
   data: Record<string, unknown>,
 ) => fn.run({ auth, data, rawRequest: {} } as never) as Promise<Record<string, unknown>>;
 
-const requestTopUp = async (amount: number, auth: unknown = memberAuth()) => {
+const requestTopUp = async (
+  amount: number,
+  auth: unknown = memberAuth(),
+  phone?: string,
+) => {
   checkoutSequence += 1;
   const checkoutRequestId = `checkout-${checkoutSequence}`;
   mockKcbAccepts(checkoutRequestId);
@@ -114,6 +118,7 @@ const requestTopUp = async (amount: number, auth: unknown = memberAuth()) => {
     memberId: MEMBER,
     purpose: 'account_top_up',
     amount,
+    ...(phone === undefined ? {} : { phone }),
   });
   return { requestId, checkoutRequestId, result };
 };
@@ -123,6 +128,7 @@ const deliverCallback = async (
   amount: number,
   receiptNumber: string,
   resultCode = 0,
+  payerPhone = PHONE,
 ) => {
   const response = {
     statusCode: 0,
@@ -161,7 +167,7 @@ const deliverCallback = async (
                     Item: [
                       { Name: 'Amount', Value: amount },
                       { Name: 'MpesaReceiptNumber', Value: receiptNumber },
-                      { Name: 'PhoneNumber', Value: PHONE.slice(1) },
+                      { Name: 'PhoneNumber', Value: payerPhone.slice(1) },
                       { Name: 'TransactionDate', Value: '20260930101010' },
                     ],
                   },
@@ -333,6 +339,49 @@ describe('account top-ups', () => {
     expect(
       (await db().doc(`kcb_stk_unmatched_callbacks/${checkoutRequestId}`).get()).data()!.status,
     ).toBe('correlated');
+  });
+
+  it('prompts the chosen number and credits the member whichever phone pays', async () => {
+    await seedMember();
+    const { requestId, checkoutRequestId } = await requestTopUp(
+      600,
+      memberAuth(),
+      '0722 000 111',
+    );
+    const stkCall = vi
+      .mocked(fetch)
+      .mock.calls.find(([url]) => String(url).includes('stkpush'))!;
+    expect(JSON.parse(String(stkCall[1]!.body)).phoneNumber).toBe('254722000111');
+    expect((await db().doc(`kcb_stk_requests/${requestId}`).get()).data()!.phone).toBe(
+      '+254722000111',
+    );
+
+    const callback = await deliverCallback(
+      checkoutRequestId,
+      600,
+      'R-OTHER',
+      0,
+      '+254733000222',
+    );
+    expect(callback.statusCode).toBe(200);
+    expect((await memberDoc()).balance).toBe(600);
+    const [payment] = await payments();
+    expect(payment).toMatchObject({
+      amount: 600,
+      payer_phone: '+254733000222',
+      request_id: requestId,
+    });
+    expect((await db().doc(`kcb_stk_requests/${requestId}`).get()).data()!.status).toBe(
+      'reconciled',
+    );
+  });
+
+  it('rejects an invalid prompt number without creating a request', async () => {
+    await seedMember();
+    await expect(requestTopUp(500, memberAuth(), '12345')).rejects.toMatchObject({
+      code: 'invalid-argument',
+    });
+    expect((await db().collection('kcb_stk_requests').get()).empty).toBe(true);
   });
 
   it('ignores a duplicate callback', async () => {

@@ -13,6 +13,7 @@ import {
 import { Contribution, Member } from 'tmbwa-shared/firebase';
 import { ContributionStatusEnum } from 'tmbwa-shared';
 import { Badge } from '@/components/Badge';
+import { Input } from '@/components/Input';
 import { Label } from '@/components/Label';
 import { RiCoinsLine, RiSafe2Line, RiShoppingBag3Line } from '@remixicon/react';
 import { DialogDeleteContributionPayment } from './DialogDeleteContributionPayment';
@@ -20,7 +21,7 @@ import { DialogLegacyContributionCorrection } from './DialogLegacyContributionCo
 import useUser from '@/hooks/useUser';
 import { DialogDeleteContribution } from './DialogDeleteContribution';
 import { DialogReverseLegacyCorrection } from './DialogReverseLegacyCorrection';
-import { requestKcbStkPush } from '@/lib/firebase/kcb';
+import { isKenyanMobileNumber, requestKcbStkPush } from '@/lib/firebase/kcb';
 import { useToast } from '@/hooks/useToast';
 import {
   formatNairobiDate,
@@ -42,6 +43,8 @@ export const DialogContributionDetails = ({
   const { role, user } = useUser();
   const { toast } = useToast();
   const [isRequestingStk, setIsRequestingStk] = React.useState(false);
+  const [stkPhone, setStkPhone] = React.useState(member?.phonenumber ?? '');
+  const isValidStkPhone = isKenyanMobileNumber(stkPhone);
   const payments = contribution?.payments || [];
   const reversedCorrectionIds = new Set(
     contribution.legacy_corrections
@@ -56,19 +59,25 @@ export const DialogContributionDetails = ({
     contribution.balance > 0 &&
     contribution.paid !== ContributionStatusEnum.Enum.paid;
 
+  // Start from the member's number each time the dialog opens.
+  React.useEffect(() => {
+    if (open) setStkPhone(member?.phonenumber ?? '');
+  }, [open, member?.phonenumber]);
+
   const requestContributionPayment = async () => {
-    if (!user || !canRequestStk) return;
+    if (!user || !canRequestStk || !isValidStkPhone) return;
     setIsRequestingStk(true);
     try {
       await requestKcbStkPush({
         memberId: contribution.member_id,
         contributionId: contribution.contribution_id,
         amount: Number(contribution.balance),
+        phone: stkPhone,
       });
       toast({
         title: 'STK Push requested',
         description:
-          'Check your phone and complete the M-Pesa prompt to pay this contribution.',
+          'Complete the M-Pesa prompt on the phone to pay this contribution.',
       });
     } catch (cause) {
       const message =
@@ -276,11 +285,39 @@ export const DialogContributionDetails = ({
                 ) : null}
               </DialogDescription>
             </DialogHeader>
+            {canRequestStk ? (
+              <div className="mt-6 space-y-2">
+                <Label htmlFor="contribution-stk-phone">
+                  M-Pesa phone number
+                </Label>
+                <Input
+                  id="contribution-stk-phone"
+                  type="tel"
+                  inputMode="tel"
+                  autoComplete="tel"
+                  placeholder="e.g. 0712345678"
+                  value={stkPhone}
+                  onChange={(event) => setStkPhone(event.target.value)}
+                  hasError={!isValidStkPhone}
+                />
+                {isValidStkPhone ? (
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    The M-Pesa prompt is sent to this number. It can be any
+                    number; the payment is credited to this contribution.
+                  </p>
+                ) : (
+                  <p className="text-xs text-red-600 dark:text-red-500">
+                    Enter a valid Kenyan mobile number.
+                  </p>
+                )}
+              </div>
+            ) : null}
             <DialogFooter className="mt-6">
               {canRequestStk ? (
                 <Button
                   className="mt-2 w-full sm:mt-0 sm:w-fit"
                   onClick={requestContributionPayment}
+                  disabled={!isValidStkPhone}
                   isLoading={isRequestingStk}
                   loadingText="Requesting STK..."
                 >

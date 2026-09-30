@@ -31,6 +31,7 @@ export type StoredStkRequest = {
   contributionId: string;
   purpose?: string;
   amount: number;
+  phone?: string;
 };
 
 export type IncomingStkRequest = {
@@ -38,6 +39,8 @@ export type IncomingStkRequest = {
   contributionId: string;
   purpose?: string;
   amount: number;
+  // Present only when the requester chose the number to prompt.
+  phone?: string;
 };
 
 export const ACCOUNT_TOP_UP_PURPOSE = 'account_top_up';
@@ -223,7 +226,8 @@ export const isSameStkRequestPayload = (
   existing.memberId === incoming.memberId &&
   existing.contributionId === incoming.contributionId &&
   isTopUpStkRequest(existing) === isTopUpStkRequest(incoming) &&
-  Number(existing.amount) === Number(incoming.amount);
+  Number(existing.amount) === Number(incoming.amount) &&
+  (incoming.phone === undefined || existing.phone === incoming.phone);
 
 export const stkFailureStatus = (resultCode: number) => {
   if (resultCode === 1032) return 'cancelled';
@@ -231,6 +235,8 @@ export const stkFailureStatus = (resultCode: number) => {
   return 'failed';
 };
 
+// Heuristic match for a callback that carries no correlation IDs; the phone is
+// one of the few details that ties it to a request.
 export const stkPaymentMatchesPendingRequest = (args: {
   callbackAmount: number | undefined;
   pendingAmount: number;
@@ -240,6 +246,17 @@ export const stkPaymentMatchesPendingRequest = (args: {
 }) =>
   Number(args.callbackAmount) === Number(args.pendingAmount) &&
   args.callbackPhone === args.pendingPhone &&
+  typeof args.receiptNumber === 'string' &&
+  args.receiptNumber.trim().length > 0;
+
+// A callback already tied to its request by provider IDs settles it whichever
+// phone approved the prompt; the paying phone is recorded, not enforced.
+export const stkCallbackSettlesRequest = (args: {
+  callbackAmount: number | undefined;
+  pendingAmount: number;
+  receiptNumber: string | undefined;
+}) =>
+  Number(args.callbackAmount) === Number(args.pendingAmount) &&
   typeof args.receiptNumber === 'string' &&
   args.receiptNumber.trim().length > 0;
 
@@ -341,14 +358,11 @@ export const lockedStkAllocationAmount = (
 export const unmatchedStkCallbackMatchesRequest = (args: {
   callbackMerchantRequestId: unknown;
   callbackAmount: unknown;
-  callbackPhone: unknown;
   requestMerchantRequestId: string | null;
   requestAmount: number;
-  requestPhone: string;
 }) =>
   args.callbackMerchantRequestId === args.requestMerchantRequestId &&
-  Number(args.callbackAmount) === Number(args.requestAmount) &&
-  args.callbackPhone === args.requestPhone;
+  Number(args.callbackAmount) === Number(args.requestAmount);
 
 export const isStkInitiationLeaseExpired = (
   leaseExpiresAtMillis: number | undefined,

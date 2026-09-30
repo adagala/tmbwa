@@ -44,14 +44,16 @@ Member contribution payment uses the KCB STK request and callback flow and remai
 - The request is idempotent by `requestId`. Reusing an existing `requestId` is accepted only when `memberId`, `contributionId`, and `amount` are identical.
 - Stale pre-dispatch `initiating` retries retain the original provider `messageId` and invoice number. Before the provider call, the request is durably moved to `dispatching`; `dispatching` and `outcome_unknown` requests are never redispatched and remain locked until an administrator verifies the provider outcome and resolves them.
 - Member status must be active.
-- Phone target is always the member profile phone (`members/{memberId}.phonenumber`) after Kenyan phone normalization.
+- Phone target is the optional `phone` in the request, which may be any valid Kenyan mobile number, or the member profile phone (`members/{memberId}.phonenumber`) when none is given. Either is stored on the request after Kenyan phone normalization; an invalid `phone` is rejected with `invalid-argument`.
+- Reusing a `requestId` with a different `phone` is rejected, so one request cannot prompt two numbers.
 - `amount` must be a positive integer and cannot exceed the contribution balance.
 
 ### Callback phase
 
 - Callback correlation uses both `CheckoutRequestID` and `MerchantRequestID`.
 - Non-success callback result codes are persisted as explicit statuses: `failed`, `cancelled`, or `timed_out`.
-- Successful callbacks whose `Amount`, `PhoneNumber`, or `MerchantRequestID` does not match the pending request are quarantined for administrator review instead of being silently rejected.
+- Successful callbacks whose `Amount` or `MerchantRequestID` does not match the pending request are quarantined for administrator review instead of being silently rejected.
+- `PhoneNumber` is not required to match: the payer's PIN approval is the consent, and the paying phone is recorded as `payer_phone` on the payment. A phone match is used only to correlate a callback that arrives without a correlated request.
 - Ambiguous merchant-request or terminal-receipt linkage remains `outcome_unknown` and keeps the contribution locked until an administrator verifies the provider outcome.
 - Quarantined callbacks retain the collected receipt in the unresolved reconciliation queue only after exact checkout-request correlation.
 
