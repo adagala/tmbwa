@@ -157,6 +157,18 @@ export const canReverseTopUpCredit = (
   unallocatedAmount: number,
 ) => availableUnreservedBalance(balance, reservedCredit) >= unallocatedAmount;
 
+// Credit is pooled, so once any BALANCE B/F application happens after a
+// top-up we cannot prove it was funded by other credit. Refuse conservatively,
+// including when a timestamp is missing.
+export const creditAppliedSinceTopUp = (
+  topUpCreatedAtMillis: number | undefined,
+  creditApplicationMillis: Array<number | undefined>,
+) =>
+  topUpCreatedAtMillis === undefined ||
+  creditApplicationMillis.some(
+    (appliedAt) => appliedAt === undefined || appliedAt >= topUpCreatedAtMillis,
+  );
+
 export const paymentAllocations = (payment: {
   allocations?: Array<{ contribution_id: string; amount: number }>;
   contribution_id?: string;

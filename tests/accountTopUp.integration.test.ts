@@ -487,4 +487,46 @@ describe('account top-ups', () => {
       }),
     ).rejects.toMatchObject({ code: 'failed-precondition' });
   });
+
+  it('refuses to reverse a top-up whose credit was applied even after later credit arrives', async () => {
+    await seedMember();
+    const first = await requestTopUp(600);
+    await deliverCallback(first.checkoutRequestId, 600, 'R-A');
+    // Top-up A's remainder pays the next contribution as BALANCE B/F.
+    await generateMonthlyContributions('2026-10');
+    expect(await contributionDoc('2026-10')).toMatchObject({ balance: 0, paid: 'paid' });
+    // Top-up B restores enough aggregate credit to mask A's spend.
+    const second = await requestTopUp(500);
+    await deliverCallback(second.checkoutRequestId, 500, 'R-B');
+    expect((await memberDoc()).balance).toBe(600);
+
+    const topUpA = (await payments()).find((item) => item.provider_transaction_id === 'R-A')!;
+    await expect(
+      callable(financial.reverseContributionPayment, adminAuth, {
+        requestId: 'reverse-a',
+        memberId: MEMBER,
+        paymentId: topUpA.payment_id,
+      }),
+    ).rejects.toMatchObject({ code: 'failed-precondition' });
+    expect((await memberDoc()).balance).toBe(600);
+    expect(await payments()).toHaveLength(3);
+    expect((await db().doc('kcb_payment_notifications/R-A').get()).data()!.status).toBe(
+      'reconciled',
+    );
+  });
+
+  it('still reverses a top-up when credit was only applied before it', async () => {
+    await seedMember({ balance: 500 });
+    await generateMonthlyContributions('2026-09');
+    expect((await memberDoc()).balance).toBe(0);
+    const { checkoutRequestId } = await requestTopUp(400);
+    await deliverCallback(checkoutRequestId, 400, 'R-C');
+    const topUp = (await payments()).find((item) => item.provider_transaction_id === 'R-C')!;
+    await callable(financial.reverseContributionPayment, adminAuth, {
+      requestId: 'reverse-c',
+      memberId: MEMBER,
+      paymentId: topUp.payment_id,
+    });
+    expect((await memberDoc()).balance).toBe(0);
+  });
 });

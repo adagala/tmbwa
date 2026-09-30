@@ -3,6 +3,7 @@ import {
   allocateTopUpToArrears,
   applyBalanceAdjustment,
   canReverseTopUpCredit,
+  creditAppliedSinceTopUp,
   availableUnreservedBalance,
   applyPayment,
   paymentAllocations,
@@ -272,5 +273,14 @@ describe('financial invariants', () => {
     expect(canReverseTopUpCredit(700, 200, 500)).toBe(true);
     expect(canReverseTopUpCredit(600, 200, 500)).toBe(false);
     expect(canReverseTopUpCredit(-100, 0, 0)).toBe(true);
+  });
+
+  it('treats any credit application at or after a top-up as possibly spending it', () => {
+    expect(creditAppliedSinceTopUp(1000, [])).toBe(false);
+    expect(creditAppliedSinceTopUp(1000, [500, 999])).toBe(false);
+    expect(creditAppliedSinceTopUp(1000, [500, 1000])).toBe(true);
+    expect(creditAppliedSinceTopUp(1000, [2000])).toBe(true);
+    expect(creditAppliedSinceTopUp(1000, [undefined])).toBe(true);
+    expect(creditAppliedSinceTopUp(undefined, [])).toBe(true);
   });
 });

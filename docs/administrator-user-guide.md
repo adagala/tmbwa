@@ -35,7 +35,7 @@ Members, or administrators acting for a member, can start an **Add funds** M-Pes
 
 A top-up appears in the unresolved list only when it could not be matched automatically, for example when the till notification arrived before the STK callback. For these payments the allocation editor is replaced by a short explanation. Confirm the member and select **Reconcile payment**. TMBWA then applies the same oldest-first rule; you cannot choose allocations for a top-up.
 
-Top-up credit never appears under **Unallocated KCB credit**, and it cannot be allocated manually. A top-up can be reversed only while its remaining credit is still unspent. Once later contributions have used it, the reversal is refused.
+Top-up credit never appears under **Unallocated KCB credit**, and it cannot be allocated manually. A top-up with remaining credit can be reversed only if no account credit has been applied to a contribution since it was received. Credit is pooled, so once any later contribution has been paid from account credit (a `BALANCE B/F` payment), the reversal is refused, even if newer top-ups have since added more credit.
 
 If the payment does not belong in the system, select **Reject**, enter a clear reason, and confirm. Reject only after verifying the provider record and reference.
 

@@ -11,6 +11,7 @@ import {
 import {
   availableUnreservedBalance,
   canReverseTopUpCredit,
+  creditAppliedSinceTopUp,
   paymentAllocations,
   legacyContributionCorrection,
   correctedPaidAmountValue,
@@ -33,6 +34,13 @@ import { getCurrentMonth } from '../utils';
 type CommandData = Record<string, unknown>;
 
 const db = () => admin.firestore();
+
+const timestampMillis = (value: unknown) => {
+  if (value instanceof Date) return value.getTime();
+  return value && typeof (value as { toMillis?: unknown }).toMillis === 'function'
+    ? (value as { toMillis: () => number }).toMillis()
+    : undefined;
+};
 
 const stkContributionLockRef = (memberId: string, contributionId: string) =>
   db().doc(
@@ -155,6 +163,19 @@ export const reverseContributionPayment = onCall(async (request) => {
     const lockRefs = allocations.map(({ contributionId }) =>
       stkContributionLockRef(memberId, contributionId));
     const memberRef = db().doc(`members/${memberId}`);
+    const isTopUpWithCredit =
+      payment.payment_purpose === 'account_top_up' &&
+      Number(payment.unallocated_amount ?? 0) > 0;
+    // Contribution generation and createContribution record every use of
+    // unreserved credit as a BALANCE B/F payment. Both also write the member
+    // document, so they serialize with this transaction.
+    const creditApplications = isTopUpWithCredit
+      ? await transaction.get(
+        db()
+          .collection(`members/${memberId}/payments`)
+          .where('referencenumber', '==', 'BALANCE B/F'),
+      )
+      : undefined;
     const relatedSnapshots = await Promise.all([
       transaction.get(memberRef),
       ...contributionRefs.map((ref) => transaction.get(ref)),
@@ -170,13 +191,22 @@ export const reverseContributionPayment = onCall(async (request) => {
       throw new HttpsError('not-found', 'Contribution not found.');
     }
     lockSnapshots.forEach(assertNoActiveStkLock);
-    if (payment.payment_purpose === 'account_top_up') {
+    if (isTopUpWithCredit) {
       const member = memberData(memberSnapshot);
-      if (!canReverseTopUpCredit(
-        Number(member.balance),
-        Number(member.reservedKcbCredit ?? 0),
-        Number(payment.unallocated_amount ?? 0),
-      )) {
+      if (
+        creditAppliedSinceTopUp(
+          timestampMillis(payment.created_at),
+          (creditApplications?.docs ?? []).map((item) => {
+            const data = item.data();
+            return timestampMillis(data.created_at ?? data.paymentdate);
+          }),
+        ) ||
+        !canReverseTopUpCredit(
+          Number(member.balance),
+          Number(member.reservedKcbCredit ?? 0),
+          Number(payment.unallocated_amount ?? 0),
+        )
+      ) {
         throw new HttpsError(
           'failed-precondition',
           'This top-up credit has already been applied to later contributions and cannot be reversed automatically.',
