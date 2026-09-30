@@ -1,17 +1,16 @@
 import React from 'react';
 import { Contribution, Member } from 'tmbwa-shared/firebase';
 import { ContributionStatusEnum } from 'tmbwa-shared';
-import {
-  RiWalletLine,
-  RiArrowRightSLine,
-  RiCalendarCloseLine,
-} from '@remixicon/react';
+import { RiWalletLine, RiArrowRightSLine } from '@remixicon/react';
 import { Callout } from '@/components/Callout';
 import { List, ListItem } from '@/components/List';
 import { DialogContributionDetails } from '@/components/ui/contributions/DialogContributionDetails';
 import { Avatar } from '@/components/Avatar';
 import { DialogAddContribution } from '@/components/ui/contributions/DialogAddContribution';
-import { DialogAddMissingContributions } from '@/components/ui/contributions/DialogAddMissingContributions';
+import {
+  MissingMonthsAdminNotice,
+  MissingMonthsMemberNotice,
+} from '@/components/ui/contributions/MissingMonthsNotice';
 import useUser from '@/hooks/useUser';
 import { monthLabel } from '@/lib/financialReporting';
 
@@ -21,7 +20,7 @@ interface ContributionsProps extends React.ComponentPropsWithoutRef<'div'> {
   // Months from joining through the current month with no contribution.
   // Undefined while contributions load or when the join date is unknown.
   missingMonths?: string[];
-  joinDateUnknown?: boolean;
+  joinedAt?: Date | null;
 }
 
 const Contributions = React.forwardRef<HTMLDivElement, ContributionsProps>(
@@ -30,7 +29,7 @@ const Contributions = React.forwardRef<HTMLDivElement, ContributionsProps>(
       contributions,
       member,
       missingMonths,
-      joinDateUnknown = false,
+      joinedAt,
       className,
       ...props
     }: ContributionsProps,
@@ -47,37 +46,30 @@ const Contributions = React.forwardRef<HTMLDivElement, ContributionsProps>(
             Contribution History
           </div>
           {role === 'administrator' && member.status === 'active' && (
-            <DialogAddContribution member={member} />
+            <DialogAddContribution
+              member={member}
+              triggerVariant={
+                missingMonths && missingMonths.length > 0
+                  ? 'secondary'
+                  : 'primary'
+              }
+            />
           )}
         </div>
-        {missingMonths && missingMonths.length > 0 ? (
-          <Callout
-            className="mb-4"
-            variant="warning"
-            icon={RiCalendarCloseLine}
-            title={`${missingMonths.length} ${
-              missingMonths.length === 1 ? 'month' : 'months'
-            } not billed since joining`}
-          >
-            <p>{missingMonths.map(monthLabel).join(', ')}</p>
-            {role === 'administrator' && member.status === 'active' ? (
-              <div className="mt-3">
-                <DialogAddMissingContributions
-                  member={member}
-                  missingMonths={missingMonths}
-                />
-              </div>
-            ) : role === 'administrator' ? (
-              <p className="mt-2">Reactivate the member to add these months.</p>
-            ) : (
-              <p className="mt-2">
-                No contribution has been recorded for these months. Contact an
-                administrator if you have questions.
-              </p>
-            )}
-          </Callout>
+        {missingMonths && missingMonths.length > 0 && joinedAt ? (
+          role === 'administrator' ? (
+            <MissingMonthsAdminNotice
+              member={member}
+              missingMonths={missingMonths}
+            />
+          ) : (
+            <MissingMonthsMemberNotice
+              joinedAt={joinedAt}
+              missingMonths={missingMonths}
+            />
+          )
         ) : null}
-        {joinDateUnknown && role === 'administrator' ? (
+        {!joinedAt && role === 'administrator' ? (
           <Callout
             className="mb-4"
             variant="neutral"

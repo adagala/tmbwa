@@ -112,16 +112,16 @@ Allow pop-ups for TMBWA if the receipt or statement window does not open.
 
 ## Add missing contribution months
 
-A member's **Contribution History** lists every month from the member's join month through the current month that has no contribution.
+A member's **Contribution History** shows a card listing every month from the member's join month through the current month that has no contribution. The card shows what adding them would bill, how much account credit would cover, and the member's balance afterwards.
 
 1. Select **Members** and open the member.
-2. In the missing-months notice, select **Add missing months**.
-3. Select the months to add, or choose **Select all**. You can add up to 60 months at a time.
-4. Check the total and the estimated account credit, then select **Add months**.
+2. On the missing-months card, select **Add missing months**.
+3. Choose **All missing months**, **Only those credit covers in full** (shown when credit pays some but not all of them), or **Let me pick** to tick individual months. You can add up to 60 months at a time. Select **Continue**.
+4. Review how each month will be billed: paid in full from credit, part-paid from credit, or fully due. Check the amount the member will owe afterwards, then select **Add months**. Select **Back** to change the months.
 
 Each month is billed at KES 500. Any unreserved account credit pays the oldest selected month first. The months are added together: if any of them was added by someone else in the meantime, nothing is added and the error names the month. The member receives one notification covering all the months added.
 
-Months can only be added for active members. To add a month before the member's join date, use **Add contribution**. If the member has no join date, missing months can't be worked out and the notice says so.
+Months can only be added for active members. To add a month before the member's join date, use **Add contribution**. If the member has no join date, missing months can't be worked out and the page says so.
 
 ## View notifications and monitor delivery
 

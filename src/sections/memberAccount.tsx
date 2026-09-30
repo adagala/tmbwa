@@ -241,7 +241,7 @@ export function MemberAccount({
             member={member}
             contributions={contributions}
             missingMonths={missingMonths}
-            joinDateUnknown={!joined}
+            joinedAt={joined}
           />
         </TabsContent>
         <TabsContent value="transactions">
