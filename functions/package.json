@@ -6,6 +6,7 @@
     "build": "tsc",
     "build:scripts": "tsc -p tsconfig.scripts.json",
     "migrate:stk-locks": "npm run build:scripts && node lib-scripts/scripts/kcb/backfillActiveStkLocks.js",
+    "validate:members": "npm run build:scripts && node lib-scripts/scripts/members/validateMembers.js",
     "build:watch": "tsc --watch",
     "serve": "npm run build && firebase emulators:start --only functions",
     "shell": "npm run build && firebase functions:shell",
