@@ -1,21 +1,14 @@
 import {
   addDoc,
   collection,
-  deleteDoc,
   doc,
   onSnapshot,
   orderBy,
   query,
   updateDoc,
-  writeBatch,
   where,
   collectionGroup,
   limit,
-  arrayUnion,
-  increment,
-  arrayRemove,
-  serverTimestamp,
-  getDoc,
   getDocs,
   OrderByDirection,
 } from 'firebase/firestore';
@@ -26,25 +19,17 @@ import {
   MemberForm,
   OwnMemberForm,
   Payment,
-  contributionSchema,
   memberFormSchema,
   memberSchema,
   ownMemberFormSchema,
-  paymentSchema,
   parseContributionDocument,
   parseMemberDocument,
   parsePaymentDocument,
 } from 'tmbwa-shared/firebase';
 import {
-  ContributionStatusEnum,
-  MemberBalanceForm,
-  MemberBalanceTypeEnum,
   MemberRole,
   MEMBER_STATUS,
   MonthlyStats,
-  MONTHLY_CONTRIBUTION,
-  PAYMENT_STATUS,
-  PaymentTypeEnum,
   monthlyStatsSchema,
   parseDocument,
 } from 'tmbwa-shared';
@@ -170,11 +155,6 @@ export const updateMembershipFees = (memberId: string, member: Member) => {
   return updateDoc(memberRef, _member);
 };
 
-export const deleteMember = (memberId: string) => {
-  const memberRef = doc(db, 'members', memberId);
-  return deleteDoc(memberRef);
-};
-
 export const getMonthlyStats = (
   cb: (data: MonthlyStats[]) => void,
   { direction, max }: MonthlyStatsFilters,
@@ -272,128 +252,6 @@ export const getMemberPayments = (
   return unsubscribe;
 };
 
-export const addPayment = async ({
-  contribution,
-  payment,
-}: {
-  contribution: Contribution;
-  payment: Payment;
-}) => {
-  const batch = writeBatch(db);
-  const memberId = contribution.member_id;
-  const contributionAmount =
-    payment.amount > contribution.balance
-      ? contribution.balance
-      : payment.amount;
-
-  // add payment
-  const paymentsRef = collection(db, `members/${memberId}/payments`);
-  const paymentId = doc(paymentsRef).id;
-  const paymentRef = doc(db, `members/${memberId}/payments/${paymentId}`);
-  const newPayment: Payment = {
-    ...payment,
-    payment_id: paymentId,
-    contribution_amount: contributionAmount,
-  };
-  batch.set(paymentRef, paymentSchema.parse(newPayment));
-
-  // update payments field in the contribution
-  const contributionRef = doc(
-    db,
-    `members/${memberId}/contributions/${contribution.month}`,
-  );
-  const contributionUpdate = {
-    payments: arrayUnion(newPayment),
-    balance: increment(-contributionAmount),
-    paid:
-      contribution.balance - payment.amount > 0
-        ? ContributionStatusEnum.Enum.partial
-        : ContributionStatusEnum.Enum.paid,
-  };
-  batch.set(contributionRef, contributionUpdate, { merge: true });
-
-  // update member balance
-  const memberRef = doc(db, `members/${memberId}`);
-  batch.set(
-    memberRef,
-    {
-      balance: increment(payment.amount),
-      contributionBalance: increment(contributionAmount),
-    },
-    { merge: true },
-  );
-
-  // update stat for that month
-  const statRef = doc(db, `monthly_stats/${contribution.month}`);
-  batch.set(
-    statRef,
-    { contribution: increment(contributionAmount), month: contribution.month },
-    { merge: true },
-  );
-
-  return batch.commit();
-};
-
-export const deletePayment = async ({
-  contribution,
-  payment,
-}: {
-  contribution: Contribution;
-  payment: Payment;
-}) => {
-  const batch = writeBatch(db);
-  const memberId = contribution.member_id;
-
-  // remove payment
-  const paymentRef = doc(
-    db,
-    `members/${memberId}/payments/${payment.payment_id}`,
-  );
-  batch.delete(paymentRef);
-
-  // update payments field in the contribution
-  const contributionRef = doc(
-    db,
-    `members/${memberId}/contributions/${contribution.month}`,
-  );
-  batch.set(
-    contributionRef,
-    {
-      payments: arrayRemove(payment),
-      balance: increment(payment.contribution_amount),
-      paid:
-        contribution.amount - (payment.amount + contribution.balance) > 0
-          ? ContributionStatusEnum.Enum.partial
-          : ContributionStatusEnum.Enum.unpaid,
-    },
-    { merge: true },
-  );
-
-  // update member balance
-  const memberRef = doc(db, `members/${memberId}`);
-  batch.set(
-    memberRef,
-    {
-      balance: increment(-payment.amount),
-      contributionBalance: increment(-payment.amount),
-    },
-    { merge: true },
-  );
-
-  // update stat for that month
-  const statRef = doc(db, `monthly_stats/${contribution.month}`);
-  batch.set(
-    statRef,
-    {
-      contribution: increment(-payment.contribution_amount),
-      month: contribution.month,
-    },
-    { merge: true },
-  );
-
-  return batch.commit();
-};
-
 export const getRecentPayments = (cb: (data: Payment[]) => void) => {
   const q = query(
     collectionGroup(db, 'payments'),
@@ -441,211 +299,3 @@ export const getAllPayments = (
       ),
     onError,
   );
-
-export const addContribution = async ({
-  uid,
-  month,
-  member,
-}: {
-  uid: string;
-  month: string;
-  member: Member;
-}) => {
-  const batch = writeBatch(db);
-
-  const memberContributionRef = doc(
-    db,
-    `members/${member.member_id}/contributions/${month}`,
-  );
-
-  const memberContributionSnapshot = await getDoc(memberContributionRef);
-  const contributionExists = memberContributionSnapshot.exists();
-
-  if (contributionExists) {
-    throw new Error('Contribution already exists');
-  }
-
-  const memberBalance = (member.balance as number) || 0;
-  const contributionAmount =
-    memberBalance > MONTHLY_CONTRIBUTION
-      ? MONTHLY_CONTRIBUTION
-      : memberBalance <= 0
-        ? 0
-        : memberBalance;
-  const contributionBalance = MONTHLY_CONTRIBUTION - contributionAmount;
-
-  let payment;
-
-  if (contributionAmount > 0) {
-    const paymentsRef = collection(db, `members/${member.member_id}/payments`);
-    const paymentId = doc(paymentsRef).id;
-    const paymentRef = doc(
-      db,
-      `members/${member.member_id}/payments/${paymentId}`,
-    );
-
-    const memberPayment = {
-      amount: contributionAmount,
-      contribution_amount: contributionAmount,
-      paymentdate: new Date(),
-      referencenumber: 'BALANCE B/F',
-      contribution_id: month,
-      firstname: member.firstname,
-      lastname: member.lastname,
-      member_id: member.member_id,
-      payment_id: paymentId,
-      payment_type: PaymentTypeEnum.Enum.contribution,
-      action_by: uid,
-    };
-    payment = paymentSchema.parse(memberPayment);
-    batch.set(paymentRef, payment, { merge: true });
-  }
-
-  const contribution = {
-    ...member,
-    amount: MONTHLY_CONTRIBUTION,
-    balance: contributionBalance,
-    paid:
-      contributionBalance === 0
-        ? PAYMENT_STATUS.PAID
-        : contributionBalance === MONTHLY_CONTRIBUTION
-          ? PAYMENT_STATUS.UNPAID
-          : PAYMENT_STATUS.PARTIAL,
-    payments: payment ? [payment] : [],
-    createdat: serverTimestamp(),
-    month,
-    action_by: uid,
-  };
-  batch.set(memberContributionRef, contributionSchema.parse(contribution), {
-    merge: true,
-  });
-
-  const memberRef = doc(db, `members/${member.member_id}`);
-  const memberData = {
-    balance: increment(-MONTHLY_CONTRIBUTION),
-    contributionBalance: increment(contributionAmount),
-  };
-  batch.set(memberRef, memberData, { merge: true });
-
-  const statsRef = doc(db, `monthly_stats/${month}`);
-  const paymentsCount = contributionAmount > 0 ? 1 : 0;
-  const stats = {
-    amount: increment(MONTHLY_CONTRIBUTION),
-    contribution: increment(contributionAmount),
-    paymentsCount: increment(paymentsCount),
-    month,
-  };
-  batch.set(statsRef, stats, { merge: true });
-
-  return batch.commit();
-};
-
-export const deleteContribution = async ({
-  contribution,
-  member,
-}: {
-  contribution: Contribution;
-  member: Member;
-}) => {
-  const batch = writeBatch(db);
-
-  const month = contribution.month;
-  const contributionPaid = contribution.amount - contribution.balance;
-  const contributionAmount = contribution.amount;
-
-  const memberContributionRef = doc(
-    db,
-    `members/${member.member_id}/contributions/${month}`,
-  );
-
-  const memberContributionSnapshot = await getDoc(memberContributionRef);
-
-  if (!memberContributionSnapshot.exists()) {
-    throw new Error('Contribution does not exists');
-  }
-
-  // delete all payments related to the contribution
-  const paymentIds = contribution.payments.map((payment) => payment.payment_id);
-  paymentIds.forEach((paymentId) => {
-    const paymentRef = doc(
-      db,
-      `members/${member.member_id}/payments/${paymentId}`,
-    );
-    batch.delete(paymentRef);
-  });
-
-  // delete the contribution
-  const contributionRef = doc(
-    db,
-    `members/${member.member_id}/contributions/${month}`,
-  );
-  batch.delete(contributionRef);
-
-  // reduce contribution balance
-  const memberRef = doc(db, `members/${member.member_id}`);
-  const memberData = {
-    contributionBalance: increment(-contributionPaid),
-  };
-  batch.set(memberRef, memberData, { merge: true });
-
-  // reduce stats for that month
-  const statsRef = doc(db, `monthly_stats/${month}`);
-  const stats = {
-    amount: increment(-contributionAmount),
-    contribution: increment(-contributionPaid),
-    paymentsCount: increment(-paymentIds.length),
-    month,
-  };
-  batch.set(statsRef, stats, { merge: true });
-
-  return batch.commit();
-};
-
-export const updateMemberBalance = ({
-  uid,
-  member,
-  balanceForm,
-}: {
-  uid: string;
-  member: Member;
-  balanceForm: MemberBalanceForm;
-}) => {
-  const batch = writeBatch(db);
-  const { amount, type } = balanceForm;
-
-  const balance = type === MemberBalanceTypeEnum.Enum.top_up ? amount : -amount;
-  const memberRef = doc(db, `members/${member.member_id}`);
-  const memberData = {
-    balance: increment(balance),
-  };
-  batch.set(memberRef, memberData, { merge: true });
-
-  const paymentsRef = collection(db, `members/${member.member_id}/payments`);
-  const payment_id = doc(paymentsRef).id;
-  const paymentRef = doc(
-    db,
-    `members/${member.member_id}/payments/${payment_id}`,
-  );
-
-  const referencenumber =
-    type === MemberBalanceTypeEnum.Enum.top_up
-      ? 'ACCOUNT BALANCE TOP UP'
-      : 'ACCOUNT BALANCE DEDUCTION';
-  const payment: Payment = {
-    amount,
-    contribution_amount: 0,
-    paymentdate: serverTimestamp(),
-    referencenumber,
-    contribution_id: '',
-    firstname: member.firstname,
-    lastname: member.lastname,
-    member_id: member.member_id,
-    payment_id,
-    payment_type: PaymentTypeEnum.Enum.account,
-    action_by: uid,
-    created_at: serverTimestamp(),
-  };
-  batch.set(paymentRef, paymentSchema.parse(payment), { merge: true });
-
-  return batch.commit();
-};

@@ -1,6 +1,6 @@
 import { HttpsError } from 'firebase-functions/v2/https';
 import {
-  contributionDocumentSchema,
+  contributionReadDocumentSchema,
   kcbPaymentNotificationDocumentSchema,
   kcbStkRequestDocumentSchema,
   memberDocumentSchema,
@@ -67,7 +67,7 @@ export const memberWithIdData = (snapshot: FirebaseFirestore.DocumentSnapshot) =
 export const contributionData = (snapshot: FirebaseFirestore.DocumentSnapshot) =>
   parseSnapshot(
     snapshot,
-    contributionDocumentSchema,
+    contributionReadDocumentSchema,
     'Contribution',
     { contribution_id: snapshot.id, ...snapshot.data() },
   );

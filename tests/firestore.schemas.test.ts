@@ -3,6 +3,7 @@ import {
   MEMBER_ROLE,
   MEMBER_STATUS,
   contributionDocumentSchema,
+  contributionReadDocumentSchema,
   kcbPaymentNotificationDocumentSchema,
   kcbStkRequestDocumentSchema,
   memberDocumentSchema,
@@ -170,6 +171,69 @@ describe('Firestore document schemas', () => {
     expect(parsedContribution.phonenumber).toBe('');
     expect(parsedContribution.status).toBe('active');
     expect(parsedContribution.payments[0].payment_type).toBe('contribution');
+  });
+
+  it('reads contributions whose member copy predates current member rules', () => {
+    const legacyContribution = {
+      member_id: 'member-1',
+      firstname: 'Amina',
+      lastname: 'Adagala',
+      membernumber: '12/24',
+      phonenumber: '0700000000',
+      email: null,
+      gender: 'unknown',
+      contribution_id: '2024-07-01',
+      paid: 'unpaid',
+      amount: 500,
+      balance: 500,
+      month: '2024-07-01',
+    };
+
+    expect(contributionDocumentSchema.safeParse(legacyContribution).success).toBe(
+      false,
+    );
+    const parsed = contributionReadDocumentSchema.parse(legacyContribution);
+    expect(parsed.membernumber).toBe('12/24');
+    expect(parsed.email).toBe('');
+    expect(parsed.win).toBe('');
+    expect(parsed.payments).toEqual([]);
+    expect(parsed.legacy_corrections).toEqual([]);
+
+    const parsedOnClient = parseContributionDocument(
+      '2024-07-01',
+      legacyContribution,
+    );
+    expect(parsedOnClient.membernumber).toBe('12/24');
+    expect(parsedOnClient.email).toBe('');
+  });
+
+  it('still rejects contributions with invalid financial fields on read', () => {
+    const contribution = {
+      member_id: 'member-1',
+      contribution_id: '2024-07-01',
+      paid: 'unpaid',
+      amount: 500,
+      balance: 500,
+      month: '2024-07-01',
+    };
+
+    expect(contributionReadDocumentSchema.safeParse(contribution).success).toBe(
+      true,
+    );
+    for (const invalid of [
+      { balance: '500' },
+      { amount: undefined },
+      { paid: 'settled' },
+      { month: undefined },
+      { payments: [{ payment_id: 'payment-1' }] },
+    ]) {
+      expect(
+        contributionReadDocumentSchema.safeParse({
+          ...contribution,
+          ...invalid,
+        }).success,
+      ).toBe(false);
+    }
   });
 
   it('defaults missing monthly statistics counters', () => {

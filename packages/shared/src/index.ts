@@ -129,14 +129,6 @@ export const contributionFormSchema = z.object({
   month: MonthEnum,
 });
 
-export const memberBalanceFormSchema = z.object({
-  type: MemberBalanceTypeEnum,
-  amount: z
-    .string()
-    .transform((value) => parseFloat(value))
-    .refine((value) => value > 0, { message: 'Amount must be greater than 0' }),
-});
-
 export const monthlyStatsSchema = z.object({
   amount: z.number(),
   contribution: z.number(),
@@ -197,7 +189,7 @@ export const legacyCorrectionSummarySchema = z.object({
   reversed: z.boolean().optional(),
 }).passthrough();
 
-export const contributionDocumentSchema = memberDocumentSchema.extend({
+const contributionFinancialShape = {
   contribution_id: z.string(),
   paid: ContributionStatusEnum,
   amount: z.number(),
@@ -208,7 +200,33 @@ export const contributionDocumentSchema = memberDocumentSchema.extend({
   month: z.string(),
   action_by: z.string().optional(),
   createdat: z.unknown().optional(),
-}).passthrough();
+};
+
+// Used for new contribution writes: the member copy must satisfy current member rules.
+export const contributionDocumentSchema = memberDocumentSchema
+  .extend(contributionFinancialShape)
+  .passthrough();
+
+const memberSnapshotText = z
+  .string()
+  .nullish()
+  .transform((value) => value ?? '');
+
+// Used for contribution reads. Member fields on a contribution are a copy taken
+// when it was created; members/{id} is the source of truth. Legacy copies may
+// predate current member rules, so only the financial fields are validated strictly.
+export const contributionReadDocumentSchema = z
+  .object({
+    ...contributionFinancialShape,
+    member_id: z.string().optional(),
+    firstname: memberSnapshotText,
+    lastname: memberSnapshotText,
+    membernumber: memberSnapshotText,
+    win: memberSnapshotText,
+    phonenumber: memberSnapshotText,
+    email: memberSnapshotText,
+  })
+  .passthrough();
 
 export const contributionRateDocumentSchema = z.object({
   amount: z.number().positive(),
@@ -378,7 +396,6 @@ export type Month = z.infer<typeof MonthEnum>;
 export type MemberBase = z.infer<typeof memberBaseSchema>;
 export type MemberFormBase = z.infer<typeof memberFormBaseSchema>;
 export type ContributionForm = z.infer<typeof contributionFormSchema>;
-export type MemberBalanceForm = z.infer<typeof memberBalanceFormSchema>;
 export type MonthlyStats = z.infer<typeof monthlyStatsSchema>;
 export type FirebaseTimestamp = z.infer<typeof firebaseTimestampSchema>;
 export type UserSchema = z.infer<typeof userSchema>;

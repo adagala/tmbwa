@@ -3,19 +3,17 @@ import { isMobilePhone } from 'validator';
 import { z } from 'zod';
 
 import {
-  ContributionStatusEnum,
   MemberBalanceTypeEnum,
   PaymentTypeEnum,
   StkPurposeEnum,
   StatusEnum,
   auditEventDocumentSchema,
-  contributionDocumentSchema,
+  contributionReadDocumentSchema,
   firebaseTimestampSchema,
   kcbPaymentNotificationDocumentSchema,
   memberBaseSchema,
   memberFormBaseSchema,
   memberNotificationDocumentSchema,
-  legacyCorrectionSummarySchema,
   notificationDeliveryDocumentSchema,
   notificationPreferenceDocumentSchema,
   parseDocument,
@@ -92,20 +90,6 @@ export const paymentSchema = paymentFormSchema.merge(
   }),
 );
 
-export const memberContributionSchema = z.object({
-  contribution_id: z.string().min(1, 'Please select a member'),
-  paid: ContributionStatusEnum,
-  amount: z.number(),
-  payments: z.array(paymentSchema),
-  legacy_corrections: z.array(legacyCorrectionSummarySchema).default([]),
-  active_legacy_correction_id: z.string().optional(),
-  month: z.string(),
-  action_by: z.string(),
-  createdat: z.union([z.date(), z.instanceof(Timestamp), fieldValueSchema]).optional(),
-});
-
-export const contributionSchema = memberSchema.merge(memberContributionSchema);
-
 const persistedDateSchema = z.union([
   z.date(),
   z.instanceof(Timestamp),
@@ -122,13 +106,9 @@ const paymentReadSchema = paymentDocumentSchema.extend({
   created_at: payment.created_at ?? payment.paymentdate,
 }));
 
-const contributionReadSchema = contributionDocumentSchema.extend({
+// Member fields on a contribution are a historical copy; see contributionReadDocumentSchema.
+const contributionReadSchema = contributionReadDocumentSchema.extend({
   member_id: z.string(),
-  membernumber: z.string().min(1, 'Admission number cannot be empty'),
-  phonenumber: z.string(),
-  status: StatusEnum.default('active'),
-  datejoined: z.union([z.date(), z.instanceof(Timestamp)]).optional(),
-  createat: z.instanceof(Timestamp).optional(),
   createdat: z.union([z.date(), z.instanceof(Timestamp)]).optional(),
   action_by: z.string().default(''),
   payments: z.array(paymentReadSchema).default([]),
@@ -185,8 +165,7 @@ export type MemberForm = z.infer<typeof memberFormSchema>;
 export type OwnMemberForm = z.infer<typeof ownMemberFormSchema>;
 export type Payment = z.infer<typeof paymentSchema>;
 export type PaymentForm = z.infer<typeof paymentFormSchema>;
-export type MemberContribution = z.infer<typeof memberContributionSchema>;
-export type Contribution = z.infer<typeof contributionSchema>;
+export type Contribution = z.infer<typeof contributionReadSchema>;
 export type KcbPaymentNotification = z.infer<typeof kcbPaymentNotificationSchema>;
 export type MemberNotification = z.infer<typeof memberNotificationSchema>;
 export type NotificationDelivery = z.infer<typeof notificationDeliverySchema>;
