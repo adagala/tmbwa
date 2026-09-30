@@ -11,6 +11,7 @@ import {
   limit,
   getDocs,
   OrderByDirection,
+  QueryDocumentSnapshot,
 } from 'firebase/firestore';
 import { db } from './clientApp';
 import {
@@ -34,6 +35,22 @@ import {
   parseDocument,
 } from 'tmbwa-shared';
 import { User } from 'firebase/auth';
+
+// Accounts (e.g. system or test accounts) hidden from member, contribution and
+// payment listings. Display-only: this is not an authorization boundary.
+const hiddenMemberIds = new Set(
+  (import.meta.env.VITE_HIDDEN_MEMBER_IDS ?? '')
+    .split(',')
+    .map((id) => id.trim())
+    .filter(Boolean),
+);
+
+const isVisibleMember = (memberId: string | undefined) =>
+  !memberId || !hiddenMemberIds.has(memberId);
+
+// Subcollection docs live at members/{memberId}/<subcollection>/{docId}.
+const isVisibleMemberDoc = (snapshot: QueryDocumentSnapshot) =>
+  isVisibleMember(snapshot.ref.parent.parent?.id);
 
 type MemberFilters = {
   role?: MemberRole | '';
@@ -77,9 +94,9 @@ export const getMembers = (
     q,
     { includeMetadataChanges: true },
     (querySnapshot) => {
-      const results = querySnapshot.docs.map((snapshot) =>
-        parseMemberDocument(snapshot.id, snapshot.data()),
-      );
+      const results = querySnapshot.docs
+        .filter((snapshot) => isVisibleMember(snapshot.id))
+        .map((snapshot) => parseMemberDocument(snapshot.id, snapshot.data()));
       cb(results);
     },
   );
@@ -197,9 +214,11 @@ export const getMonthlyMembersContributions = (
     contributionsQuery,
     { includeMetadataChanges: true },
     (querySnapshot) => {
-      const contributions = querySnapshot.docs.map((snapshot) =>
-        parseContributionDocument(snapshot.id, snapshot.data()),
-      );
+      const contributions = querySnapshot.docs
+        .filter(isVisibleMemberDoc)
+        .map((snapshot) =>
+          parseContributionDocument(snapshot.id, snapshot.data()),
+        );
       cb(contributions);
     },
   );
@@ -263,9 +282,9 @@ export const getRecentPayments = (cb: (data: Payment[]) => void) => {
     q,
     { includeMetadataChanges: true },
     (querySnapshot) => {
-      const payments = querySnapshot.docs.map((snapshot) =>
-        parsePaymentDocument(snapshot.id, snapshot.data()),
-      );
+      const payments = querySnapshot.docs
+        .filter(isVisibleMemberDoc)
+        .map((snapshot) => parsePaymentDocument(snapshot.id, snapshot.data()));
       cb(payments);
     },
   );
@@ -280,9 +299,9 @@ export const getAllContributions = (
     query(collectionGroup(db, 'contributions'), orderBy('month', 'desc')),
     (snapshot) =>
       cb(
-        snapshot.docs.map((item) =>
-          parseContributionDocument(item.id, item.data()),
-        ),
+        snapshot.docs
+          .filter(isVisibleMemberDoc)
+          .map((item) => parseContributionDocument(item.id, item.data())),
       ),
     onError,
   );
@@ -295,7 +314,9 @@ export const getAllPayments = (
     query(collectionGroup(db, 'payments'), orderBy('paymentdate', 'desc')),
     (snapshot) =>
       cb(
-        snapshot.docs.map((item) => parsePaymentDocument(item.id, item.data())),
+        snapshot.docs
+          .filter(isVisibleMemberDoc)
+          .map((item) => parsePaymentDocument(item.id, item.data())),
       ),
     onError,
   );
