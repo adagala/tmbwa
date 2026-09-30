@@ -1,8 +1,16 @@
 export type NotificationEvent = {
-  type: 'payment.reconciled' | 'payment.reversed' | 'contribution.created' | 'contribution.due' | 'contribution.arrears';
+  type:
+    | 'payment.reconciled'
+    | 'payment.reversed'
+    | 'contribution.created'
+    | 'contributions.created'
+    | 'contribution.due'
+    | 'contribution.arrears';
   receiptNumber?: string;
   amount?: number;
   contributionId?: string;
+  contributionIds?: string[];
+  balance?: number;
 };
 
 export type NotificationMessage = { title: string; body: string };
@@ -23,6 +31,14 @@ export const renderNotification = (event: NotificationEvent): NotificationMessag
       };
     case 'contribution.created':
       return { title: 'Monthly contribution', body: `Your ${event.contributionId ?? 'monthly'} contribution is now due.` };
+    case 'contributions.created': {
+      const months = event.contributionIds ?? [];
+      const range = months.length > 1 ? `${months[0]} to ${months[months.length - 1]}` : months[0] ?? 'past';
+      return {
+        title: 'Contributions added',
+        body: `${months.length} contributions (${range}) were added to your account. ${money(event.balance)} is now due.`,
+      };
+    }
     case 'contribution.due':
       return { title: 'Contribution reminder', body: `Your ${event.contributionId ?? 'monthly'} contribution is still due.` };
     case 'contribution.arrears':

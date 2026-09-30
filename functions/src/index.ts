@@ -15,6 +15,7 @@ export const setMonthlyContributions = Contribution.setMonthlyContributions;
 export const recordContributionPayment = Financial.recordContributionPayment;
 export const reverseContributionPayment = Financial.reverseContributionPayment;
 export const createContribution = Financial.createContribution;
+export const createContributions = Financial.createContributions;
 export const adjustMemberBalance = Financial.adjustMemberBalance;
 export const correctLegacyContribution = Financial.correctLegacyContribution;
 export const reverseLegacyContributionCorrection = Financial.reverseLegacyContributionCorrection;

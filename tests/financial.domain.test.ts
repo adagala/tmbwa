@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   allocateTopUpToArrears,
   applyBalanceAdjustment,
+  bulkContributionMonths,
+  memberJoinedAt,
   canReverseTopUpCredit,
   creditAppliedSinceTopUp,
   availableUnreservedBalance,
@@ -282,5 +284,36 @@ describe('financial invariants', () => {
     expect(creditAppliedSinceTopUp(1000, [2000])).toBe(true);
     expect(creditAppliedSinceTopUp(1000, [undefined])).toBe(true);
     expect(creditAppliedSinceTopUp(undefined, [])).toBe(true);
+  });
+
+  it('accepts only distinct missing months and returns them oldest first', () => {
+    const missing = ['2026-05-01', '2026-06-01', '2026-07-01'];
+    expect(bulkContributionMonths(['2026-07-01', '2026-05-01'], missing)).toEqual([
+      '2026-05-01',
+      '2026-07-01',
+    ]);
+    expect(() => bulkContributionMonths([], missing)).toThrow('at least one');
+    expect(() => bulkContributionMonths('2026-05-01', missing)).toThrow('at least one');
+    expect(() => bulkContributionMonths(['2026-05'], missing)).toThrow('YYYY-MM-01');
+    expect(() => bulkContributionMonths(['2026-13-01'], missing)).toThrow('YYYY-MM-01');
+    expect(() => bulkContributionMonths([501], missing)).toThrow('YYYY-MM-01');
+    expect(() =>
+      bulkContributionMonths(['2026-05-01', '2026-05-01'], missing),
+    ).toThrow('only once');
+    expect(() =>
+      bulkContributionMonths(['2026-05-01', '2026-08-01', '2026-04-01'], missing),
+    ).toThrow('2026-04-01, 2026-08-01');
+    const tooMany = Array.from({ length: 61 }, (_, index) =>
+      `${2020 + Math.floor(index / 12)}-${String((index % 12) + 1).padStart(2, '0')}-01`);
+    expect(() => bulkContributionMonths(tooMany, tooMany)).toThrow('at most 60');
+  });
+
+  it('derives the join date from datejoined, falling back to createat', () => {
+    const joined = new Date('2025-02-10T00:00:00Z');
+    const created = new Date('2025-03-10T00:00:00Z');
+    expect(memberJoinedAt({ datejoined: { toDate: () => joined }, createat: created })).toBe(joined);
+    expect(memberJoinedAt({ createat: { seconds: created.getTime() / 1000 } })).toEqual(created);
+    expect(memberJoinedAt({ datejoined: 'yesterday' })).toBeUndefined();
+    expect(memberJoinedAt({})).toBeUndefined();
   });
 });

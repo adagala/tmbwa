@@ -34,7 +34,13 @@ import { addContribution } from '@/lib/firebase/financial';
 import { months, years } from '@/lib/utils';
 import useUser from '@/hooks/useUser';
 
-export const DialogAddContribution = ({ member }: { member: Member }) => {
+export const DialogAddContribution = ({
+  member,
+  triggerVariant = 'primary',
+}: {
+  member: Member;
+  triggerVariant?: 'primary' | 'secondary';
+}) => {
   const { user } = useUser();
   const [open, setOpen] = React.useState(false);
   const [isLoading, setIsLoading] = React.useState(false);
@@ -105,7 +111,7 @@ export const DialogAddContribution = ({ member }: { member: Member }) => {
           <DialogTrigger asChild>
             <Button
               className="h-10 whitespace-nowrap w-full sm:w-auto gap-1"
-              variant="primary"
+              variant={triggerVariant}
             >
               <>
                 <RiAddLine className="size-4" />

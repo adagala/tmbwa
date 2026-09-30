@@ -2,20 +2,39 @@ import React from 'react';
 import { Contribution, Member } from 'tmbwa-shared/firebase';
 import { ContributionStatusEnum } from 'tmbwa-shared';
 import { RiWalletLine, RiArrowRightSLine } from '@remixicon/react';
+import { Callout } from '@/components/Callout';
 import { List, ListItem } from '@/components/List';
 import { DialogContributionDetails } from '@/components/ui/contributions/DialogContributionDetails';
 import { Avatar } from '@/components/Avatar';
 import { DialogAddContribution } from '@/components/ui/contributions/DialogAddContribution';
+import {
+  MissingMonthsAdminNotice,
+  MissingMonthsMemberNotice,
+} from '@/components/ui/contributions/MissingMonthsNotice';
 import useUser from '@/hooks/useUser';
 import { monthLabel } from '@/lib/financialReporting';
 
 interface ContributionsProps extends React.ComponentPropsWithoutRef<'div'> {
   member: Member;
   contributions: Contribution[];
+  // Months from joining through the current month with no contribution.
+  // Undefined while contributions load or when the join date is unknown.
+  missingMonths?: string[];
+  joinedAt?: Date | null;
 }
 
 const Contributions = React.forwardRef<HTMLDivElement, ContributionsProps>(
-  ({ contributions, member, className, ...props }: ContributionsProps, ref) => {
+  (
+    {
+      contributions,
+      member,
+      missingMonths,
+      joinedAt,
+      className,
+      ...props
+    }: ContributionsProps,
+    ref,
+  ) => {
     const { role } = useUser();
     const [open, setOpen] = React.useState(false);
     const [contribution, setContribution] = React.useState<Contribution>();
@@ -27,9 +46,39 @@ const Contributions = React.forwardRef<HTMLDivElement, ContributionsProps>(
             Contribution History
           </div>
           {role === 'administrator' && member.status === 'active' && (
-            <DialogAddContribution member={member} />
+            <DialogAddContribution
+              member={member}
+              triggerVariant={
+                missingMonths && missingMonths.length > 0
+                  ? 'secondary'
+                  : 'primary'
+              }
+            />
           )}
         </div>
+        {missingMonths && missingMonths.length > 0 && joinedAt ? (
+          role === 'administrator' ? (
+            <MissingMonthsAdminNotice
+              member={member}
+              missingMonths={missingMonths}
+            />
+          ) : (
+            <MissingMonthsMemberNotice
+              joinedAt={joinedAt}
+              missingMonths={missingMonths}
+            />
+          )
+        ) : null}
+        {!joinedAt && role === 'administrator' ? (
+          <Callout
+            className="mb-4"
+            variant="neutral"
+            title="Missing months can't be checked"
+          >
+            This member has no join date, so months without a contribution can't
+            be worked out.
+          </Callout>
+        ) : null}
         {contributions.length === 0 ? (
           <p className="mt-4 rounded-md border border-dashed border-gray-200 px-4 py-8 text-center text-sm text-gray-500 dark:border-gray-800 dark:text-gray-400">
             No contributions recorded yet.

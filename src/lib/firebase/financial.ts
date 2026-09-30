@@ -48,6 +48,14 @@ export const addContribution = ({
   member: Member;
 }) => call('createContribution', { memberId: member.member_id, month });
 
+export const addContributions = ({
+  months,
+  member,
+}: {
+  months: string[];
+  member: Member;
+}) => call('createContributions', { memberId: member.member_id, months });
+
 export const deleteMemberSafely = (memberId: string) =>
   call('deleteMemberSafely', { memberId });
 

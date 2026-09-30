@@ -7,6 +7,7 @@ import {
   contributionDocumentSchema,
   notificationEventDocumentSchema,
   paymentDocumentSchema,
+  missingContributionMonths,
 } from 'tmbwa-shared';
 import {
   availableUnreservedBalance,
@@ -21,6 +22,8 @@ import {
   legacyInventoryCursor,
   requiresReceiptReversalBeforeContributionRemoval,
   reversePayment,
+  bulkContributionMonths,
+  memberJoinedAt,
 } from './domain';
 import {
   contributionData,
@@ -271,6 +274,78 @@ export const reverseContributionPayment = onCall(async (request) => {
   });
 });
 
+// Writes one contribution month and its stats, paying up to `availableCredit`
+// from the member's unreserved balance. The caller updates member totals.
+const writeContributionMonth = (
+  transaction: FirebaseFirestore.Transaction,
+  {
+    memberId,
+    member,
+    month,
+    availableCredit,
+    actorId,
+    requestId,
+  }: {
+    memberId: string;
+    member: ReturnType<typeof memberData>;
+    month: string;
+    availableCredit: number;
+    actorId: string;
+    requestId: string;
+  },
+) => {
+  const contributionRef = db().doc(`members/${memberId}/contributions/${month}`);
+  const applied = Math.min(availableCredit, MONTHLY_CONTRIBUTION);
+  const payments: Record<string, unknown>[] = [];
+  if (applied > 0) {
+    const paymentId = db().collection(`members/${memberId}/payments`).doc().id;
+    const createdAt = admin.firestore.Timestamp.now();
+    const payment = {
+      payment_id: paymentId,
+      referencenumber: 'BALANCE B/F',
+      amount: applied,
+      paymentdate: createdAt,
+      created_at: createdAt,
+      member_id: memberId,
+      contribution_id: month,
+      firstname: member.firstname,
+      lastname: member.lastname,
+      contribution_amount: applied,
+      payment_type: 'contribution',
+      action_by: actorId,
+      request_id: requestId,
+      receipt_number: `TMBWA-${paymentId.toUpperCase()}`,
+    };
+    const validatedPayment = validateDocumentWrite(
+      paymentDocumentSchema,
+      payment,
+      `members/${memberId}/payments/${paymentId}`,
+    );
+    payments.push(validatedPayment);
+    transaction.create(db().doc(`members/${memberId}/payments/${paymentId}`), validatedPayment);
+  }
+  transaction.create(contributionRef, validateDocumentWrite(contributionDocumentSchema, {
+    ...member,
+    member_id: memberId,
+    amount: MONTHLY_CONTRIBUTION,
+    balance: MONTHLY_CONTRIBUTION - applied,
+    paid: applied === MONTHLY_CONTRIBUTION ? PAYMENT_STATUS.PAID : applied > 0 ? PAYMENT_STATUS.PARTIAL : PAYMENT_STATUS.UNPAID,
+    payments,
+    createdat: admin.firestore.FieldValue.serverTimestamp(),
+    month,
+    action_by: actorId,
+    request_id: requestId,
+    contribution_id: month,
+  }, contributionRef.path));
+  transaction.set(db().doc(`monthly_stats/${month}`), {
+    amount: admin.firestore.FieldValue.increment(MONTHLY_CONTRIBUTION),
+    contribution: admin.firestore.FieldValue.increment(applied),
+    paymentsCount: admin.firestore.FieldValue.increment(payments.length),
+    month,
+  }, { merge: true });
+  return { applied, balance: MONTHLY_CONTRIBUTION - applied };
+};
+
 export const createContribution = onCall(async (request) => {
   const actorId = requireAdministrator(request.auth);
   const data = request.data as CommandData;
@@ -297,75 +372,122 @@ export const createContribution = onCall(async (request) => {
     const member = memberData(memberSnapshot);
     if (member.status !== 'active') throw new HttpsError('failed-precondition', 'Only active members can receive new contributions.');
     const balance = Number(member.balance ?? 0);
-    const applied = Math.min(
-      availableUnreservedBalance(balance, Number(member.reservedKcbCredit ?? 0)),
-      MONTHLY_CONTRIBUTION,
-    );
-    const payments: Record<string, unknown>[] = [];
-    if (applied > 0) {
-      const paymentId = db().collection(`members/${memberId}/payments`).doc().id;
-      const createdAt = admin.firestore.Timestamp.now();
-      const payment = {
-        payment_id: paymentId,
-        referencenumber: 'BALANCE B/F',
-        amount: applied,
-        paymentdate: createdAt,
-        created_at: createdAt,
-        member_id: memberId,
-        contribution_id: month,
-        firstname: member.firstname,
-        lastname: member.lastname,
-        contribution_amount: applied,
-        payment_type: 'contribution',
-        action_by: actorId,
-        request_id: requestId,
-        receipt_number: `TMBWA-${paymentId.toUpperCase()}`,
-      };
-      const validatedPayment = validateDocumentWrite(
-        paymentDocumentSchema,
-        payment,
-        `members/${memberId}/payments/${paymentId}`,
-      );
-      payments.push(validatedPayment);
-      transaction.create(db().doc(`members/${memberId}/payments/${paymentId}`), validatedPayment);
-    }
-    writeCommand(transaction, command.ref, 'createContribution', actorId);
-    transaction.create(contributionRef, validateDocumentWrite(contributionDocumentSchema, {
-      ...member,
-      member_id: memberId,
-      amount: MONTHLY_CONTRIBUTION,
-      balance: MONTHLY_CONTRIBUTION - applied,
-      paid: applied === MONTHLY_CONTRIBUTION ? PAYMENT_STATUS.PAID : applied > 0 ? PAYMENT_STATUS.PARTIAL : PAYMENT_STATUS.UNPAID,
-      payments,
-      createdat: admin.firestore.FieldValue.serverTimestamp(),
+    const { applied, balance: outstanding } = writeContributionMonth(transaction, {
+      memberId,
+      member,
       month,
-      action_by: actorId,
-      request_id: requestId,
-      contribution_id: month,
-    }, contributionRef.path));
+      availableCredit: availableUnreservedBalance(balance, Number(member.reservedKcbCredit ?? 0)),
+      actorId,
+      requestId,
+    });
+    writeCommand(transaction, command.ref, 'createContribution', actorId);
     transaction.update(memberRef, {
       balance: admin.firestore.FieldValue.increment(-MONTHLY_CONTRIBUTION),
       contributionBalance: admin.firestore.FieldValue.increment(applied),
     });
-    transaction.set(db().doc(`monthly_stats/${month}`), {
-      amount: admin.firestore.FieldValue.increment(MONTHLY_CONTRIBUTION),
-      contribution: admin.firestore.FieldValue.increment(applied),
-      paymentsCount: admin.firestore.FieldValue.increment(payments.length),
-      month,
-    }, { merge: true });
     writeAuditEvent(transaction, requestId, actorId, 'contribution.created', memberId, month, {
       amount: MONTHLY_CONTRIBUTION,
       appliedFromBalance: applied,
     });
-    if (MONTHLY_CONTRIBUTION - applied > 0) {
+    if (outstanding > 0) {
       const notificationPath = `notification_events/contribution-created-${requestId}`;
       transaction.create(db().doc(notificationPath), validateDocumentWrite(notificationEventDocumentSchema, {
         type: 'contribution.created', memberId, contributionId: month,
-        amount: MONTHLY_CONTRIBUTION, balance: MONTHLY_CONTRIBUTION - applied,
+        amount: MONTHLY_CONTRIBUTION, balance: outstanding,
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
       }, notificationPath));
     }
     return { requestId, duplicate: false };
+  });
+});
+
+// Adds several missing months (join month through the current month) in one
+// all-or-nothing transaction. Months are billed oldest first so unreserved
+// credit settles the oldest month first.
+export const createContributions = onCall(async (request) => {
+  const actorId = requireAdministrator(request.auth);
+  const data = request.data as CommandData;
+  const requestId = requiredString(data, 'requestId');
+  const memberId = requiredString(data, 'memberId');
+
+  return db().runTransaction(async (transaction) => {
+    const command = await readCommand(transaction, requestId);
+    if (command.exists) {
+      return { requestId, duplicate: true };
+    }
+    const memberRef = db().doc(`members/${memberId}`);
+    const [memberSnapshot, contributionsSnapshot] = await Promise.all([
+      transaction.get(memberRef),
+      transaction.get(db().collection(`members/${memberId}/contributions`)),
+    ]);
+    if (!memberSnapshot.exists) throw new HttpsError('not-found', 'Member not found.');
+    const member = memberData(memberSnapshot);
+    if (member.status !== 'active') throw new HttpsError('failed-precondition', 'Only active members can receive new contributions.');
+    const joinedAt = memberJoinedAt(member);
+    if (!joinedAt) {
+      throw new HttpsError('failed-precondition', 'The member has no join date, so missing months cannot be determined.');
+    }
+    // Legacy contributions may use a `YYYY-MM` id or month, so both are checked.
+    const existingMonths = contributionsSnapshot.docs.flatMap((snapshot) => {
+      const month = snapshot.get('month');
+      return typeof month === 'string' ? [snapshot.id, month] : [snapshot.id];
+    });
+    let months: string[];
+    try {
+      months = bulkContributionMonths(
+        data.months,
+        missingContributionMonths(joinedAt, existingMonths, getCurrentMonth()),
+      );
+    } catch (error) {
+      throw new HttpsError('invalid-argument', (error as Error).message);
+    }
+
+    let availableCredit = availableUnreservedBalance(
+      Number(member.balance ?? 0),
+      Number(member.reservedKcbCredit ?? 0),
+    );
+    let totalApplied = 0;
+    let totalOutstanding = 0;
+    writeCommand(transaction, command.ref, 'createContributions', actorId);
+    months.forEach((month) => {
+      const { applied, balance } = writeContributionMonth(transaction, {
+        memberId,
+        member,
+        month,
+        availableCredit,
+        actorId,
+        requestId,
+      });
+      availableCredit -= applied;
+      totalApplied += applied;
+      totalOutstanding += balance;
+      writeAuditEvent(transaction, `${requestId}-${month}`, actorId, 'contribution.created', memberId, month, {
+        amount: MONTHLY_CONTRIBUTION,
+        appliedFromBalance: applied,
+        batchRequestId: requestId,
+        batchSize: months.length,
+      });
+    });
+    const totalAmount = MONTHLY_CONTRIBUTION * months.length;
+    transaction.update(memberRef, {
+      balance: admin.firestore.FieldValue.increment(-totalAmount),
+      contributionBalance: admin.firestore.FieldValue.increment(totalApplied),
+    });
+    if (totalOutstanding > 0) {
+      const notificationPath = `notification_events/contributions-created-${requestId}`;
+      transaction.create(db().doc(notificationPath), validateDocumentWrite(notificationEventDocumentSchema, {
+        type: 'contributions.created', memberId, contributionIds: months,
+        amount: totalAmount, balance: totalOutstanding,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, notificationPath));
+    }
+    return {
+      requestId,
+      duplicate: false,
+      months,
+      amount: totalAmount,
+      appliedFromBalance: totalApplied,
+    };
   });
 });
 
