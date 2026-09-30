@@ -31,10 +31,10 @@ export const DialogDeleteContribution = ({
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
             <Button
-              className="h-10 whitespace-nowrap w-full sm:w-auto gap-1"
-              variant="primary"
+              className="gap-1 whitespace-nowrap text-red-600 hover:text-red-700 dark:text-red-500 dark:hover:text-red-400"
+              variant="ghost"
             >
-              Delete
+              Delete contribution
             </Button>
           </DialogTrigger>
           <DialogContent className="sm:max-w-lg">

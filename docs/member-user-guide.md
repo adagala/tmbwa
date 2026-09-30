@@ -15,9 +15,9 @@ This guide explains how members can pay contributions, add funds to their accoun
 2. Select **Profile** from the navigation menu.
 3. Scroll to **Contribution History**.
 4. Select the contribution month you want to pay.
-5. Review the contribution amount, current status, payments already allocated, and **Balance due**.
+5. The contribution details open in a side panel. Review the amount, current status, **Balance due**, and the **History** of payments and corrections for that month.
 6. Check **M-Pesa phone number**. It starts as the phone number registered to your membership; change it to send the prompt to another phone, for example a family member paying on your behalf.
-7. Select **Pay balance via STK**.
+7. Select **Pay KES …**. The button shows the balance currently due.
 8. Enter the M-Pesa PIN on that phone and confirm the payment.
 9. Wait for the payment to be processed and reconciled. A successful M-Pesa prompt does not by itself mean that the contribution balance has already been updated.
 
