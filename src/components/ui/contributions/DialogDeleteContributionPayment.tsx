@@ -64,7 +64,7 @@ export const DialogDeleteContributionPayment = ({
         >
           <DialogTrigger asChild>
             <Button
-              className={`absolute top-0 right-0 ${isCurrentMonth ? 'text-red-500' : 'text-gray-500 hover:cursor-not-allowed'}`}
+              className={`-my-1 h-auto px-1.5 py-0.5 text-xs ${isCurrentMonth ? 'text-red-500' : 'text-gray-500 hover:cursor-not-allowed'}`}
               type="button"
               variant="ghost"
             >
