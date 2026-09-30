@@ -144,9 +144,10 @@ export const memberEmailExists = async (email: string) => {
 
 export const addMember = (member: MemberForm) => {
   const membersRef = collection(db, 'members');
-  const form = memberFormSchema.parse(member);
+  const { datejoined, ...form } = memberFormSchema.parse(member);
   const newMember = memberSchema.omit({ member_id: true }).parse({
     ...form,
+    ...(datejoined ? { datejoined } : {}),
     status: MEMBER_STATUS.ACTIVE,
     balance: 0,
     contributionBalance: 0,
@@ -159,11 +160,12 @@ export const updateMember = (
   member: MemberForm | OwnMemberForm,
 ) => {
   const memberRef = doc(db, 'members', memberId);
-  const update =
-    'email' in member
-      ? memberFormSchema.parse(member)
-      : ownMemberFormSchema.parse(member);
-  return updateDoc(memberRef, update);
+  if ('email' in member) {
+    const { datejoined, ...form } = memberFormSchema.parse(member);
+    // Leave an unset join date untouched rather than writing undefined.
+    return updateDoc(memberRef, datejoined ? { ...form, datejoined } : form);
+  }
+  return updateDoc(memberRef, ownMemberFormSchema.parse(member));
 };
 
 export const updateMembershipFees = (memberId: string, member: Member) => {

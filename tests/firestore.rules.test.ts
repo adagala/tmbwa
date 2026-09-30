@@ -84,6 +84,28 @@ describe('Firestore authorization', () => {
     await assertSucceeds(getDoc(doc(db, 'monthly_stats/2026-08-01')));
   });
 
+  it('allows only administrators to set a valid date joined', async () => {
+    await seed();
+    const adminDb = testEnv.authenticatedContext('admin', { role: 'administrator' }).firestore();
+    const memberDb = testEnv.authenticatedContext('member-a', { role: 'member' }).firestore();
+    const past = new Date('2020-03-15T09:00:00Z');
+    const future = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    await assertSucceeds(updateDoc(doc(adminDb, 'members/member-a'), { datejoined: past }));
+    await assertFails(updateDoc(doc(adminDb, 'members/member-a'), { datejoined: future }));
+    await assertFails(updateDoc(doc(adminDb, 'members/member-a'), { datejoined: '2020-03-15' }));
+    await assertFails(updateDoc(doc(memberDb, 'members/member-a'), { datejoined: new Date('2019-01-10T09:00:00Z') }));
+    await assertSucceeds(setDoc(doc(adminDb, 'members/new-member'), { role: 'member', datejoined: past }));
+    await assertFails(setDoc(doc(adminDb, 'members/future-member'), { role: 'member', datejoined: future }));
+  });
+
+  it('does not block administrator edits when a legacy date joined is malformed', async () => {
+    await seed();
+    await testEnv.withSecurityRulesDisabled(async (context) =>
+      updateDoc(doc(context.firestore(), 'members/member-a'), { datejoined: 'legacy-text' }));
+    const db = testEnv.authenticatedContext('admin', { role: 'administrator' }).firestore();
+    await assertSucceeds(updateDoc(doc(db, 'members/member-a'), { firstname: 'Alicia' }));
+  });
+
   it('denies direct administrator financial writes', async () => {
     await seed();
     const db = testEnv.authenticatedContext('admin', { role: 'administrator' }).firestore();

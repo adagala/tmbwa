@@ -32,6 +32,8 @@ import {
   updateMember,
 } from '@/lib/firebase/firestore';
 import { Checkbox } from '@/components/Checkbox';
+import { DatePicker } from '@/components/DatePicker';
+import { timestampDate } from '@/lib/financialReporting';
 
 export const DialogMemberForm = ({
   member,
@@ -59,6 +61,9 @@ export const DialogMemberForm = ({
         phonenumber: member.phonenumber,
         role: member.role,
         isFeesPaid: member.isFeesPaid,
+        datejoined: member.datejoined
+          ? (timestampDate(member.datejoined) ?? undefined)
+          : undefined,
       }
     : undefined;
 
@@ -69,6 +74,7 @@ export const DialogMemberForm = ({
     reset,
     setValue,
     trigger,
+    watch,
   } = useForm<MemberForm>({
     resolver: zodResolver(memberFormSchema),
     values,
@@ -214,6 +220,23 @@ export const DialogMemberForm = ({
                         type="text"
                       />
                       <InputErrorMessage message={errors.win?.message} />
+                    </div>
+                    <div className="mx-auto space-y-1">
+                      <Label htmlFor="datejoined">Date joined (optional)</Label>
+                      <DatePicker
+                        id="datejoined"
+                        placeholder="Select date joined"
+                        enableYearNavigation
+                        toDate={new Date()}
+                        value={watch('datejoined')}
+                        onChange={(date) => {
+                          setValue('datejoined', date, {
+                            shouldValidate: true,
+                          });
+                        }}
+                        hasError={!!errors.datejoined}
+                      />
+                      <InputErrorMessage message={errors.datejoined?.message} />
                     </div>
                     <div className="flex gap-1">
                       <div className="flex-1 mx-auto space-y-1">

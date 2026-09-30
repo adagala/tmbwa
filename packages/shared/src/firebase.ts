@@ -35,9 +35,17 @@ export const ownMemberFormSchema = memberBaseSchema.extend({
     ),
 });
 
-export const memberFormSchema = ownMemberFormSchema.merge(
-  memberFormBaseSchema.pick({ email: true, role: true, isFeesPaid: true }),
-);
+export const memberFormSchema = ownMemberFormSchema
+  .merge(
+    memberFormBaseSchema.pick({ email: true, role: true, isFeesPaid: true }),
+  )
+  .extend({
+    // Administrator-only. When absent, readers fall back to createat.
+    datejoined: z
+      .date()
+      .refine((date) => date <= new Date(), 'Date joined cannot be in the future')
+      .optional(),
+  });
 
 export const memberSchema = memberFormSchema.merge(
   z.object({
