@@ -29,6 +29,14 @@ Reconciliation is a sensitive financial action. Confirm the KCB receipt, payer, 
 
 Allocations cannot exceed the receipt amount or a selected contribution's balance. A contribution should not be selected more than once in the same reconciliation. Once completed, the trusted backend records the allocation, updates the relevant balances, and preserves the receipt for audit purposes.
 
+### Member account top-ups
+
+Members, or administrators acting for a member, can start an **Add funds** M-Pesa prompt from the member's profile. A successful top-up is normally recorded automatically. It pays the member's unpaid contributions oldest first and keeps the rest as account credit that monthly contribution generation applies automatically.
+
+A top-up appears in the unresolved list only when it could not be matched automatically, for example when the till notification arrived before the STK callback. For these payments the allocation editor is replaced by a short explanation. Confirm the member and select **Reconcile payment**. TMBWA then applies the same oldest-first rule; you cannot choose allocations for a top-up.
+
+Top-up credit never appears under **Unallocated KCB credit**, and it cannot be allocated manually. A top-up with remaining credit can be reversed only if no account credit has been applied to a contribution since it was received. Credit is pooled, so once any later contribution has been paid from account credit (a `BALANCE B/F` payment), the reversal is refused, even if newer top-ups have since added more credit.
+
 If the payment does not belong in the system, select **Reject**, enter a clear reason, and confirm. Reject only after verifying the provider record and reference.
 
 ## Allocate existing account credit

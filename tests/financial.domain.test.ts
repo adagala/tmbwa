@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  allocateTopUpToArrears,
   applyBalanceAdjustment,
+  canReverseTopUpCredit,
+  creditAppliedSinceTopUp,
   availableUnreservedBalance,
   applyPayment,
   paymentAllocations,
@@ -232,5 +235,52 @@ describe('financial invariants', () => {
         contribution_amount: 400,
       }),
     ).toBe(false);
+  });
+
+  it('settles top-up arrears oldest first and keeps the remainder as credit', () => {
+    expect(allocateTopUpToArrears(1000, [
+      { contributionId: '2026-04', month: '2026-04', balance: 500 },
+      { contributionId: '2026-03', month: '2026-03', balance: 400 },
+      { contributionId: '2026-02', month: '2026-02', balance: 0 },
+    ])).toEqual({
+      allocations: [
+        { contributionId: '2026-03', amount: 400 },
+        { contributionId: '2026-04', amount: 500 },
+      ],
+      allocatedAmount: 900,
+      unallocatedAmount: 100,
+    });
+  });
+
+  it('partially settles the oldest arrear and holds everything without arrears', () => {
+    expect(allocateTopUpToArrears(300, [
+      { contributionId: '2026-04', month: '2026-04', balance: 500 },
+      { contributionId: '2026-03', month: '2026-03', balance: 400 },
+    ])).toEqual({
+      allocations: [{ contributionId: '2026-03', amount: 300 }],
+      allocatedAmount: 300,
+      unallocatedAmount: 0,
+    });
+    expect(allocateTopUpToArrears(1500, [])).toEqual({
+      allocations: [], allocatedAmount: 0, unallocatedAmount: 1500,
+    });
+    expect(() => allocateTopUpToArrears(0, [])).toThrow();
+  });
+
+  it('only reverses top-up credit that is still unspent and unreserved', () => {
+    expect(canReverseTopUpCredit(500, 0, 500)).toBe(true);
+    expect(canReverseTopUpCredit(300, 0, 500)).toBe(false);
+    expect(canReverseTopUpCredit(700, 200, 500)).toBe(true);
+    expect(canReverseTopUpCredit(600, 200, 500)).toBe(false);
+    expect(canReverseTopUpCredit(-100, 0, 0)).toBe(true);
+  });
+
+  it('treats any credit application at or after a top-up as possibly spending it', () => {
+    expect(creditAppliedSinceTopUp(1000, [])).toBe(false);
+    expect(creditAppliedSinceTopUp(1000, [500, 999])).toBe(false);
+    expect(creditAppliedSinceTopUp(1000, [500, 1000])).toBe(true);
+    expect(creditAppliedSinceTopUp(1000, [2000])).toBe(true);
+    expect(creditAppliedSinceTopUp(1000, [undefined])).toBe(true);
+    expect(creditAppliedSinceTopUp(undefined, [])).toBe(true);
   });
 });

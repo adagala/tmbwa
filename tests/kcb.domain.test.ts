@@ -6,7 +6,8 @@ import {
   isActiveStkRequestStatus, isLockedStkReconciliation,
   isManuallyResolvableStkUnknownOutcome,
   isRecoverableStkLeaseStatus,
-  isSameStkRequestPayload, isStkInitiationLeaseExpired,
+  isSameStkRequestPayload, isStkInitiationLeaseExpired, isTopUpStkRequest,
+  stkNotificationTarget,
   isSuccessfulStkDuplicateStatus,
   KcbNotificationValidationError,
   lockedStkAllocationAmount, normalizeKenyanPhone,
@@ -400,4 +401,34 @@ describe('deployed development KCB simulator', () => {
     )).toThrow();
   });
 
+});
+
+describe('KCB account top-up requests', () => {
+  it('treats requests without a purpose as contribution payments', () => {
+    expect(isTopUpStkRequest({ purpose: 'account_top_up' })).toBe(true);
+    expect(isTopUpStkRequest({ purpose: 'contribution' })).toBe(false);
+    expect(isTopUpStkRequest({})).toBe(false);
+  });
+
+  it('links notifications to the contribution or the account top-up', () => {
+    expect(stkNotificationTarget({ contributionId: '2026-08' }))
+      .toEqual({ contributionId: '2026-08' });
+    expect(stkNotificationTarget({ contributionId: '', purpose: 'account_top_up' }))
+      .toEqual({ purpose: 'account_top_up' });
+  });
+
+  it('does not reuse a request id across payment purposes', () => {
+    expect(isSameStkRequestPayload(
+      { memberId: 'member-1', contributionId: '', purpose: 'account_top_up', amount: 500 },
+      { memberId: 'member-1', contributionId: '', purpose: 'account_top_up', amount: 500 },
+    )).toBe(true);
+    expect(isSameStkRequestPayload(
+      { memberId: 'member-1', contributionId: '', purpose: 'account_top_up', amount: 500 },
+      { memberId: 'member-1', contributionId: '', purpose: 'contribution', amount: 500 },
+    )).toBe(false);
+    expect(isSameStkRequestPayload(
+      { memberId: 'member-1', contributionId: '2026-08', amount: 500 },
+      { memberId: 'member-1', contributionId: '2026-08', purpose: 'contribution', amount: 500 },
+    )).toBe(true);
+  });
 });

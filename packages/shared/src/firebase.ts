@@ -6,6 +6,7 @@ import {
   ContributionStatusEnum,
   MemberBalanceTypeEnum,
   PaymentTypeEnum,
+  StkPurposeEnum,
   StatusEnum,
   auditEventDocumentSchema,
   contributionDocumentSchema,
@@ -87,6 +88,7 @@ export const paymentSchema = paymentFormSchema.merge(
     })).optional(),
     unallocated_amount: z.number().nonnegative().optional(),
     credit_reserved: z.boolean().optional(),
+    payment_purpose: StkPurposeEnum.optional(),
   }),
 );
 

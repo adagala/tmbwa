@@ -151,4 +151,14 @@ describe('Firestore authorization', () => {
     await assertFails(setDoc(doc(db, 'members/member-a/payments/payment-2'), { amount: 500 }));
     await assertFails(updateDoc(doc(db, 'monthly_stats/2026-08-01'), { amount: 0 }));
   });
+
+  it('keeps STK payment locks server-only', async () => {
+    await seed();
+    const memberDb = testEnv.authenticatedContext('member-a', { role: 'member' }).firestore();
+    const adminDb = testEnv.authenticatedContext('admin', { role: 'administrator' }).firestore();
+    for (const db of [memberDb, adminDb]) {
+      await assertFails(getDoc(doc(db, 'members/member-a/payment_locks/stk_top_up')));
+      await assertFails(setDoc(doc(db, 'members/member-a/payment_locks/stk_top_up'), { status: 'failed' }));
+    }
+  });
 });

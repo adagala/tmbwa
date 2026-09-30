@@ -3,6 +3,16 @@ import { kenyaMoney, timestampDate } from './financialReporting';
 
 export const receiptNumber = (payment: Payment) =>
   payment.receipt_number || `TMBWA-${payment.payment_id.toUpperCase()}`;
+
+export const paymentTypeLabel = (payment: Payment) =>
+  payment.payment_purpose === 'account_top_up'
+    ? 'top-up'
+    : (payment.payment_type ?? 'contribution');
+
+// Contribution generation records credit already on the account as a
+// BALANCE B/F payment; it is not new money received.
+const isAppliedAccountCredit = (payment: Payment) =>
+  payment.referencenumber === 'BALANCE B/F';
 const nairobiDate = (date: Date) =>
   date.toLocaleDateString('en-CA', { timeZone: 'Africa/Nairobi' });
 
@@ -40,7 +50,7 @@ export const printReceipt = (payment: Payment, member: Member) => {
       `Date: ${date?.toLocaleString('en-KE', { timeZone: 'Africa/Nairobi' }) || 'Pending'}`,
     ],
     ['p', `Reference: ${payment.referencenumber}`],
-    ['p', `Type: ${payment.payment_type}`],
+    ['p', `Type: ${paymentTypeLabel(payment)}`],
     ['h2', kenyaMoney.format(payment.amount)],
     [
       'p',
@@ -80,14 +90,19 @@ export const statementRows = (
       const isDeduction =
         item.payment_type === 'account' &&
         item.balance_direction === 'deduction';
+      const appliedCredit = isAppliedAccountCredit(item);
       const amount = item.amount;
       return {
         date: timestampDate(item.paymentdate)
           ? nairobiDate(timestampDate(item.paymentdate)!)
           : '',
-        description: item.referencenumber,
+        description: appliedCredit
+          ? `Account credit applied – ${item.contribution_id}`
+          : item.payment_purpose === 'account_top_up'
+            ? `Account top-up – ${item.referencenumber}`
+            : item.referencenumber,
         charge: isDeduction ? amount : 0,
-        payment: isDeduction ? 0 : amount,
+        payment: isDeduction || appliedCredit ? 0 : amount,
         reference: receiptNumber(item),
       };
     }),

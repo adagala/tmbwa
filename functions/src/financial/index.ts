@@ -10,6 +10,8 @@ import {
 } from 'tmbwa-shared';
 import {
   availableUnreservedBalance,
+  canReverseTopUpCredit,
+  creditAppliedSinceTopUp,
   paymentAllocations,
   legacyContributionCorrection,
   correctedPaidAmountValue,
@@ -32,6 +34,13 @@ import { getCurrentMonth } from '../utils';
 type CommandData = Record<string, unknown>;
 
 const db = () => admin.firestore();
+
+const timestampMillis = (value: unknown) => {
+  if (value instanceof Date) return value.getTime();
+  return value && typeof (value as { toMillis?: unknown }).toMillis === 'function'
+    ? (value as { toMillis: () => number }).toMillis()
+    : undefined;
+};
 
 const stkContributionLockRef = (memberId: string, contributionId: string) =>
   db().doc(
@@ -153,19 +162,57 @@ export const reverseContributionPayment = onCall(async (request) => {
       db().doc(`members/${memberId}/contributions/${contributionId}`));
     const lockRefs = allocations.map(({ contributionId }) =>
       stkContributionLockRef(memberId, contributionId));
+    const memberRef = db().doc(`members/${memberId}`);
+    const isTopUpWithCredit =
+      payment.payment_purpose === 'account_top_up' &&
+      Number(payment.unallocated_amount ?? 0) > 0;
+    // Contribution generation and createContribution record every use of
+    // unreserved credit as a BALANCE B/F payment. Both also write the member
+    // document, so they serialize with this transaction.
+    const creditApplications = isTopUpWithCredit
+      ? await transaction.get(
+        db()
+          .collection(`members/${memberId}/payments`)
+          .where('referencenumber', '==', 'BALANCE B/F'),
+      )
+      : undefined;
     const relatedSnapshots = await Promise.all([
+      transaction.get(memberRef),
       ...contributionRefs.map((ref) => transaction.get(ref)),
       ...lockRefs.map((ref) => transaction.get(ref)),
     ]);
+    const [memberSnapshot] = relatedSnapshots;
     const contributionSnapshots = relatedSnapshots.slice(
-      0,
-      contributionRefs.length,
+      1,
+      1 + contributionRefs.length,
     );
-    const lockSnapshots = relatedSnapshots.slice(contributionRefs.length);
+    const lockSnapshots = relatedSnapshots.slice(1 + contributionRefs.length);
     if (contributionSnapshots.some((item) => !item.exists)) {
       throw new HttpsError('not-found', 'Contribution not found.');
     }
     lockSnapshots.forEach(assertNoActiveStkLock);
+    if (isTopUpWithCredit) {
+      const member = memberData(memberSnapshot);
+      if (
+        creditAppliedSinceTopUp(
+          timestampMillis(payment.created_at),
+          (creditApplications?.docs ?? []).map((item) => {
+            const data = item.data();
+            return timestampMillis(data.created_at ?? data.paymentdate);
+          }),
+        ) ||
+        !canReverseTopUpCredit(
+          Number(member.balance),
+          Number(member.reservedKcbCredit ?? 0),
+          Number(payment.unallocated_amount ?? 0),
+        )
+      ) {
+        throw new HttpsError(
+          'failed-precondition',
+          'This top-up credit has already been applied to later contributions and cannot be reversed automatically.',
+        );
+      }
+    }
     const contributions = contributionSnapshots.map(contributionData);
     writeCommand(transaction, command.ref, 'reverseContributionPayment', actorId);
     transaction.delete(paymentRef);
@@ -186,7 +233,7 @@ export const reverseContributionPayment = onCall(async (request) => {
         month: allocation.contributionId,
       }, { merge: true });
     });
-    transaction.update(db().doc(`members/${memberId}`), {
+    transaction.update(memberRef, {
       balance: admin.firestore.FieldValue.increment(-Number(payment.amount)),
       contributionBalance: admin.firestore.FieldValue.increment(
         -allocations.reduce((sum, item) => sum + item.amount, 0),

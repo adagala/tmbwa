@@ -29,14 +29,31 @@ export type StkCallback = {
 export type StoredStkRequest = {
   memberId: string;
   contributionId: string;
+  purpose?: string;
   amount: number;
 };
 
 export type IncomingStkRequest = {
   memberId: string;
   contributionId: string;
+  purpose?: string;
   amount: number;
 };
+
+export const ACCOUNT_TOP_UP_PURPOSE = 'account_top_up';
+
+// Requests created before top-ups existed have no purpose and pay a contribution.
+export const isTopUpStkRequest = (request: { purpose?: unknown }) =>
+  request.purpose === ACCOUNT_TOP_UP_PURPOSE;
+
+// Links a provider notification to what the STK request was paying for.
+export const stkNotificationTarget = (request: {
+  contributionId: string;
+  purpose?: unknown;
+}) =>
+  isTopUpStkRequest(request)
+    ? { purpose: ACCOUNT_TOP_UP_PURPOSE }
+    : { contributionId: request.contributionId };
 
 type JsonObject = Record<string, unknown>;
 
@@ -205,6 +222,7 @@ export const isSameStkRequestPayload = (
 ) =>
   existing.memberId === incoming.memberId &&
   existing.contributionId === incoming.contributionId &&
+  isTopUpStkRequest(existing) === isTopUpStkRequest(incoming) &&
   Number(existing.amount) === Number(incoming.amount);
 
 export const stkFailureStatus = (resultCode: number) => {

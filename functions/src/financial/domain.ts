@@ -120,6 +120,55 @@ export const validatePaymentAllocations = (
   return { allocatedAmount, unallocatedAmount: receiptAmount - allocatedAmount };
 };
 
+// Settles outstanding contributions oldest first from a member top-up and
+// leaves any remainder as unreserved account credit.
+export const allocateTopUpToArrears = (
+  amount: number,
+  contributions: Array<{ contributionId: string; month: string; balance: number }>,
+) => {
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw new Error('Top-up must be positive.');
+  }
+  let remaining = amount;
+  const allocations: PaymentAllocation[] = [];
+  [...contributions]
+    .filter((item) => Number.isFinite(item.balance) && item.balance > 0)
+    .sort((a, b) =>
+      a.month.localeCompare(b.month) ||
+      a.contributionId.localeCompare(b.contributionId))
+    .forEach(({ contributionId, balance }) => {
+      if (remaining <= 0) return;
+      const allocated = Math.min(remaining, balance);
+      allocations.push({ contributionId, amount: allocated });
+      remaining -= allocated;
+    });
+  return {
+    allocations,
+    allocatedAmount: amount - remaining,
+    unallocatedAmount: remaining,
+  };
+};
+
+// A top-up remainder can only be reversed while that much unreserved credit
+// is still unspent; otherwise it has already paid later contributions.
+export const canReverseTopUpCredit = (
+  balance: number,
+  reservedCredit: number,
+  unallocatedAmount: number,
+) => availableUnreservedBalance(balance, reservedCredit) >= unallocatedAmount;
+
+// Credit is pooled, so once any BALANCE B/F application happens after a
+// top-up we cannot prove it was funded by other credit. Refuse conservatively,
+// including when a timestamp is missing.
+export const creditAppliedSinceTopUp = (
+  topUpCreatedAtMillis: number | undefined,
+  creditApplicationMillis: Array<number | undefined>,
+) =>
+  topUpCreatedAtMillis === undefined ||
+  creditApplicationMillis.some(
+    (appliedAt) => appliedAt === undefined || appliedAt >= topUpCreatedAtMillis,
+  );
+
 export const paymentAllocations = (payment: {
   allocations?: Array<{ contribution_id: string; amount: number }>;
   contribution_id?: string;
