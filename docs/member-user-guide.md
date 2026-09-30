@@ -1,6 +1,6 @@
 # TMBWA Member User Guide
 
-This guide explains how members can pay contributions, review their financial history, download receipts and statements, and view notifications.
+This guide explains how members can pay contributions, add funds to their account, review their financial history, download receipts and statements, and view notifications.
 
 ## Before you begin
 
@@ -34,6 +34,14 @@ You can pay any amount into your account in advance. TMBWA uses it to pay your c
 3. Enter the amount in whole shillings. The dialog shows how the amount will be used before you confirm.
 4. Select **Send M-Pesa prompt**, then approve the prompt on the phone number registered to your membership.
 5. Keep the dialog open to see when the top-up is received, or check **Account balance** later.
+
+After you send the prompt, the dialog shows one of these messages:
+
+- **Waiting for M-Pesa** — approve the prompt on your phone.
+- **Top-up received** — your account has been credited and any unpaid contributions have been paid.
+- **Payment received** — M-Pesa accepted the payment and an administrator will confirm it and credit your account shortly. Do not pay again.
+- **Payment not yet confirmed** — TMBWA could not confirm the outcome. Wait for an administrator to verify the payment before trying again.
+- **Top-up not completed** — the prompt was cancelled, expired, or failed. If M-Pesa deducted money, contact an administrator; otherwise you can try again.
 
 How a top-up is applied:
 

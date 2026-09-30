@@ -1,6 +1,6 @@
 # TMBWA Administrator User Guide
 
-This guide explains how administrators can reconcile KCB payments, allocate account credit, resolve ambiguous STK outcomes, view financial reports, and monitor notification delivery.
+This guide explains how administrators can add funds for a member, reconcile KCB payments, allocate account credit, resolve ambiguous STK outcomes, view financial reports, and monitor notification delivery.
 
 ## Before you begin
 
@@ -8,6 +8,21 @@ This guide explains how administrators can reconcile KCB payments, allocate acco
 - Use a current web browser.
 - Amounts are shown in Kenya shillings (KES), and transaction times use East Africa Time.
 - Confirm the source records before performing any financial action. Do not use reconciliation to guess or rewrite financial history.
+
+## Add funds for a member
+
+Administrators can start an account top-up on a member's behalf, for example when the member asks for help paying in advance.
+
+1. Select **Members** and open the required member.
+2. Confirm the member's identity, that their membership is **active**, and the amount they want to pay.
+3. Next to **Account balance**, select **Add funds**.
+4. Enter the amount in whole shillings and review how it will be used. The preview shows unpaid contributions settled oldest first and any amount held for future contributions.
+5. Select **Send M-Pesa prompt**. The prompt goes to the phone number registered to the member, and the member must approve it with their own M-Pesa PIN.
+6. Keep the dialog open to follow the status, or check the member's **Account balance** and **Transactions** later.
+
+The preview is for display only. TMBWA recalculates the allocation when the payment arrives, so the result can differ if the member's contributions change in the meantime. You cannot choose which months a top-up pays.
+
+A top-up cannot be started for an inactive member, or while a contribution STK payment for that member is still in progress. If the dialog shows **Payment received** or **Payment not yet confirmed**, do not send another prompt; check the KCB reconciliation queue as described below.
 
 ## Reconcile an unresolved KCB payment
 

@@ -2,5 +2,5 @@
 
 Choose the guide that matches your role:
 
-- [Member User Guide](./member-user-guide.md) — pay contributions using M-Pesa STK Push, view contribution and transaction history, download receipts and statements, and manage notifications.
-- [Administrator User Guide](./administrator-user-guide.md) — reconcile KCB payments, allocate credit, resolve ambiguous STK outcomes, view reports, and monitor notification delivery.
+- [Member User Guide](./member-user-guide.md) — pay contributions using M-Pesa STK Push, add funds to prepay contributions, view contribution and transaction history, download receipts and statements, and manage notifications.
+- [Administrator User Guide](./administrator-user-guide.md) — add funds for a member, reconcile KCB payments and account top-ups, allocate credit, resolve ambiguous STK outcomes, view reports, and monitor notification delivery.
