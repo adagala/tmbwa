@@ -15,7 +15,10 @@ import { MONTHLY_CONTRIBUTION, memberFormBaseSchema, parseDocument } from 'tmbwa
 import { memberData } from '../firestoreData';
 
 export const newMember = onDocumentCreated(
-  'members/{memberId}',
+  {
+    document: 'members/{memberId}',
+    region: 'asia-south1',
+  },
   async (event) => {
     const snapshot = event.data;
     const uid = snapshot?.id;
@@ -81,7 +84,10 @@ export const newMember = onDocumentCreated(
 );
 
 export const deleteMember = onDocumentDeleted(
-  'members/{memberId}',
+  {
+    document: 'members/{memberId}',
+    region: 'asia-south1',
+  },
   async (event) => {
     const uid = event.data?.id;
 
@@ -115,7 +121,10 @@ export const deleteMember = onDocumentDeleted(
 );
 
 export const updateMember = onDocumentUpdated(
-  'members/{memberId}',
+  {
+    document: 'members/{memberId}',
+    region: 'asia-south1',
+  },
   async (event) => {
     const snapshots = event.data;
     const uid = snapshots?.after.id;
