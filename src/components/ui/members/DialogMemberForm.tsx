@@ -35,6 +35,11 @@ import { Checkbox } from '@/components/Checkbox';
 import { DatePicker } from '@/components/DatePicker';
 import { timestampDate } from '@/lib/financialReporting';
 
+// Existing members may lack a join date; the schema requires one on submit.
+type MemberFormValues = Omit<MemberForm, 'datejoined'> & {
+  datejoined?: Date;
+};
+
 export const DialogMemberForm = ({
   member,
   triggerButton,
@@ -50,7 +55,7 @@ export const DialogMemberForm = ({
     member?.isFeesPaid || false,
   );
 
-  const values: MemberForm | undefined = member
+  const values: MemberFormValues | undefined = member
     ? {
         email: member.email,
         firstname: member.firstname,
@@ -75,7 +80,7 @@ export const DialogMemberForm = ({
     setValue,
     trigger,
     watch,
-  } = useForm<MemberForm>({
+  } = useForm<MemberFormValues, unknown, MemberForm>({
     resolver: zodResolver(memberFormSchema),
     values,
   });
@@ -222,10 +227,11 @@ export const DialogMemberForm = ({
                       <InputErrorMessage message={errors.win?.message} />
                     </div>
                     <div className="mx-auto space-y-1">
-                      <Label htmlFor="datejoined">Date joined (optional)</Label>
+                      <Label htmlFor="datejoined">Date joined</Label>
                       <DatePicker
                         id="datejoined"
                         placeholder="Select date joined"
+                        required
                         enableYearNavigation
                         toDate={new Date()}
                         value={watch('datejoined')}

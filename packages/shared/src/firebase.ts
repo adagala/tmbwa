@@ -40,11 +40,13 @@ export const memberFormSchema = ownMemberFormSchema
     memberFormBaseSchema.pick({ email: true, role: true, isFeesPaid: true }),
   )
   .extend({
-    // Administrator-only. When absent, readers fall back to createat.
+    // Administrator-only. Required on the form; stored documents may predate it.
     datejoined: z
-      .date()
-      .refine((date) => date <= new Date(), 'Date joined cannot be in the future')
-      .optional(),
+      .date({
+        required_error: 'Date joined is required',
+        invalid_type_error: 'Date joined is required',
+      })
+      .refine((date) => date <= new Date(), 'Date joined cannot be in the future'),
   });
 
 export const memberSchema = memberFormSchema.merge(

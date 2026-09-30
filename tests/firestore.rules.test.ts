@@ -6,7 +6,7 @@ import {
   assertSucceeds,
   initializeTestEnvironment,
 } from '@firebase/rules-unit-testing';
-import { collection, collectionGroup, deleteDoc, doc, getDoc, getDocs, orderBy, query, setDoc, updateDoc, where } from 'firebase/firestore';
+import { collection, collectionGroup, deleteDoc, deleteField, doc, getDoc, getDocs, orderBy, query, setDoc, updateDoc, where } from 'firebase/firestore';
 
 const projectId = 'demo-tmbwa';
 let testEnv: RulesTestEnvironment;
@@ -96,6 +96,8 @@ describe('Firestore authorization', () => {
     await assertFails(updateDoc(doc(memberDb, 'members/member-a'), { datejoined: new Date('2019-01-10T09:00:00Z') }));
     await assertSucceeds(setDoc(doc(adminDb, 'members/new-member'), { role: 'member', datejoined: past }));
     await assertFails(setDoc(doc(adminDb, 'members/future-member'), { role: 'member', datejoined: future }));
+    await assertFails(setDoc(doc(adminDb, 'members/undated-member'), { role: 'member' }));
+    await assertFails(updateDoc(doc(adminDb, 'members/member-a'), { datejoined: deleteField() }));
   });
 
   it('does not block administrator edits when a legacy date joined is malformed', async () => {

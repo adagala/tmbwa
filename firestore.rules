@@ -42,11 +42,8 @@ service cloud.firestore {
         request.resource.data.datejoined <= request.time;
     }
 
-    function validDateJoinedOnCreate() {
-      return !('datejoined' in request.resource.data) || validDateJoinedValue();
-    }
-
     // Only validate when changed, so legacy values don't block other edits.
+    // Removing datejoined counts as a change and is rejected.
     function validDateJoinedOnUpdate() {
       return !request.resource.data.diff(resource.data).affectedKeys()
         .hasAny(['datejoined']) || validDateJoinedValue();
@@ -55,7 +52,7 @@ service cloud.firestore {
     match /members/{memberId} {
       allow get: if isAdministrator() || isActiveOwner(memberId);
       allow list: if isAdministrator();
-      allow create: if isAdministrator() && validDateJoinedOnCreate();
+      allow create: if isAdministrator() && validDateJoinedValue();
       allow delete: if false;
       allow update: if (isAdministrator() && administratorMemberFieldsOnly() &&
           validDateJoinedOnUpdate()) ||
