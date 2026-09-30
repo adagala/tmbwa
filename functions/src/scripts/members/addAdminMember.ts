@@ -20,6 +20,7 @@ const member: Member = {
   balance: 0,
   contributionBalance: 0,
   createat: admin.firestore.Timestamp.now(),
+  datejoined: admin.firestore.Timestamp.now(),
   email: '',
   gender: GENDER.MALE,
   firstname,

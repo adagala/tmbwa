@@ -33,16 +33,29 @@ service cloud.firestore {
     function administratorMemberFieldsOnly() {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
         'firstname', 'lastname', 'email', 'role', 'membernumber', 'win',
-        'phonenumber', 'gender', 'isFeesPaid'
+        'phonenumber', 'gender', 'isFeesPaid', 'datejoined'
       ]);
+    }
+
+    function validDateJoinedValue() {
+      return request.resource.data.datejoined is timestamp &&
+        request.resource.data.datejoined <= request.time;
+    }
+
+    // Only validate when changed, so legacy values don't block other edits.
+    // Removing datejoined counts as a change and is rejected.
+    function validDateJoinedOnUpdate() {
+      return !request.resource.data.diff(resource.data).affectedKeys()
+        .hasAny(['datejoined']) || validDateJoinedValue();
     }
 
     match /members/{memberId} {
       allow get: if isAdministrator() || isActiveOwner(memberId);
       allow list: if isAdministrator();
-      allow create: if isAdministrator();
+      allow create: if isAdministrator() && validDateJoinedValue();
       allow delete: if false;
-      allow update: if (isAdministrator() && administratorMemberFieldsOnly()) ||
+      allow update: if (isAdministrator() && administratorMemberFieldsOnly() &&
+          validDateJoinedOnUpdate()) ||
         (isActiveOwner(memberId) && ownerProfileFieldsOnly());
 
       match /contributions/{contributionId} {

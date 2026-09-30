@@ -11,6 +11,7 @@ export interface Member extends MemberFormBase {
   status: MemberStatus;
   gender: SharedGender;
   createat: Timestamp;
+  datejoined?: Timestamp;
   firstnameSearchableIndex: {
     [key: string]: boolean;
   };

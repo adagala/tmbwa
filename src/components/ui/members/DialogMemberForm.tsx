@@ -32,6 +32,13 @@ import {
   updateMember,
 } from '@/lib/firebase/firestore';
 import { Checkbox } from '@/components/Checkbox';
+import { DatePicker } from '@/components/DatePicker';
+import { timestampDate } from '@/lib/financialReporting';
+
+// Existing members may lack a join date; the schema requires one on submit.
+type MemberFormValues = Omit<MemberForm, 'datejoined'> & {
+  datejoined?: Date;
+};
 
 export const DialogMemberForm = ({
   member,
@@ -48,7 +55,7 @@ export const DialogMemberForm = ({
     member?.isFeesPaid || false,
   );
 
-  const values: MemberForm | undefined = member
+  const values: MemberFormValues | undefined = member
     ? {
         email: member.email,
         firstname: member.firstname,
@@ -59,6 +66,9 @@ export const DialogMemberForm = ({
         phonenumber: member.phonenumber,
         role: member.role,
         isFeesPaid: member.isFeesPaid,
+        datejoined: member.datejoined
+          ? (timestampDate(member.datejoined) ?? undefined)
+          : undefined,
       }
     : undefined;
 
@@ -69,7 +79,8 @@ export const DialogMemberForm = ({
     reset,
     setValue,
     trigger,
-  } = useForm<MemberForm>({
+    watch,
+  } = useForm<MemberFormValues, unknown, MemberForm>({
     resolver: zodResolver(memberFormSchema),
     values,
   });
@@ -214,6 +225,24 @@ export const DialogMemberForm = ({
                         type="text"
                       />
                       <InputErrorMessage message={errors.win?.message} />
+                    </div>
+                    <div className="mx-auto space-y-1">
+                      <Label htmlFor="datejoined">Date joined</Label>
+                      <DatePicker
+                        id="datejoined"
+                        placeholder="Select date joined"
+                        required
+                        enableYearNavigation
+                        toDate={new Date()}
+                        value={watch('datejoined')}
+                        onChange={(date) => {
+                          setValue('datejoined', date, {
+                            shouldValidate: true,
+                          });
+                        }}
+                        hasError={!!errors.datejoined}
+                      />
+                      <InputErrorMessage message={errors.datejoined?.message} />
                     </div>
                     <div className="flex gap-1">
                       <div className="flex-1 mx-auto space-y-1">

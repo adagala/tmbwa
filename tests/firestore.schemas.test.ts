@@ -14,6 +14,7 @@ import {
   unallocatedPaymentAmount,
 } from 'tmbwa-shared';
 import {
+  memberFormSchema,
   parseContributionDocument,
   parseMemberDocument,
   parsePaymentDocument,
@@ -129,6 +130,14 @@ describe('Firestore document schemas', () => {
         memberDocumentSchema.safeParse({ ...member, membernumber }).success,
       ).toBe(false);
     }
+  });
+
+  it('requires a past date joined on the administrator member form', () => {
+    const { status: _status, balance: _balance, contributionBalance: _cb, ...form } = member;
+    expect(memberFormSchema.safeParse(form).success).toBe(false);
+    expect(memberFormSchema.safeParse({ ...form, datejoined: new Date('2020-03-15') }).success).toBe(true);
+    const future = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    expect(memberFormSchema.safeParse({ ...form, datejoined: future }).success).toBe(false);
   });
 
   it('rejects invalid notification delivery counters', () => {
