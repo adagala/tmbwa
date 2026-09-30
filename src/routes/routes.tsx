@@ -51,19 +51,19 @@ export const router = createBrowserRouter([
       },
       {
         path: 'overview',
-        element: <OverviewPage />,
+        element: <AdministratorRoute element={<OverviewPage />} />,
       },
       {
         path: 'members',
-        element: <MembersPage />,
+        element: <AdministratorRoute element={<MembersPage />} />,
       },
       {
         path: 'members/:memberId',
-        element: <MemberProfilePage />,
+        element: <AdministratorRoute element={<MemberProfilePage />} />,
       },
       {
         path: 'contributions',
-        element: <ContributionsPage />,
+        element: <AdministratorRoute element={<ContributionsPage />} />,
       },
       {
         path: 'profile',

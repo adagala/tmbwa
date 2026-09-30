@@ -30,12 +30,23 @@ export const siteConfig = {
 export type siteConfig = typeof siteConfig;
 
 export const navigation = [
-  { name: 'Overview', href: siteConfig.baseLinks.overview, icon: RiHome2Line },
-  { name: 'Members', href: siteConfig.baseLinks.members, icon: RiGroupLine },
+  {
+    name: 'Overview',
+    href: siteConfig.baseLinks.overview,
+    icon: RiHome2Line,
+    administratorOnly: true,
+  },
+  {
+    name: 'Members',
+    href: siteConfig.baseLinks.members,
+    icon: RiGroupLine,
+    administratorOnly: true,
+  },
   {
     name: 'Contributions',
     href: siteConfig.baseLinks.contributions,
     icon: RiWalletLine,
+    administratorOnly: true,
   },
   { name: 'Profile', href: siteConfig.baseLinks.profile, icon: RiUserLine },
   {
