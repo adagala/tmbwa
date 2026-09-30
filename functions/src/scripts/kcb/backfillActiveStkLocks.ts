@@ -1,5 +1,8 @@
 import { admin } from '../../firebaseAdmin';
-import { isActiveStkRequestStatus } from '../../kcb/domain';
+import {
+  isActiveStkRequestStatus,
+  isTopUpStkRequest,
+} from '../../kcb/domain';
 import { kcbStkRequestData } from '../../firestoreData';
 
 admin.initializeApp({ credential: admin.credential.applicationDefault() });
@@ -28,6 +31,8 @@ const backfillActiveStkLocks = async () => {
   activeRequests.docs.forEach((snapshot) => {
     const request = kcbStkRequestData(snapshot);
     if (!isActiveStkRequestStatus(request.status)) return;
+    // Account top-ups were introduced with their own member-level lock.
+    if (isTopUpStkRequest(request)) return;
     const key = `${request.memberId}/${request.contributionId}`;
     groups.set(key, [...(groups.get(key) ?? []), snapshot]);
   });

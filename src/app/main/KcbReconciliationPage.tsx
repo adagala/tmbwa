@@ -407,8 +407,34 @@ export default function KcbReconciliationPage() {
 
   const reconcile = async (payment: KcbPaymentNotification) => {
     const memberId = selectedMembers[payment.providerTransactionId];
-    const allocations = allocationsFor(payment.providerTransactionId);
     if (!memberId) return setError('Choose a member.');
+    if (payment.purpose === 'account_top_up') {
+      if (
+        !window.confirm(
+          `Record this KES ${payment.amount.toLocaleString('en-KE')} member top-up? It settles unpaid contributions oldest first and keeps the rest as credit for future contributions.`,
+        )
+      )
+        return;
+      setBusy(payment.providerTransactionId);
+      setError(undefined);
+      try {
+        await reconcileKcbPayment({
+          providerTransactionId: payment.providerTransactionId,
+          memberId,
+          allocations: [],
+        });
+      } catch (cause) {
+        setError(
+          cause instanceof Error
+            ? cause.message
+            : 'Could not reconcile payment.',
+        );
+      } finally {
+        setBusy(undefined);
+      }
+      return;
+    }
+    const allocations = allocationsFor(payment.providerTransactionId);
     const validationError = validateDrafts(
       allocations,
       contributions[memberId] ?? [],
@@ -643,7 +669,9 @@ export default function KcbReconciliationPage() {
                 </div>
                 <div>
                   <dt className="text-gray-500">Contribution</dt>
-                  <dd className="font-semibold">{stkRequest.contributionId}</dd>
+                  <dd className="font-semibold">
+                    {stkRequest.contributionId || 'Account top-up'}
+                  </dd>
                 </div>
                 <div>
                   <dt className="text-gray-500">State</dt>
@@ -740,46 +768,64 @@ export default function KcbReconciliationPage() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="text-sm font-medium">
-                  Contribution allocations
-                  {contributionStatus === 'error' ? (
-                    <span className="mt-1 block text-xs text-red-700">
-                      {contributionErrors[memberId]}
-                      <Button
-                        variant="ghost"
-                        type="button"
-                        className="ml-2 h-auto border-0 p-0 font-semibold underline shadow-none"
-                        onClick={() => void loadMemberContributions(memberId)}
-                      >
-                        Retry
-                      </Button>
-                    </span>
-                  ) : null}
-                  {(contributionWarnings[memberId] ?? 0) > 0 ? (
-                    <span className="mt-1 block text-xs text-amber-700">
-                      {contributionWarnings[memberId]} invalid contribution
-                      {contributionWarnings[memberId] === 1 ? '' : 's'} could
-                      not be shown.
-                    </span>
-                  ) : null}
-                </div>
-                <AllocationEditor
-                  receiptAmount={payment.amount}
-                  options={contributionOptions}
-                  rows={allocationDrafts[payment.providerTransactionId] ?? []}
-                  disabled={
-                    !memberId ||
-                    contributionStatus === 'loading' ||
-                    contributionStatus === 'error'
-                  }
-                  onAdd={() => addAllocation(payment.providerTransactionId)}
-                  onChange={(id, patch) =>
-                    updateAllocation(payment.providerTransactionId, id, patch)
-                  }
-                  onRemove={(id) =>
-                    removeAllocation(payment.providerTransactionId, id)
-                  }
-                />
+                {payment.purpose === 'account_top_up' ? (
+                  <p className="text-sm text-gray-700 dark:text-gray-300">
+                    Member account top-up. Reconciling settles the member&apos;s
+                    unpaid contributions oldest first and keeps the rest as
+                    credit that future contributions use automatically.
+                  </p>
+                ) : (
+                  <>
+                    <div className="text-sm font-medium">
+                      Contribution allocations
+                      {contributionStatus === 'error' ? (
+                        <span className="mt-1 block text-xs text-red-700">
+                          {contributionErrors[memberId]}
+                          <Button
+                            variant="ghost"
+                            type="button"
+                            className="ml-2 h-auto border-0 p-0 font-semibold underline shadow-none"
+                            onClick={() =>
+                              void loadMemberContributions(memberId)
+                            }
+                          >
+                            Retry
+                          </Button>
+                        </span>
+                      ) : null}
+                      {(contributionWarnings[memberId] ?? 0) > 0 ? (
+                        <span className="mt-1 block text-xs text-amber-700">
+                          {contributionWarnings[memberId]} invalid contribution
+                          {contributionWarnings[memberId] === 1 ? '' : 's'}{' '}
+                          could not be shown.
+                        </span>
+                      ) : null}
+                    </div>
+                    <AllocationEditor
+                      receiptAmount={payment.amount}
+                      options={contributionOptions}
+                      rows={
+                        allocationDrafts[payment.providerTransactionId] ?? []
+                      }
+                      disabled={
+                        !memberId ||
+                        contributionStatus === 'loading' ||
+                        contributionStatus === 'error'
+                      }
+                      onAdd={() => addAllocation(payment.providerTransactionId)}
+                      onChange={(id, patch) =>
+                        updateAllocation(
+                          payment.providerTransactionId,
+                          id,
+                          patch,
+                        )
+                      }
+                      onRemove={(id) =>
+                        removeAllocation(payment.providerTransactionId, id)
+                      }
+                    />
+                  </>
+                )}
               </div>
               <div className="flex gap-2">
                 <Button

@@ -111,7 +111,12 @@ export const subscribeToKcbPaymentsWithCredit = (
       )
         .then((items) =>
           callback(
-            items.filter((item) => Number(item.unallocatedAmount ?? 0) > 0),
+            items.filter(
+              (item) =>
+                // Top-up credit is applied automatically, not by administrators.
+                item.purpose !== 'account_top_up' &&
+                Number(item.unallocatedAmount ?? 0) > 0,
+            ),
           ),
         )
         .catch((error: unknown) => {
@@ -179,6 +184,27 @@ export const requestKcbStkPush = (data: {
   contributionId: string;
   amount: number;
 }) => call('requestKcbStkPush', data);
+
+export const requestKcbAccountTopUp = (data: {
+  memberId: string;
+  amount: number;
+}) =>
+  call('requestKcbStkPush', { ...data, purpose: 'account_top_up' }) as Promise<{
+    data: { requestId?: string; status?: string };
+  }>;
+
+export const subscribeToKcbStkRequestStatus = (
+  requestId: string,
+  callback: (status: string | undefined) => void,
+) =>
+  onSnapshot(
+    doc(db, `kcb_stk_requests/${requestId}`),
+    (snapshot) => {
+      const status = snapshot.data()?.status;
+      callback(typeof status === 'string' ? status : undefined);
+    },
+    () => callback(undefined),
+  );
 
 export const rejectKcbPayment = (
   providerTransactionId: string,

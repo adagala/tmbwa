@@ -10,6 +10,7 @@ import {
 } from 'tmbwa-shared';
 import {
   availableUnreservedBalance,
+  canReverseTopUpCredit,
   paymentAllocations,
   legacyContributionCorrection,
   correctedPaidAmountValue,
@@ -153,19 +154,35 @@ export const reverseContributionPayment = onCall(async (request) => {
       db().doc(`members/${memberId}/contributions/${contributionId}`));
     const lockRefs = allocations.map(({ contributionId }) =>
       stkContributionLockRef(memberId, contributionId));
+    const memberRef = db().doc(`members/${memberId}`);
     const relatedSnapshots = await Promise.all([
+      transaction.get(memberRef),
       ...contributionRefs.map((ref) => transaction.get(ref)),
       ...lockRefs.map((ref) => transaction.get(ref)),
     ]);
+    const [memberSnapshot] = relatedSnapshots;
     const contributionSnapshots = relatedSnapshots.slice(
-      0,
-      contributionRefs.length,
+      1,
+      1 + contributionRefs.length,
     );
-    const lockSnapshots = relatedSnapshots.slice(contributionRefs.length);
+    const lockSnapshots = relatedSnapshots.slice(1 + contributionRefs.length);
     if (contributionSnapshots.some((item) => !item.exists)) {
       throw new HttpsError('not-found', 'Contribution not found.');
     }
     lockSnapshots.forEach(assertNoActiveStkLock);
+    if (payment.payment_purpose === 'account_top_up') {
+      const member = memberData(memberSnapshot);
+      if (!canReverseTopUpCredit(
+        Number(member.balance),
+        Number(member.reservedKcbCredit ?? 0),
+        Number(payment.unallocated_amount ?? 0),
+      )) {
+        throw new HttpsError(
+          'failed-precondition',
+          'This top-up credit has already been applied to later contributions and cannot be reversed automatically.',
+        );
+      }
+    }
     const contributions = contributionSnapshots.map(contributionData);
     writeCommand(transaction, command.ref, 'reverseContributionPayment', actorId);
     transaction.delete(paymentRef);
@@ -186,7 +203,7 @@ export const reverseContributionPayment = onCall(async (request) => {
         month: allocation.contributionId,
       }, { merge: true });
     });
-    transaction.update(db().doc(`members/${memberId}`), {
+    transaction.update(memberRef, {
       balance: admin.firestore.FieldValue.increment(-Number(payment.amount)),
       contributionBalance: admin.firestore.FieldValue.increment(
         -allocations.reduce((sum, item) => sum + item.amount, 0),

@@ -25,6 +25,24 @@ The STK button is shown only when your membership is active and the selected con
 
 Do not repeatedly request another STK Push while a payment is still being processed. If the prompt expires, is cancelled, or does not arrive, confirm in M-Pesa that no payment was made before trying again or contacting an administrator.
 
+## Add funds to your account
+
+You can pay any amount into your account in advance. TMBWA uses it to pay your contributions automatically.
+
+1. Sign in to TMBWA and select **Profile**.
+2. Next to **Account balance**, select **Add funds**.
+3. Enter the amount in whole shillings. The dialog shows how the amount will be used before you confirm.
+4. Select **Send M-Pesa prompt**, then approve the prompt on the phone number registered to your membership.
+5. Keep the dialog open to see when the top-up is received, or check **Account balance** later.
+
+How a top-up is applied:
+
+- It first pays any unpaid or partly paid contributions, oldest month first.
+- Anything left stays on your account and pays each new monthly contribution automatically when it is created.
+- There is no maximum amount. Credit cannot currently be refunded or withdrawn, and it stays on your account if your membership becomes inactive.
+
+**Add funds** is available only while your membership is active. You cannot start a top-up while a contribution STK payment is still in progress, or start a contribution payment while a top-up is in progress.
+
 ## View contribution history
 
 1. Select **Profile**.

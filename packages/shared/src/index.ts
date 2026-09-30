@@ -50,6 +50,14 @@ export const contribution_status = [
   PAYMENT_STATUS.PARTIAL,
 ] as const;
 export const payment_type = ['contribution', 'account'] as const;
+export const STK_PURPOSE = {
+  CONTRIBUTION: 'contribution',
+  ACCOUNT_TOP_UP: 'account_top_up',
+} as const;
+export const stk_purpose = [
+  STK_PURPOSE.CONTRIBUTION,
+  STK_PURPOSE.ACCOUNT_TOP_UP,
+] as const;
 export const member_balance_type = ['top_up', 'deduction'] as const;
 export const months = [
   '01',
@@ -75,6 +83,7 @@ export const RoleEnum = z.enum(member_roles);
 export const GenderEnum = z.enum(genders);
 export const ContributionStatusEnum = z.enum(contribution_status);
 export const PaymentTypeEnum = z.enum(payment_type);
+export const StkPurposeEnum = z.enum(stk_purpose);
 export const MemberBalanceTypeEnum = z.enum(member_balance_type);
 export const YearEnum = z.string().regex(/^\d{4}$/, 'Provide a valid year');
 export const MonthEnum = z.enum(months);
@@ -174,6 +183,7 @@ export const paymentDocumentSchema = z.object({
   })).optional(),
   unallocated_amount: z.number().nonnegative().optional(),
   credit_reserved: z.boolean().optional(),
+  payment_purpose: StkPurposeEnum.optional(),
 }).passthrough();
 
 export const legacyCorrectionSummarySchema = z.object({
@@ -228,6 +238,7 @@ export const kcbPaymentNotificationDocumentSchema = z.object({
   })).default([]),
   unallocatedAmount: z.number().nonnegative().optional(),
   creditReserved: z.boolean().optional(),
+  purpose: StkPurposeEnum.optional(),
 }).passthrough();
 
 export const kcbStkRequestStatusSchema = z.enum([
@@ -247,6 +258,7 @@ export const kcbStkRequestDocumentSchema = z.object({
   requestId: z.string(),
   memberId: z.string(),
   contributionId: z.string(),
+  purpose: StkPurposeEnum.optional(),
   amount: z.number().positive(),
   phone: z.string(),
   invoiceNumber: z.string(),
@@ -358,6 +370,7 @@ export type MemberStatus = z.infer<typeof StatusEnum>;
 export type Gender = z.infer<typeof GenderEnum>;
 export type PaymentStatus = z.infer<typeof ContributionStatusEnum>;
 export type PaymentType = z.infer<typeof PaymentTypeEnum>;
+export type StkPurpose = z.infer<typeof StkPurposeEnum>;
 export type MemberBalanceType = z.infer<typeof MemberBalanceTypeEnum>;
 export type Year = z.infer<typeof YearEnum>;
 export type Month = z.infer<typeof MonthEnum>;

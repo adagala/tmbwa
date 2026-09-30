@@ -5,7 +5,11 @@ import { RiWalletLine } from '@remixicon/react';
 import { List, ListItem } from '@/components/List';
 import { Badge } from '@/components/Badge';
 import { Button } from '@/components/Button';
-import { printReceipt, receiptNumber } from '@/lib/memberDocuments';
+import {
+  paymentTypeLabel,
+  printReceipt,
+  receiptNumber,
+} from '@/lib/memberDocuments';
 import { formatNairobiDateTime, timestampDate } from '@/lib/financialReporting';
 
 interface TransactionsProps extends React.ComponentPropsWithoutRef<'div'> {
@@ -55,7 +59,7 @@ const Transactions = React.forwardRef<HTMLDivElement, TransactionsProps>(
                               : 'default'
                           }
                         >
-                          {type}
+                          {paymentTypeLabel(payment)}
                         </Badge>
                       </div>
                     </div>

@@ -12,6 +12,7 @@ import { Badge } from '@/components/Badge';
 import { Card } from '@/components/Card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/Tabs';
 import { Tooltip } from '@/components/Tooltip';
+import { DialogAccountTopUp } from '@/components/ui/members/DialogAccountTopUp';
 import { DialogMembershipFeeUpdate } from '@/components/ui/members/DialogMembershipFeeUpdate';
 import useUser from '@/hooks/useUser';
 import {
@@ -64,15 +65,20 @@ function SummaryTile({
   label,
   children,
   detail,
+  action,
 }: {
   label: string;
   children: React.ReactNode;
   detail: React.ReactNode;
+  action?: React.ReactNode;
 }) {
   return (
     <Card className="p-4">
-      <div className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-        {label}
+      <div className="flex items-start justify-between gap-2">
+        <div className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+          {label}
+        </div>
+        {action}
       </div>
       <div className="mt-1 text-2xl font-semibold tracking-tight tabular-nums text-gray-900 dark:text-gray-50">
         {children}
@@ -134,12 +140,23 @@ export function MemberAccount({
         ? 'text-red-600 dark:text-red-500'
         : undefined;
   const joined = joinedDate(member);
+  // The backend independently rejects inactive members and other members.
+  const canTopUp =
+    member.status === 'active' && (ownProfile || role === 'administrator');
 
   return (
     <div className="flex flex-col gap-6">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <SummaryTile
           label="Account balance"
+          action={
+            canTopUp ? (
+              <DialogAccountTopUp
+                member={member}
+                contributions={contributions}
+              />
+            ) : null
+          }
           detail={
             contributionsLoaded
               ? arrearsSummary(contributions)

@@ -38,6 +38,7 @@ import {
   isSameStkRequestPayload,
   isStkInitiationLeaseExpired,
   isSuccessfulStkDuplicateStatus,
+  isTopUpStkRequest,
   lockedStkAllocationAmount,
   KcbNotificationValidationError,
   normalizeKenyanPhone,
@@ -48,11 +49,18 @@ import {
   permitsUnsignedSandboxNotification,
   secureTokenMatches,
   stkFailureStatus,
+  stkNotificationTarget,
   stkPaymentMatchesPendingRequest,
   terminalNotificationMatchesStkRequest,
   unmatchedStkCallbackMatchesRequest,
   verifyKcbSignature,
 } from './domain';
+import {
+  readOutstandingContributions,
+  readTopUpState,
+  recordStkTopUp,
+  stkTopUpLockRef,
+} from './topUp';
 
 type Data = Record<string, unknown>;
 
@@ -95,6 +103,16 @@ const stkContributionLockRef = (memberId: string, contributionId: string) =>
   db().doc(
     `members/${memberId}/contributions/${contributionId}/payment_locks/stk`,
   );
+
+// Top-ups lock the member; contribution payments lock the contribution.
+const stkRequestLockRef = (request: {
+  memberId: string;
+  contributionId: string;
+  purpose?: unknown;
+}) =>
+  isTopUpStkRequest(request)
+    ? stkTopUpLockRef(request.memberId)
+    : stkContributionLockRef(request.memberId, request.contributionId);
 
 const timestampMillis = (value: unknown) =>
   value && typeof (value as { toMillis?: unknown }).toMillis === 'function'
@@ -366,6 +384,63 @@ export const reconcileKcbPayment = onCall(async (request) => {
       lockedMemberId = stkRequest.memberId;
       lockedContributionId = stkRequest.contributionId;
       lockedRequestedAmount = Number(stkRequest.amount);
+      if (isTopUpStkRequest(stkRequest)) {
+        if (stkRequest.memberId !== memberId) {
+          throw new HttpsError(
+            'invalid-argument',
+            'This payment notification is locked to a different member.',
+          );
+        }
+        if (allocations.length) {
+          throw new HttpsError(
+            'invalid-argument',
+            'Account top-ups settle arrears automatically; submit no allocations.',
+          );
+        }
+        const topUpLockRef = stkTopUpLockRef(memberId);
+        const [topUpLock, state] = await Promise.all([
+          transaction.get(topUpLockRef),
+          readTopUpState(transaction, memberId),
+        ]);
+        if (!state) {
+          throw new HttpsError('not-found', 'Member not found.');
+        }
+        transaction.create(commandRef, {
+          type: 'reconcileKcbPayment',
+          actorId,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        const paymentId =
+          db().collection(`members/${memberId}/payments`).doc().id;
+        const result = recordStkTopUp(transaction, state, {
+          memberId,
+          stkRequestId: lockedStkRequestId,
+          stkRequestRef: db().doc(`kcb_stk_requests/${lockedStkRequestId}`),
+          ownsLock: topUpLock.data()?.requestId === lockedStkRequestId,
+          paymentId,
+          amount: Number(notification.amount),
+          requestedAmount: Number(stkRequest.amount),
+          providerTransactionId,
+          transactionDate: String(notification.transactionDate),
+          payerPhone: notification.payerPhone,
+          messageId: String(notification.messageId ?? providerTransactionId),
+          billReference: notification.billReference,
+          currency: notification.currency,
+          notificationRef,
+          notificationExists: true,
+          notificationReceivedAt: notification.receivedAt,
+          actorId,
+          auditPath: `audit_events/${requestId}`,
+          auditRequestId: requestId,
+          auditChanges: { reconciledByAdministrator: true },
+        });
+        return {
+          requestId,
+          paymentId,
+          receiptNumber: result.receiptNumber,
+          duplicate: false,
+        };
+      }
     }
     assertNoCompetingStkLocks(lockSnapshots, lockedStkRequestId);
     if (lockedMemberId && lockedMemberId !== memberId) {
@@ -609,6 +684,15 @@ export const allocateKcbPaymentCredit = onCall(async (request) => {
     }
     assertNoCompetingStkLocks(lockSnapshots);
     const payment = paymentData(paymentSnapshot);
+    if (
+      isTopUpStkRequest({ purpose: payment.payment_purpose }) ||
+      isTopUpStkRequest(notification)
+    ) {
+      throw new HttpsError(
+        'failed-precondition',
+        'Account top-up credit is applied to contributions automatically.',
+      );
+    }
     const derivedAvailable = unallocatedPaymentAmount(
       Number(payment.amount),
       Number(payment.contribution_amount),
@@ -768,10 +852,7 @@ export const rejectKcbPayment = onCall(async (request) => {
         );
       }
       const stkRequest = kcbStkRequestData(stkRequestSnapshot);
-      const lockRef = stkContributionLockRef(
-        stkRequest.memberId,
-        stkRequest.contributionId,
-      );
+      const lockRef = stkRequestLockRef(stkRequest);
       const lockSnapshot = await transaction.get(lockRef);
       linkedStkRequest = {
         ref: stkRequestRef,
@@ -872,10 +953,7 @@ export const resolveKcbStkUnknownOutcome = onCall(async (request) => {
         'This dispatch is still within its provider response window.',
       );
     }
-    const lockRef = stkContributionLockRef(
-      stkRequest.memberId,
-      stkRequest.contributionId,
-    );
+    const lockRef = stkRequestLockRef(stkRequest);
     const lock = await transaction.get(lockRef);
     const lockData = lock.data();
     const ownsLock = ownsExpectedStkTransition({
@@ -958,7 +1036,10 @@ export const requestKcbStkPush = onCall(
     const data = request.data as Data;
     const requestId = requiredString(data, 'requestId');
     const memberId = requiredString(data, 'memberId');
-    const contributionId = requiredString(data, 'contributionId');
+    const purpose = isTopUpStkRequest(data) ? 'account_top_up' : 'contribution';
+    const isTopUp = purpose === 'account_top_up';
+    // Top-ups pay into the account rather than a specific contribution.
+    const contributionId = isTopUp ? '' : requiredString(data, 'contributionId');
     if (
       request.auth.uid !== memberId &&
       request.auth.token.role !== 'administrator'
@@ -990,24 +1071,37 @@ export const requestKcbStkPush = onCall(
       `${KCB_SHARED_REFERENCE.value()}#${paymentReference}`;
     const messageId = randomUUID().replace(/-/g, '').slice(0, 32);
     const memberRef = db().doc(`members/${memberId}`);
-    const contributionRef = db().doc(
-      `members/${memberId}/contributions/${contributionId}`,
-    );
-    const lockRef = stkContributionLockRef(memberId, contributionId);
-    const contributionStkRequestsQuery = db()
-      .collection('kcb_stk_requests')
-      .where('memberId', '==', memberId)
-      .where('contributionId', '==', contributionId);
+    const contributionRef = isTopUp
+      ? undefined
+      : db().doc(`members/${memberId}/contributions/${contributionId}`);
+    const lockRef = stkRequestLockRef({ memberId, contributionId, purpose });
+    const contributionStkRequestsQuery = isTopUp
+      ? undefined
+      : db()
+        .collection('kcb_stk_requests')
+        .where('memberId', '==', memberId)
+        .where('contributionId', '==', contributionId);
     const preparation = await db().runTransaction(async (transaction) => {
       const [existing, member, contribution, lock, contributionStkRequests] =
         await Promise.all([
           transaction.get(requestRef),
           transaction.get(memberRef),
-          transaction.get(contributionRef),
+          contributionRef ? transaction.get(contributionRef) : undefined,
           transaction.get(lockRef),
-          transaction.get(contributionStkRequestsQuery),
+          contributionStkRequestsQuery
+            ? transaction.get(contributionStkRequestsQuery)
+            : undefined,
         ]);
-      const legacyActiveRequest = contributionStkRequests.docs.find((item) => {
+      // Top-ups and contribution prompts for the same member exclude each
+      // other so one receipt cannot settle a balance another prompt is paying.
+      const competingPaymentInProgress = isTopUp
+        ? (await readOutstandingContributions(transaction, memberId))
+            .some((item) => item.hasActiveStkLock)
+        : await transaction.get(stkTopUpLockRef(memberId)).then((topUpLock) => {
+          const status = topUpLock.data()?.status;
+          return typeof status === 'string' && isActiveStkRequestStatus(status);
+        });
+      const legacyActiveRequest = contributionStkRequests?.docs.find((item) => {
         const stored = kcbStkRequestData(item);
         return (
           stored.memberId === memberId &&
@@ -1058,6 +1152,7 @@ export const requestKcbStkPush = onCall(
         if (!isSameStkRequestPayload(stored, {
           memberId,
           contributionId,
+          purpose,
           amount,
         })) {
           throw new HttpsError(
@@ -1122,7 +1217,7 @@ export const requestKcbStkPush = onCall(
           `The previous STK request ended with status ${stored.status}. Try again.`,
         );
       }
-      if (!member.exists || !contribution.exists) {
+      if (!member.exists || (!isTopUp && !contribution?.exists)) {
         throw new HttpsError('not-found', 'Member or contribution not found.');
       }
       if (legacyActiveRequest) {
@@ -1136,23 +1231,37 @@ export const requestKcbStkPush = onCall(
         ) {
           throw new HttpsError(
             'already-exists',
-            'An STK payment request is already active for this contribution.',
+            isTopUp
+              ? 'An account top-up is already in progress for this member.'
+              : 'An STK payment request is already active for this contribution.',
           );
         }
+      }
+      if (competingPaymentInProgress) {
+        throw new HttpsError(
+          'failed-precondition',
+          isTopUp
+            ? 'A contribution payment is in progress. Try the top-up again once it completes.'
+            : 'An account top-up is in progress. Try again once it completes.',
+        );
       }
       const memberRecord = memberData(member);
       if (memberRecord.status !== MEMBER_STATUS.ACTIVE) {
         throw new HttpsError(
           'failed-precondition',
-          'Only active members can request contribution payments.',
+          isTopUp
+            ? 'Only active members can top up their account.'
+            : 'Only active members can request contribution payments.',
         );
       }
-      const contributionRecord = contributionData(contribution);
-      if (amount > contributionRecord.balance) {
-        throw new HttpsError(
-          'invalid-argument',
-          'amount exceeds the contribution balance.',
-        );
+      if (contribution) {
+        const contributionRecord = contributionData(contribution);
+        if (amount > contributionRecord.balance) {
+          throw new HttpsError(
+            'invalid-argument',
+            'amount exceeds the contribution balance.',
+          );
+        }
       }
       let phone: string;
       try {
@@ -1170,6 +1279,7 @@ export const requestKcbStkPush = onCall(
         requestId,
         memberId,
         contributionId,
+        purpose,
         amount,
         phone,
         invoiceNumber,
@@ -1457,25 +1567,84 @@ export const requestKcbStkPush = onCall(
             requestAmount: Number(current.amount),
             requestPhone: current.phone,
           });
-          const memberRef = db().doc(`members/${current.memberId}`);
-          const contributionRef = db().doc(
-            `members/${current.memberId}/contributions/${current.contributionId}`,
+          const notificationConflict = notification.exists && (
+            notificationStatus !== 'unresolved' ||
+            notificationData?.stkRequestId !== requestId
           );
+          const isTopUpRequest = isTopUpStkRequest(current);
+          if (
+            isTopUpRequest &&
+            callbackMatchesRequest &&
+            !terminalNotificationStatus &&
+            !notificationConflict &&
+            lockData?.requestId === requestId &&
+            typeof lockData?.status === 'string' &&
+            isActiveStkRequestStatus(lockData.status)
+          ) {
+            const state = await readTopUpState(transaction, current.memberId);
+            if (state) {
+              recordStkTopUp(transaction, state, {
+                memberId: current.memberId,
+                stkRequestId: requestId,
+                stkRequestRef: requestRef,
+                stkRequestUpdate: {
+                  merchantRequestId,
+                  checkoutRequestId,
+                  resultCode: Number(unmatchedData.resultCode),
+                  resultDescription: unmatchedData.resultDescription ?? null,
+                  responseCode: body.response?.ResponseCode ?? null,
+                  responseDescription:
+                    body.response?.ResponseDescription ??
+                    body.header?.statusDescription ??
+                    null,
+                  callbackReceivedAt:
+                    admin.firestore.FieldValue.serverTimestamp(),
+                },
+                ownsLock: true,
+                paymentId: correlatedAutomaticPaymentId,
+                amount: Number(unmatchedData.amount),
+                requestedAmount: Number(current.amount),
+                providerTransactionId: receiptNumber,
+                transactionDate: String(unmatchedData.transactionDate ?? ''),
+                payerPhone: String(unmatchedData.payerPhone ?? ''),
+                messageId: checkoutRequestId,
+                billReference: current.invoiceNumber,
+                currency: KCB_CURRENCY.value(),
+                notificationRef,
+                notificationExists: notification.exists,
+                notificationReceivedAt: notificationData?.receivedAt,
+                actorId: 'system:kcb_stk_callback',
+                auditPath:
+                  `audit_events/stk-auto-reconcile-${checkoutRequestId}`,
+                auditRequestId: requestId,
+                auditChanges: { callbackArrivedBeforeProviderResponse: true },
+              });
+              transaction.update(unmatchedRef, {
+                status: 'correlated',
+                requestId,
+                correlatedAt: admin.firestore.FieldValue.serverTimestamp(),
+              });
+              return 'reconciled';
+            }
+          }
+          const memberRef = db().doc(`members/${current.memberId}`);
+          const contributionRef = isTopUpRequest
+            ? undefined
+            : db().doc(
+              `members/${current.memberId}/contributions/${current.contributionId}`,
+            );
           const [memberSnapshot, contributionSnapshot] =
-            callbackMatchesRequest && !terminalNotificationStatus
+            callbackMatchesRequest && !terminalNotificationStatus &&
+            contributionRef
               ? await Promise.all([
                 transaction.get(memberRef),
                 transaction.get(contributionRef),
               ])
               : [undefined, undefined];
-          const notificationConflict = notification.exists && (
-            notificationStatus !== 'unresolved' ||
-            notificationData?.stkRequestId !== requestId
-          );
           if (
             callbackMatchesRequest &&
             memberSnapshot?.exists &&
-            contributionSnapshot?.exists &&
+            contributionRef && contributionSnapshot?.exists &&
             canAutomaticallyAllocateStkPayment({
               callbackAmount: Number(unmatchedData.amount),
               requestedAmount: Number(current.amount),
@@ -1677,7 +1846,7 @@ export const requestKcbStkPush = onCall(
               transactionType: 'MPESA_STK',
               suggestedMemberId: current.memberId,
               memberId: current.memberId,
-              contributionId: current.contributionId,
+              ...stkNotificationTarget(current),
               matchReason: callbackMatchesRequest
                 ? 'authenticated_stk_request'
                 : 'authenticated_stk_request_mismatch',
@@ -2067,10 +2236,7 @@ export const kcbStkCallback = onRequest(
         const snapshot = await transaction.get(correlatedRequestRef);
         const pending = kcbStkRequestData(snapshot);
         if (pending.callbackReceivedAt) return;
-        const lockRef = stkContributionLockRef(
-          pending.memberId,
-          pending.contributionId,
-        );
+        const lockRef = stkRequestLockRef(pending);
         const lock = await transaction.get(lockRef);
         const lockData = lock.data() as { requestId?: unknown } | undefined;
         const updateOwnedLock = (status: string) => {
@@ -2214,7 +2380,7 @@ export const kcbStkCallback = onRequest(
               status: 'unresolved',
               suggestedMemberId: pending.memberId,
               memberId: pending.memberId,
-              contributionId: pending.contributionId,
+              ...stkNotificationTarget(pending),
               matchReason: 'authenticated_stk_request_mismatch',
               provider: 'kcb_buni',
               source: 'stk_callback',
@@ -2360,7 +2526,7 @@ export const kcbStkCallback = onRequest(
               transactionType: 'MPESA_STK',
               suggestedMemberId: pending.memberId,
               memberId: pending.memberId,
-              contributionId: pending.contributionId,
+              ...stkNotificationTarget(pending),
               matchReason: 'authenticated_stk_request',
               provider: 'kcb_buni',
               source: 'stk_callback',
@@ -2370,17 +2536,61 @@ export const kcbStkCallback = onRequest(
             { merge: true },
           );
         } else {
+          const isTopUpRequest = isTopUpStkRequest(pending);
+          const lockStatus = lock.data()?.status;
+          const topUpState =
+            isTopUpRequest &&
+            lockData?.requestId === pending.requestId &&
+            typeof lockStatus === 'string' &&
+            isActiveStkRequestStatus(lockStatus)
+              ? await readTopUpState(transaction, pending.memberId)
+              : undefined;
+          if (topUpState) {
+            recordStkTopUp(transaction, topUpState, {
+              memberId: pending.memberId,
+              stkRequestId: pending.requestId,
+              stkRequestRef: correlatedRequestRef,
+              stkRequestUpdate: {
+                resultCode: callback.resultCode,
+                resultDescription: callback.resultDescription,
+                callbackReceivedAt:
+                  admin.firestore.FieldValue.serverTimestamp(),
+              },
+              ownsLock: true,
+              paymentId: automaticPaymentId,
+              amount: Number(callback.amount),
+              requestedAmount: Number(pending.amount),
+              providerTransactionId: String(callback.receiptNumber),
+              transactionDate: String(callback.transactionDate),
+              payerPhone: String(callback.payerPhone),
+              messageId: callback.checkoutRequestId,
+              billReference: pending.invoiceNumber,
+              currency: KCB_CURRENCY.value(),
+              notificationRef,
+              notificationExists: false,
+              actorId: 'system:kcb_stk_callback',
+              auditPath:
+                `audit_events/stk-auto-reconcile-${callback.checkoutRequestId}`,
+              auditRequestId: pending.requestId,
+            });
+            return;
+          }
           const memberRef = db().doc(`members/${pending.memberId}`);
-          const contributionRef = db().doc(
-            `members/${pending.memberId}/contributions/${pending.contributionId}`,
-          );
-          const [memberSnapshot, contributionSnapshot] = await Promise.all([
-            transaction.get(memberRef),
-            transaction.get(contributionRef),
-          ]);
+          const contributionRef = isTopUpRequest
+            ? undefined
+            : db().doc(
+              `members/${pending.memberId}/contributions/${pending.contributionId}`,
+            );
+          const [memberSnapshot, contributionSnapshot] = contributionRef
+            ? await Promise.all([
+              transaction.get(memberRef),
+              transaction.get(contributionRef),
+            ])
+            : [undefined, undefined];
           if (
-            memberSnapshot.exists &&
-            contributionSnapshot.exists &&
+            contributionRef &&
+            memberSnapshot?.exists &&
+            contributionSnapshot?.exists &&
             canAutomaticallyAllocateStkPayment({
               callbackAmount: Number(callback.amount),
               requestedAmount: Number(pending.amount),
@@ -2568,7 +2778,7 @@ export const kcbStkCallback = onRequest(
                 status: 'unresolved',
                 suggestedMemberId: pending.memberId,
                 memberId: pending.memberId,
-                contributionId: pending.contributionId,
+                ...stkNotificationTarget(pending),
                 matchReason: 'authenticated_stk_request',
                 provider: 'kcb_buni',
                 source: 'stk_callback',
