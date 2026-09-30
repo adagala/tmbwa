@@ -10,10 +10,11 @@ import {
   stkNotificationTarget,
   isSuccessfulStkDuplicateStatus,
   KcbNotificationValidationError,
-  lockedStkAllocationAmount, normalizeKenyanPhone,
+  lockedStkAllocationAmount, normalizeKenyanPhone, parseRequestedKenyanPhone,
   ownsExpectedStkTransition, parseKcbTransactionDate, parseStkCallback,
   parseTillNotification, permitsUnsignedSandboxNotification,
-  secureTokenMatches, stkFailureStatus, stkPaymentMatchesPendingRequest,
+  secureTokenMatches, stkCallbackSettlesRequest, stkFailureStatus,
+  stkPaymentMatchesPendingRequest,
   terminalNotificationMatchesStkRequest,
   unmatchedStkCallbackMatchesRequest,
   verifyKcbSignature,
@@ -38,6 +39,24 @@ describe('KCB Till notification contract', () => {
     expect(normalizeKenyanPhone('0711 000 000')).toBe('+254711000000');
     expect(normalizeKenyanPhone('254711000000')).toBe('+254711000000');
     expect(() => normalizeKenyanPhone('123')).toThrow();
+  });
+
+  it('accepts only digits, spaces, hyphens and a leading plus in a requested phone', () => {
+    expect(parseRequestedKenyanPhone('0711 000-000')).toBe('+254711000000');
+    expect(parseRequestedKenyanPhone(' +254711000000 ')).toBe('+254711000000');
+    expect(parseRequestedKenyanPhone('0111000000')).toBe('+254111000000');
+    for (const value of [
+      '0712abc345678',
+      '+foo254712345678bar',
+      '254+711000000',
+      '0711.000.000',
+      '(0711) 000000',
+      '0711_000_000',
+      '++254711000000',
+      '',
+    ]) {
+      expect(() => parseRequestedKenyanPhone(value)).toThrow();
+    }
   });
 
   it('extracts safe reconciliation fields', () => {
@@ -135,13 +154,43 @@ describe('KCB Till notification contract', () => {
     )).toBe(false);
   });
 
+  it('does not reuse a request id for a different prompt phone', () => {
+    const stored = {
+      memberId: 'member-1', contributionId: '', purpose: 'account_top_up',
+      amount: 500, phone: '+254711000000',
+    };
+    expect(isSameStkRequestPayload(stored, { ...stored })).toBe(true);
+    expect(isSameStkRequestPayload(stored, {
+      ...stored, phone: '+254722000000',
+    })).toBe(false);
+    // Clients that do not choose a number fall back to the stored one.
+    expect(isSameStkRequestPayload(stored, {
+      ...stored, phone: undefined,
+    })).toBe(true);
+  });
+
+  it('settles a correlated STK callback whichever phone paid', () => {
+    expect(stkCallbackSettlesRequest({
+      callbackAmount: 500, pendingAmount: 500, receiptNumber: 'RCP123',
+    })).toBe(true);
+    expect(stkCallbackSettlesRequest({
+      callbackAmount: 499, pendingAmount: 500, receiptNumber: 'RCP123',
+    })).toBe(false);
+    expect(stkCallbackSettlesRequest({
+      callbackAmount: 500, pendingAmount: 500, receiptNumber: ' ',
+    })).toBe(false);
+    expect(stkCallbackSettlesRequest({
+      callbackAmount: undefined, pendingAmount: 500, receiptNumber: 'RCP123',
+    })).toBe(false);
+  });
+
   it('maps callback failure codes to explicit STK statuses', () => {
     expect(stkFailureStatus(1032)).toBe('cancelled');
     expect(stkFailureStatus(1037)).toBe('timed_out');
     expect(stkFailureStatus(1)).toBe('failed');
   });
 
-  it('requires exact callback payment details before accepting pending STK success', () => {
+  it('requires exact payment details to correlate an STK callback without provider IDs', () => {
     expect(stkPaymentMatchesPendingRequest({
       callbackAmount: 500,
       pendingAmount: 500,
@@ -327,15 +376,18 @@ describe('KCB Till notification contract', () => {
   it('correlates quarantined callbacks only to the exact provider request', () => {
     const request = {
       requestMerchantRequestId: 'merchant-1', requestAmount: 500,
-      requestPhone: '+254711000000',
     };
     expect(unmatchedStkCallbackMatchesRequest({
       ...request, callbackMerchantRequestId: 'merchant-1',
-      callbackAmount: 500, callbackPhone: '+254711000000',
+      callbackAmount: 500,
     })).toBe(true);
     expect(unmatchedStkCallbackMatchesRequest({
       ...request, callbackMerchantRequestId: 'merchant-2',
-      callbackAmount: 500, callbackPhone: '+254711000000',
+      callbackAmount: 500,
+    })).toBe(false);
+    expect(unmatchedStkCallbackMatchesRequest({
+      ...request, callbackMerchantRequestId: 'merchant-1',
+      callbackAmount: 400,
     })).toBe(false);
   });
 });

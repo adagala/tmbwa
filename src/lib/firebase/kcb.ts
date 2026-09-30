@@ -183,11 +183,13 @@ export const requestKcbStkPush = (data: {
   memberId: string;
   contributionId: string;
   amount: number;
+  phone: string;
 }) => call('requestKcbStkPush', data);
 
 export const requestKcbAccountTopUp = (data: {
   memberId: string;
   amount: number;
+  phone: string;
 }) =>
   call('requestKcbStkPush', { ...data, purpose: 'account_top_up' }) as Promise<{
     data: { requestId?: string; status?: string };

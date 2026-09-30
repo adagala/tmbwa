@@ -16,9 +16,9 @@ This guide explains how members can pay contributions, add funds to their accoun
 3. Scroll to **Contribution History**.
 4. Select the contribution month you want to pay.
 5. Review the contribution amount, current status, payments already allocated, and **Balance due**.
-6. Select **Pay balance via STK**.
-7. Check the phone number registered to your membership for the M-Pesa prompt.
-8. Enter your M-Pesa PIN on the phone and confirm the payment.
+6. Check **M-Pesa phone number**. It starts as the phone number registered to your membership; change it to send the prompt to another phone, for example a family member paying on your behalf.
+7. Select **Pay balance via STK**.
+8. Enter the M-Pesa PIN on that phone and confirm the payment.
 9. Wait for the payment to be processed and reconciled. A successful M-Pesa prompt does not by itself mean that the contribution balance has already been updated.
 
 The STK button is shown only when your membership is active and the selected contribution has an outstanding balance. The request is for the full balance currently due on that contribution.
@@ -32,12 +32,13 @@ You can pay any amount into your account in advance. TMBWA uses it to pay your c
 1. Sign in to TMBWA and select **Profile**.
 2. Next to **Account balance**, select **Add funds**.
 3. Enter the amount in whole shillings. The dialog shows how the amount will be used before you confirm.
-4. Select **Send M-Pesa prompt**, then approve the prompt on the phone number registered to your membership.
-5. Keep the dialog open to see when the top-up is received, or check **Account balance** later.
+4. Check **M-Pesa phone number**. It starts as the phone number registered to your membership; change it to send the prompt to another phone.
+5. Select **Send M-Pesa prompt**, then approve the prompt with the M-Pesa PIN on that phone.
+6. Keep the dialog open to see when the top-up is received, or check **Account balance** later.
 
 After you send the prompt, the dialog shows one of these messages:
 
-- **Waiting for M-Pesa** — approve the prompt on your phone.
+- **Waiting for M-Pesa** — approve the prompt on the phone you entered.
 - **Top-up received** — your account has been credited and any unpaid contributions have been paid.
 - **Payment received** — M-Pesa accepted the payment and an administrator will confirm it and credit your account shortly. Do not pay again.
 - **Payment not yet confirmed** — TMBWA could not confirm the outcome. Wait for an administrator to verify the payment before trying again.
