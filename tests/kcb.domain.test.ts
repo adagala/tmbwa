@@ -10,7 +10,7 @@ import {
   stkNotificationTarget,
   isSuccessfulStkDuplicateStatus,
   KcbNotificationValidationError,
-  lockedStkAllocationAmount, normalizeKenyanPhone,
+  lockedStkAllocationAmount, normalizeKenyanPhone, parseRequestedKenyanPhone,
   ownsExpectedStkTransition, parseKcbTransactionDate, parseStkCallback,
   parseTillNotification, permitsUnsignedSandboxNotification,
   secureTokenMatches, stkCallbackSettlesRequest, stkFailureStatus,
@@ -39,6 +39,24 @@ describe('KCB Till notification contract', () => {
     expect(normalizeKenyanPhone('0711 000 000')).toBe('+254711000000');
     expect(normalizeKenyanPhone('254711000000')).toBe('+254711000000');
     expect(() => normalizeKenyanPhone('123')).toThrow();
+  });
+
+  it('accepts only digits, spaces, hyphens and a leading plus in a requested phone', () => {
+    expect(parseRequestedKenyanPhone('0711 000-000')).toBe('+254711000000');
+    expect(parseRequestedKenyanPhone(' +254711000000 ')).toBe('+254711000000');
+    expect(parseRequestedKenyanPhone('0111000000')).toBe('+254111000000');
+    for (const value of [
+      '0712abc345678',
+      '+foo254712345678bar',
+      '254+711000000',
+      '0711.000.000',
+      '(0711) 000000',
+      '0711_000_000',
+      '++254711000000',
+      '',
+    ]) {
+      expect(() => parseRequestedKenyanPhone(value)).toThrow();
+    }
   });
 
   it('extracts safe reconciliation fields', () => {

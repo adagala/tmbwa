@@ -378,9 +378,11 @@ describe('account top-ups', () => {
 
   it('rejects an invalid prompt number without creating a request', async () => {
     await seedMember();
-    await expect(requestTopUp(500, memberAuth(), '12345')).rejects.toMatchObject({
-      code: 'invalid-argument',
-    });
+    for (const phone of ['12345', '0712abc345678', '+foo254712345678bar']) {
+      await expect(requestTopUp(500, memberAuth(), phone)).rejects.toMatchObject({
+        code: 'invalid-argument',
+      });
+    }
     expect((await db().collection('kcb_stk_requests').get()).empty).toBe(true);
   });
 

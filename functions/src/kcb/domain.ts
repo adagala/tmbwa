@@ -94,6 +94,15 @@ export const normalizeKenyanPhone = (value: string) => {
   throw new Error('debitMSISDN must be a valid Kenyan mobile number.');
 };
 
+// Numbers typed by a person must use only digits, spaces and hyphens with an
+// optional leading '+', so malformed input is rejected instead of rewritten.
+export const parseRequestedKenyanPhone = (value: string) => {
+  if (!/^\+?[\d\s-]+$/.test(value.trim())) {
+    throw new Error('phone must contain only digits, spaces and hyphens.');
+  }
+  return normalizeKenyanPhone(value);
+};
+
 export const parseTillNotification = (payload: unknown): KcbTillNotification => {
   const root = object(payload, 'body');
   const header = object(root.header, 'header');

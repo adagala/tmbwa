@@ -21,7 +21,8 @@ import { DialogLegacyContributionCorrection } from './DialogLegacyContributionCo
 import useUser from '@/hooks/useUser';
 import { DialogDeleteContribution } from './DialogDeleteContribution';
 import { DialogReverseLegacyCorrection } from './DialogReverseLegacyCorrection';
-import { isKenyanMobileNumber, requestKcbStkPush } from '@/lib/firebase/kcb';
+import { requestKcbStkPush } from '@/lib/firebase/kcb';
+import { isKenyanMobileNumber } from '@/lib/kenyanPhone';
 import { useToast } from '@/hooks/useToast';
 import {
   formatNairobiDate,

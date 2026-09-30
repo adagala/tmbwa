@@ -42,6 +42,7 @@ import {
   lockedStkAllocationAmount,
   KcbNotificationValidationError,
   normalizeKenyanPhone,
+  parseRequestedKenyanPhone,
   ownsExpectedStkTransition,
   parseKcbTransactionDate,
   parseStkCallback,
@@ -1062,7 +1063,7 @@ export const requestKcbStkPush = onCall(
     let requestedPhone: string | undefined;
     if (data.phone !== undefined) {
       try {
-        requestedPhone = normalizeKenyanPhone(String(data.phone));
+        requestedPhone = parseRequestedKenyanPhone(String(data.phone));
       } catch {
         throw new HttpsError(
           'invalid-argument',

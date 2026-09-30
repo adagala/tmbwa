@@ -179,13 +179,6 @@ export const allocateKcbPaymentCredit = (data: {
   allocations: Array<{ contributionId: string; amount: number }>;
 }) => call('allocateKcbPaymentCredit', data);
 
-// Mirrors the server's accepted formats for display only; the backend
-// validates and normalises the number before sending the prompt.
-export const isKenyanMobileNumber = (value: string) => {
-  const digits = value.replace(/\D/g, '');
-  return /^(?:254|0)?[17]\d{8}$/.test(digits);
-};
-
 export const requestKcbStkPush = (data: {
   memberId: string;
   contributionId: string;

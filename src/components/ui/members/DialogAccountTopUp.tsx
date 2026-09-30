@@ -18,10 +18,10 @@ import { Label } from '@/components/Label';
 import { useToast } from '@/hooks/useToast';
 import { monthLabel } from '@/lib/financialReporting';
 import {
-  isKenyanMobileNumber,
   requestKcbAccountTopUp,
   subscribeToKcbStkRequestStatus,
 } from '@/lib/firebase/kcb';
+import { isKenyanMobileNumber } from '@/lib/kenyanPhone';
 
 const formatKes = (value: number) =>
   `KES ${value.toLocaleString('en-KE', { maximumFractionDigits: 2 })}`;
