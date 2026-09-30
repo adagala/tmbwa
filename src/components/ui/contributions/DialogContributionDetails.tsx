@@ -50,7 +50,8 @@ export const DialogContributionDetails = ({
   );
   const canRequestStk =
     !!user &&
-    (role === 'member' || role === 'administrator') &&
+    (role === 'administrator' ||
+      (role === 'member' && user.uid === contribution.member_id)) &&
     member?.status === 'active' &&
     contribution.balance > 0 &&
     contribution.paid !== ContributionStatusEnum.Enum.paid;
