@@ -176,6 +176,90 @@ describe('Firestore authorization', () => {
     await assertFails(updateDoc(doc(db, 'monthly_stats/2026-08-01'), { amount: 0 }));
   });
 
+  describe('beneficiaries', () => {
+    const beneficiary = {
+      firstname: 'Baraka',
+      lastname: 'Member',
+      relationship: 'son',
+      dateOfBirth: '2015-04-20',
+      requestId: 'request-initial',
+      approvedBy: 'admin',
+    };
+    const changeRequest = (memberId: string) => ({
+      memberId,
+      type: 'annual',
+      proposedBeneficiaries: [beneficiary],
+      baseVersion: 1,
+      status: 'pending',
+      submittedBy: memberId,
+    });
+
+    async function seedBeneficiaries() {
+      await seed();
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        const db = context.firestore();
+        for (const memberId of ['member-a', 'member-b']) {
+          await setDoc(doc(db, `members/${memberId}/beneficiaries/beneficiary-1`), beneficiary);
+          await setDoc(doc(db, `members/${memberId}/beneficiary_state/current`), {
+            version: 1, lastAnnualChangeYear: null, pendingRequestId: `request-${memberId}`,
+          });
+          await setDoc(doc(db, `beneficiary_change_requests/request-${memberId}`), changeRequest(memberId));
+        }
+      });
+    }
+
+    it('allows an active owner to read only their own beneficiaries and requests', async () => {
+      await seedBeneficiaries();
+      const db = testEnv.authenticatedContext('member-a', { role: 'member' }).firestore();
+      await assertSucceeds(getDocs(collection(db, 'members/member-a/beneficiaries')));
+      await assertSucceeds(getDoc(doc(db, 'members/member-a/beneficiary_state/current')));
+      await assertSucceeds(getDoc(doc(db, 'beneficiary_change_requests/request-member-a')));
+      await assertSucceeds(getDocs(query(collection(db, 'beneficiary_change_requests'), where('memberId', '==', 'member-a'))));
+      await assertFails(getDocs(collection(db, 'members/member-b/beneficiaries')));
+      await assertFails(getDoc(doc(db, 'members/member-b/beneficiary_state/current')));
+      await assertFails(getDoc(doc(db, 'beneficiary_change_requests/request-member-b')));
+      await assertFails(getDocs(collection(db, 'beneficiary_change_requests')));
+      await assertFails(getDocs(query(collection(db, 'beneficiary_change_requests'), where('memberId', '==', 'member-b'))));
+    });
+
+    it('allows administrators to read every member beneficiary and request', async () => {
+      await seedBeneficiaries();
+      const db = testEnv.authenticatedContext('admin', { role: 'administrator' }).firestore();
+      await assertSucceeds(getDocs(collection(db, 'members/member-a/beneficiaries')));
+      await assertSucceeds(getDoc(doc(db, 'members/member-b/beneficiary_state/current')));
+      await assertSucceeds(getDocs(query(collection(db, 'beneficiary_change_requests'), where('status', '==', 'pending'))));
+    });
+
+    it('denies an inactive owner and unauthenticated users', async () => {
+      await seedBeneficiaries();
+      await testEnv.withSecurityRulesDisabled(async (context) =>
+        updateDoc(doc(context.firestore(), 'members/member-a'), { status: 'inactive' }));
+      const inactiveDb = testEnv.authenticatedContext('member-a', { role: 'member' }).firestore();
+      await assertFails(getDocs(collection(inactiveDb, 'members/member-a/beneficiaries')));
+      await assertFails(getDoc(doc(inactiveDb, 'members/member-a/beneficiary_state/current')));
+      await assertFails(getDoc(doc(inactiveDb, 'beneficiary_change_requests/request-member-a')));
+      await assertFails(getDocs(query(collection(inactiveDb, 'beneficiary_change_requests'), where('memberId', '==', 'member-a'))));
+      const anonymousDb = testEnv.unauthenticatedContext().firestore();
+      await assertFails(getDocs(collection(anonymousDb, 'members/member-a/beneficiaries')));
+      await assertFails(getDoc(doc(anonymousDb, 'beneficiary_change_requests/request-member-a')));
+    });
+
+    it('denies all client writes, including by administrators', async () => {
+      await seedBeneficiaries();
+      const memberDb = testEnv.authenticatedContext('member-a', { role: 'member' }).firestore();
+      const adminDb = testEnv.authenticatedContext('admin', { role: 'administrator' }).firestore();
+      for (const db of [memberDb, adminDb]) {
+        await assertFails(setDoc(doc(db, 'members/member-a/beneficiaries/beneficiary-2'), beneficiary));
+        await assertFails(updateDoc(doc(db, 'members/member-a/beneficiaries/beneficiary-1'), { firstname: 'Changed' }));
+        await assertFails(deleteDoc(doc(db, 'members/member-a/beneficiaries/beneficiary-1')));
+        await assertFails(updateDoc(doc(db, 'members/member-a/beneficiary_state/current'), { lastAnnualChangeYear: null, version: 0 }));
+        await assertFails(setDoc(doc(db, 'beneficiary_change_requests/request-new'), changeRequest('member-a')));
+        await assertFails(updateDoc(doc(db, 'beneficiary_change_requests/request-member-a'), { status: 'approved' }));
+        await assertFails(deleteDoc(doc(db, 'beneficiary_change_requests/request-member-a')));
+      }
+    });
+  });
+
   it('keeps STK payment locks server-only', async () => {
     await seed();
     const memberDb = testEnv.authenticatedContext('member-a', { role: 'member' }).firestore();

@@ -83,6 +83,25 @@ service cloud.firestore {
           request.resource.data.read is bool;
         allow create, delete: if false;
       }
+
+      // Beneficiary changes go through trusted Cloud Functions only.
+      match /beneficiaries/{beneficiaryId} {
+        allow read: if isAdministrator() || isActiveOwner(memberId);
+        allow write: if false;
+      }
+
+      match /beneficiary_state/{stateId} {
+        allow read: if isAdministrator() || isActiveOwner(memberId);
+        allow write: if false;
+      }
+    }
+
+    // Members must constrain list queries to their own memberId.
+    match /beneficiary_change_requests/{requestId} {
+      allow read: if isAdministrator() ||
+        (resource.data.memberId == request.auth.uid &&
+          isActiveOwner(request.auth.uid));
+      allow write: if false;
     }
 
     match /{path=**}/contributions/{contributionId} {
