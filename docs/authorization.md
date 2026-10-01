@@ -17,7 +17,7 @@ Client reads and writes are granted per role. An officer's role counts only when
 | Contribution rates | Read, create | Read | | | Read | |
 | Unknown collections | | | | | | |
 
-No client can write financial records, statistics, beneficiaries, change requests, audit events, roles or KCB records; those change only through trusted Functions. Inactive or suspended officers lose officer access immediately, even while their token is still valid.
+No client can write financial records, statistics, beneficiaries, change requests, audit events, roles or KCB records; those change only through trusted Functions. A new member document may contain only profile fields, and must start as `role: member`, `status: active` with `balance`, `contributionBalance` and `reservedKcbCredit` at 0. Inactive or suspended officers lose officer access immediately, even while their token is still valid.
 
 Members may update only their own first name, last name, admission number, welfare identification number, phone number, and gender. They cannot change email, role, status, balances, fees, identifiers, search indexes, timestamps, or financial records.
 

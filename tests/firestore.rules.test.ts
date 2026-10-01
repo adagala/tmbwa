@@ -9,6 +9,14 @@ import {
 import { Firestore, collection, collectionGroup, deleteDoc, deleteField, doc, getDoc, getDocs, orderBy, query, setDoc, updateDoc, where } from 'firebase/firestore';
 import { legacyRoleFor, normalizeRoles, roleHasPermission, roles, type Permission, type Role } from 'tmbwa-shared';
 
+// The payload addMember sends for a new member.
+const newMember = (datejoined: unknown, overrides: Record<string, unknown> = {}) => ({
+  firstname: 'Nia', lastname: 'New', membernumber: '0002/26', win: 'WIN-2',
+  phonenumber: '+254712345679', gender: 'female', email: 'nia@example.test',
+  isFeesPaid: false, datejoined, role: 'member', status: 'active',
+  balance: 0, contributionBalance: 0, reservedKcbCredit: 0, ...overrides,
+});
+
 const projectId = 'demo-tmbwa';
 let testEnv: RulesTestEnvironment;
 
@@ -103,11 +111,9 @@ describe('Firestore authorization', () => {
     await assertFails(updateDoc(doc(db, 'members/member-a'), { role: 'administrator' }));
     await assertFails(updateDoc(doc(db, 'members/member-a'), { roles: ['member', 'super_admin'] }));
     await assertFails(updateDoc(doc(db, 'members/admin'), { roles: ['member'] }));
-    await assertFails(setDoc(doc(db, 'members/new-admin'), { role: 'administrator', datejoined: past }));
-    await assertFails(setDoc(doc(db, 'members/new-officer'), {
-      role: 'member', roles: ['member', 'treasurer'], datejoined: past,
-    }));
-    await assertSucceeds(setDoc(doc(db, 'members/new-member'), { role: 'member', datejoined: past }));
+    await assertFails(setDoc(doc(db, 'members/new-admin'), newMember(past, { role: 'administrator' })));
+    await assertFails(setDoc(doc(db, 'members/new-officer'), newMember(past, { roles: ['member', 'treasurer'] })));
+    await assertSucceeds(setDoc(doc(db, 'members/new-member'), newMember(past)));
   });
 
   it('denies an administrator claim the member record no longer supports', async () => {
@@ -140,9 +146,11 @@ describe('Firestore authorization', () => {
     await assertFails(updateDoc(doc(adminDb, 'members/member-a'), { datejoined: future }));
     await assertFails(updateDoc(doc(adminDb, 'members/member-a'), { datejoined: '2020-03-15' }));
     await assertFails(updateDoc(doc(memberDb, 'members/member-a'), { datejoined: new Date('2019-01-10T09:00:00Z') }));
-    await assertSucceeds(setDoc(doc(adminDb, 'members/new-member'), { role: 'member', datejoined: past }));
-    await assertFails(setDoc(doc(adminDb, 'members/future-member'), { role: 'member', datejoined: future }));
-    await assertFails(setDoc(doc(adminDb, 'members/undated-member'), { role: 'member' }));
+    await assertSucceeds(setDoc(doc(adminDb, 'members/new-member'), newMember(past)));
+    await assertFails(setDoc(doc(adminDb, 'members/future-member'), newMember(future)));
+    const undated: Record<string, unknown> = newMember(past);
+    delete undated.datejoined;
+    await assertFails(setDoc(doc(adminDb, 'members/undated-member'), undated));
     await assertFails(updateDoc(doc(adminDb, 'members/member-a'), { datejoined: deleteField() }));
   });
 
@@ -353,7 +361,7 @@ describe('role-based access', () => {
     ['read a member', 'members.read', (db) => getDoc(doc(db, 'members/member-a'))],
     ['list members', 'members.read', (db) => getDocs(collection(db, 'members'))],
     ['edit member details', 'members.write', (db) => updateDoc(doc(db, 'members/member-a'), { firstname: 'Alicia' })],
-    ['add a member', 'members.write', (db) => setDoc(doc(db, 'members/new-member'), { role: 'member', datejoined: past })],
+    ['add a member', 'members.write', (db) => setDoc(doc(db, 'members/new-member'), newMember(past))],
     ['read contributions', 'payments.read', (db) => getDocs(collection(db, 'members/member-a/contributions'))],
     ['read payments', 'payments.read', (db) => getDocs(collection(db, 'members/member-a/payments'))],
     ['query all contributions', 'payments.read', (db) => getDocs(query(collectionGroup(db, 'contributions'), orderBy('month')))],
@@ -387,6 +395,27 @@ describe('role-based access', () => {
     await seedOfficer([role]);
     const result = attempt(officerDb([role]));
     await (allowed ? assertSucceeds(result) : assertFails(result));
+  });
+
+  it('lets a registrar create a member but not seed server-owned fields', async () => {
+    await seedOfficer(['registrar']);
+    const db = officerDb(['registrar']);
+    await assertSucceeds(setDoc(doc(db, 'members/new-member'), newMember(past)));
+    const forged: Record<string, unknown>[] = [
+      { reservedKcbCredit: 100000 },
+      { balance: 5000 },
+      { contributionBalance: 5000 },
+      { status: 'suspended' },
+      { role: 'administrator' },
+      { roles: ['member', 'treasurer'] },
+      { createat: new Date() },
+      { firstnameSearchableIndex: { n: true } },
+      { rolesUpdatedBy: OFFICER },
+      { statusUpdatedBy: OFFICER },
+    ];
+    for (const fields of forged) {
+      await assertFails(setDoc(doc(db, 'members/forged-member'), newMember(past, fields)));
+    }
   });
 
   it('never lets an auditor read beneficiary personal data', async () => {
