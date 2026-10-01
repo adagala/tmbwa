@@ -36,8 +36,10 @@ const outcome = (promise: Promise<unknown>) =>
 
 const withRoles = (roles: string[], uid = ACTOR) => ({ uid, token: { roles } });
 
-const seedActor = (status = 'active', uid = ACTOR) =>
-  db().doc(`members/${uid}`).set({ status });
+// The record grants every role, so each test's token claims decide access.
+const allRoles = ['member', 'super_admin', 'treasurer', 'registrar', 'welfare_officer', 'auditor'];
+const seedActor = (status = 'active', uid = ACTOR, roles = allRoles) =>
+  db().doc(`members/${uid}`).set({ status, roles });
 
 const seedTarget = () =>
   db().doc(`members/${TARGET}`).set({
@@ -287,6 +289,29 @@ describe.each(cases)('$name authorization', ({ fn, allowed, denied, data }) => {
   it('denies an officer without a member record', async () => {
     await db().doc(`members/${ACTOR}`).delete();
     expect(await outcome(call(fn, withRoles([allowed]), data(TARGET)))).toBe('permission-denied');
+  });
+});
+
+describe('roles held by the member record', () => {
+  it('denies a role the token claims but the record no longer grants', async () => {
+    await seedActor('active', ACTOR, ['member', 'auditor']);
+    await expect(
+      call(financial.listLegacyContributionInventory, withRoles(['treasurer']), {}),
+    ).rejects.toMatchObject({ code: 'permission-denied' });
+  });
+
+  it('accepts a legacy administrator record for a legacy administrator token', async () => {
+    await db().doc(`members/${ACTOR}`).set({ status: 'active', role: 'administrator' });
+    await expect(
+      call(financial.listLegacyContributionInventory, { uid: ACTOR, token: { role: 'administrator' } }, {}),
+    ).resolves.toMatchObject({ scanned: 0 });
+  });
+
+  it('denies a legacy administrator token once the record is a plain member', async () => {
+    await db().doc(`members/${ACTOR}`).set({ status: 'active', role: 'member' });
+    await expect(
+      call(financial.listLegacyContributionInventory, { uid: ACTOR, token: { role: 'administrator' } }, {}),
+    ).rejects.toMatchObject({ code: 'permission-denied' });
   });
 });
 

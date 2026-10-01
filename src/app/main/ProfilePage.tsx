@@ -9,7 +9,7 @@ import { MemberAccount } from '@/sections/memberAccount';
 import { MemberHeader } from '@/sections/memberHeader';
 
 export default function ProfilePage() {
-  const { user, role } = useUser();
+  const { user, role, roles } = useUser();
   const [member, setMember] = useState<Member | null>();
 
   useEffect(() => {
@@ -19,7 +19,7 @@ export default function ProfilePage() {
         (fetchedMember) => {
           setMember(fetchedMember);
         },
-        { role, user },
+        { role, roles, user },
       );
 
       return () => unsubscribe();

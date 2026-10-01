@@ -4,6 +4,7 @@ import {
   MEMBER_STATUS,
   type Permission,
   type Role,
+  memberRoles,
   roleHasPermission,
   rolesFromClaims,
 } from 'tmbwa-shared';
@@ -20,32 +21,44 @@ const assertActive = (actor: FirebaseFirestore.DocumentSnapshot) => {
   }
 };
 
+const permissionDenied = () =>
+  new HttpsError('permission-denied', 'You do not have permission to perform this action.');
+
 // Admin SDK writes bypass Firestore rules, so every privileged callable must
-// pass through this check. It confirms the permission and that the actor's
-// member record is still active: a suspended or inactive member keeps their
-// claims until their token expires, but loses access immediately here.
+// pass through this check. A role counts only when both the caller's token and
+// their member record grant it: the token lags behind a revocation until it
+// expires, the record does not. The record must also still be active.
 export const requirePermission = async (
   auth: CallableAuth,
   permission: Permission,
 ): Promise<Actor> => {
   if (!auth) throw new HttpsError('unauthenticated', 'Sign in is required.');
-  const actorRoles = rolesFromClaims(auth.token);
-  if (!roleHasPermission(actorRoles, permission)) {
-    throw new HttpsError('permission-denied', 'You do not have permission to perform this action.');
-  }
-  assertActive(await actorRef(auth.uid).get());
+  const claimedRoles = rolesFromClaims(auth.token);
+  if (!roleHasPermission(claimedRoles, permission)) throw permissionDenied();
+  const actor = await actorRef(auth.uid).get();
+  assertActive(actor);
+  const recordRoles = memberRoles(actor.data());
+  const actorRoles = claimedRoles.filter((role) => recordRoles.includes(role));
+  if (!roleHasPermission(actorRoles, permission)) throw permissionDenied();
   return { actorId: auth.uid, actorRoles };
 };
 
 // Privileged mutations must also call this first inside their transaction.
 // Reading the actor there puts their member record in the transaction's read
 // set, so a concurrent suspension forces a retry that is then refused, rather
-// than letting a command authorized moments earlier commit.
+// than letting a command authorized moments earlier commit. Commands that
+// change authorization itself also pass the permission, so a concurrent role
+// revocation is refused the same way.
 export const assertActorActive = async (
   transaction: FirebaseFirestore.Transaction,
   actorId: string,
+  permission?: Permission,
 ) => {
-  assertActive(await transaction.get(actorRef(actorId)));
+  const actor = await transaction.get(actorRef(actorId));
+  assertActive(actor);
+  if (permission && !roleHasPermission(memberRoles(actor.data()), permission)) {
+    throw permissionDenied();
+  }
 };
 
 // No one performs privileged actions on their own member record.

@@ -12,7 +12,7 @@ import { getMemberById } from '@/lib/firebase/firestore';
 import { Member } from 'tmbwa-shared/firebase';
 
 export default function SettingsPage() {
-  const { user, role } = useUser();
+  const { user, role, roles } = useUser();
   const [member, setMember] = React.useState<Member | null>();
 
   React.useEffect(() => {
@@ -22,7 +22,7 @@ export default function SettingsPage() {
         (fetchedMember) => {
           setMember(fetchedMember);
         },
-        { role, user },
+        { role, roles, user },
       );
 
       return () => unsubscribe();

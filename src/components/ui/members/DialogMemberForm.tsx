@@ -22,7 +22,7 @@ import {
 } from '@/components/Select';
 import { toast } from '@/hooks/useToast';
 import { Member, memberFormSchema, MemberForm } from 'tmbwa-shared/firebase';
-import { genders, member_roles, Gender, MemberRole } from 'tmbwa-shared';
+import { genders, Gender } from 'tmbwa-shared';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { InputErrorMessage } from '../InputErrorMessage';
@@ -49,7 +49,6 @@ export const DialogMemberForm = ({
 }) => {
   const [open, setOpen] = React.useState(false);
   const [isLoading, setIsLoading] = React.useState(false);
-  const [role, setRole] = React.useState<MemberRole>();
   const [gender, setGender] = React.useState<Gender>();
   const [isFeesPaid, setIsFeesPaid] = React.useState(
     member?.isFeesPaid || false,
@@ -64,7 +63,6 @@ export const DialogMemberForm = ({
         membernumber: member.membernumber,
         win: member.win,
         phonenumber: member.phonenumber,
-        role: member.role,
         isFeesPaid: member.isFeesPaid,
         datejoined: member.datejoined
           ? (timestampDate(member.datejoined) ?? undefined)
@@ -245,35 +243,6 @@ export const DialogMemberForm = ({
                       <InputErrorMessage message={errors.datejoined?.message} />
                     </div>
                     <div className="flex gap-1">
-                      <div className="flex-1 mx-auto space-y-1">
-                        <Label htmlFor="role">Role</Label>
-                        <Select
-                          {...register('role')}
-                          onValueChange={(role: MemberRole) => {
-                            setRole(role);
-                            setValue('role', role);
-                            trigger('role');
-                          }}
-                          value={role}
-                          defaultValue={member?.role}
-                        >
-                          <SelectTrigger id="role" className="capitalize">
-                            <SelectValue placeholder="Role" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {member_roles.map((role) => (
-                              <SelectItem
-                                key={role}
-                                value={role}
-                                className="capitalize"
-                              >
-                                {role}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <InputErrorMessage message={errors.role?.message} />
-                      </div>
                       <div className="flex-1 mx-auto space-y-1">
                         <Label htmlFor="gender">Gender</Label>
                         <Select

@@ -137,6 +137,20 @@ You cannot approve or reject your own request; another administrator must review
 
 To record a member's first beneficiaries yourself, open the member, select the **Beneficiaries** tab and select **Set initial beneficiaries**. This is available only while the member has no beneficiaries and no pending request, and not for your own record. Later changes must come from the member.
 
+## Manage member roles
+
+Only super admins can change roles. Roles decide what an officer can do: super admin, treasurer, registrar, welfare officer or auditor. Every member also has the member role.
+
+1. Open the member and select **Manage roles**.
+2. Tick the roles the member should hold, and clear the ones they should lose. Each role shows what it allows.
+3. Enter the reason for the change, for example the meeting where it was agreed, then select **Apply roles**.
+
+The change is recorded in the audit log with your reason. The member is signed out of their other sessions and gets the new access when they sign in again. Removed roles stop working straight away.
+
+You cannot change your own roles; another super admin must do it. The last remaining super admin cannot be removed. Roles can be removed from inactive members but not granted to them.
+
+Until the administrator screens move to per-role access, only super admins can use them. Treasurers, registrars, welfare officers and auditors can already perform their actions through trusted commands, but the screens for those roles follow in a later release.
+
 ## View notifications and monitor delivery
 
 1. Select **Notifications**.

@@ -28,6 +28,17 @@ afterAll(async () => testEnv.cleanup());
 async function seed() {
   await testEnv.withSecurityRulesDisabled(async (context) => {
     const db = context.firestore();
+    // Administrator access needs an active record that agrees with the claim.
+    await setDoc(doc(db, 'members/admin'), {
+      firstname: 'Ada',
+      lastname: 'Admin',
+      email: 'admin@example.test',
+      role: 'administrator',
+      roles: ['member', 'super_admin'],
+      balance: 0,
+      contributionBalance: 0,
+      status: 'active',
+    });
     await setDoc(doc(db, 'members/member-a'), {
       firstname: 'Alice',
       lastname: 'Member',
@@ -79,9 +90,43 @@ describe('Firestore authorization', () => {
       role: 'administrator',
     }).firestore();
     await assertSucceeds(getDocs(collection(db, 'members')));
-    await assertSucceeds(updateDoc(doc(db, 'members/member-a'), { role: 'administrator' }));
+    await assertSucceeds(updateDoc(doc(db, 'members/member-a'), { firstname: 'Alicia' }));
     await assertFails(updateDoc(doc(db, 'members/member-a'), { status: 'suspended' }));
     await assertSucceeds(getDoc(doc(db, 'monthly_stats/2026-08-01')));
+  });
+
+  it('keeps roles server-owned', async () => {
+    await seed();
+    const db = testEnv.authenticatedContext('admin', { role: 'administrator' }).firestore();
+    const past = new Date('2020-03-15T09:00:00Z');
+    await assertFails(updateDoc(doc(db, 'members/member-a'), { role: 'administrator' }));
+    await assertFails(updateDoc(doc(db, 'members/member-a'), { roles: ['member', 'super_admin'] }));
+    await assertFails(updateDoc(doc(db, 'members/admin'), { roles: ['member'] }));
+    await assertFails(setDoc(doc(db, 'members/new-admin'), { role: 'administrator', datejoined: past }));
+    await assertFails(setDoc(doc(db, 'members/new-officer'), {
+      role: 'member', roles: ['member', 'treasurer'], datejoined: past,
+    }));
+    await assertSucceeds(setDoc(doc(db, 'members/new-member'), { role: 'member', datejoined: past }));
+  });
+
+  it('denies an administrator claim the member record no longer supports', async () => {
+    await seed();
+    const db = testEnv.authenticatedContext('admin', { role: 'administrator' }).firestore();
+    const setAdmin = (fields: Record<string, unknown>) =>
+      testEnv.withSecurityRulesDisabled(async (context) =>
+        updateDoc(doc(context.firestore(), 'members/admin'), fields));
+
+    await setAdmin({ role: 'member', roles: ['member'] });
+    await assertFails(getDocs(collection(db, 'members')));
+    await assertFails(getDoc(doc(db, 'members/member-a')));
+
+    await setAdmin({ role: 'administrator', roles: ['member', 'super_admin'], status: 'suspended' });
+    await assertFails(getDocs(collection(db, 'members')));
+    await assertFails(getDoc(doc(db, 'monthly_stats/2026-08-01')));
+
+    await testEnv.withSecurityRulesDisabled(async (context) =>
+      deleteDoc(doc(context.firestore(), 'members/admin')));
+    await assertFails(getDocs(collection(db, 'members')));
   });
 
   it('allows only administrators to set a valid date joined', async () => {

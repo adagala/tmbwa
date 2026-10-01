@@ -81,6 +81,7 @@ const seedOfficers = (...uids: string[]) =>
   Promise.all(uids.map((uid) => db().doc(`members/${uid}`).set({
     ...memberFields,
     email: `${uid}@example.test`,
+    role: 'administrator',
     status: 'active',
     balance: 0,
     contributionBalance: 0,

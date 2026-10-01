@@ -11,6 +11,7 @@ import * as Beneficiaries from './beneficiaries';
 export const newMember = Member.newMember;
 export const updateMember = Member.updateMember;
 export const deleteMember = Member.deleteMember;
+export const assignMemberRoles = Member.assignMemberRoles;
 
 export const setMonthlyContributions = Contribution.setMonthlyContributions;
 export const recordContributionPayment = Financial.recordContributionPayment;

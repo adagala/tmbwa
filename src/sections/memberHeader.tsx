@@ -2,6 +2,8 @@ import React from 'react';
 import { Member } from 'tmbwa-shared/firebase';
 import { Avatar } from '@/components/Avatar';
 import { MemberStatusBadge } from '@/components/ui/members/MemberStatusBadge';
+import { memberRoles } from 'tmbwa-shared';
+import { describeRoles } from '@/lib/roleDisplay';
 
 const initials = (member: Member) =>
   `${member.firstname.charAt(0)}${member.lastname.charAt(0)}`.toUpperCase();
@@ -26,7 +28,7 @@ export function MemberHeader({
           </h1>
           <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
             <MemberStatusBadge status={member.status} />
-            <span className="capitalize">{member.role}</span>
+            <span>{describeRoles(memberRoles(member))}</span>
             <span aria-hidden="true">·</span>
             <span>{member.membernumber}</span>
             <span aria-hidden="true">·</span>

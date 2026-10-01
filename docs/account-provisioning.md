@@ -13,6 +13,10 @@ The administrator should tell the member to:
 
 Reset requests use a generic response so the interface does not reveal whether an email address is registered.
 
+New members always start with only the `member` role. Officer roles are granted afterwards by a super admin through **Manage roles** on the member's profile; see [authorization](authorization.md#assigning-roles). The member is signed out of existing sessions when their roles change and receives the new access when they sign in again.
+
+The `addAdminMember` maintenance script creates a member with `roles: [member, super_admin]`, for bootstrapping the first super admin only.
+
 ## Existing members
 
 Existing predictable credentials should be treated as compromised. Ask all current members to complete the reset flow. Administrators should revoke refresh tokens for accounts suspected of unauthorized use:

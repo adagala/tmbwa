@@ -11,8 +11,17 @@ import {
   deleteCollection,
   getCurrentMonth,
 } from '../utils';
-import { MONTHLY_CONTRIBUTION, memberFormBaseSchema, parseDocument } from 'tmbwa-shared';
+import {
+  MONTHLY_CONTRIBUTION,
+  legacyRoleFor,
+  memberFormBaseSchema,
+  memberRoles,
+  parseDocument,
+  sameRoles,
+} from 'tmbwa-shared';
 import { memberData } from '../firestoreData';
+
+export { assignMemberRoles } from './roles';
 
 export const newMember = onDocumentCreated(
   {
@@ -38,12 +47,16 @@ export const newMember = onDocumentCreated(
 
     // created at timestamp
     const memberRef = admin.firestore().doc(`members/${uid}`);
+    // Client-created members always start as plain members (Firestore rules
+    // enforce it); privileged roles are granted only through assignMemberRoles.
+    const roles = memberRoles(snapshot.data());
     const memberUpdate: Partial<Member> = {
       createat: admin.firestore.Timestamp.now(),
       firstnameSearchableIndex,
       lastnameSearchableIndex,
       balance: 0,
       contributionBalance: 0,
+      roles,
     };
 
     batch.set(memberRef, memberUpdate, { merge: true });
@@ -77,8 +90,10 @@ export const newMember = onDocumentCreated(
       uid,
     });
 
-    // set role customClaim
-    await admin.auth().setCustomUserClaims(uid, { role: member.role });
+    await admin.auth().setCustomUserClaims(uid, {
+      role: legacyRoleFor(roles),
+      roles,
+    });
     return null;
   },
 );
@@ -169,9 +184,17 @@ export const updateMember = onDocumentUpdated(
       await admin.auth().updateUser(uid, { email: memberAfter.email });
     }
 
-    // if role updated, update customClaims for role
-    if (memberBefore.role !== memberAfter.role) {
-      await admin.auth().setCustomUserClaims(uid, { role: memberAfter.role });
+    // Claims mirror the member's effective roles. assignMemberRoles also sets
+    // them directly; this repairs claims if that step failed. Backfilling
+    // `roles` from the legacy field leaves effective roles unchanged, so it
+    // does not touch claims.
+    const rolesBefore = memberRoles(snapshots.before.data());
+    const rolesAfter = memberRoles(snapshots.after.data());
+    if (!sameRoles(rolesBefore, rolesAfter)) {
+      await admin.auth().setCustomUserClaims(uid, {
+        role: legacyRoleFor(rolesAfter),
+        roles: rolesAfter,
+      });
     }
 
     return null;

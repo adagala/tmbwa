@@ -4,6 +4,7 @@ import {
   Gender as SharedGender,
   MemberFormBase,
   MonthlyStats as SharedMonthlyStats,
+  Role,
   PaymentStatus as SharedPaymentStatus,
 } from 'tmbwa-shared';
 
@@ -20,6 +21,7 @@ export interface Member extends MemberFormBase {
   };
   balance: number | FieldValue;
   contributionBalance: number | FieldValue;
+  roles?: Role[];
 }
 
 export type MemberWithId = Member & { member_id: string };
