@@ -245,6 +245,14 @@ export const setInitialBeneficiaries = onCall(async (request) => {
   const requestId = requireRequestId(data);
   const memberId = typeof data.memberId === 'string' ? data.memberId.trim() : '';
   if (!memberId) throw new HttpsError('invalid-argument', 'memberId is required.');
+  // No one approves their own beneficiaries: administrators submit theirs as
+  // members, for another administrator to review.
+  if (memberId === actorId) {
+    throw new HttpsError(
+      'permission-denied',
+      'Administrators cannot set their own beneficiaries. Submit them as a member for another administrator to approve.',
+    );
+  }
   const beneficiaries = parseInput(beneficiaryListSchema, data.beneficiaries);
 
   return db().runTransaction(async (transaction) => {

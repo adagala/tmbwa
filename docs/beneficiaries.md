@@ -11,6 +11,7 @@ Members record up to three beneficiaries. Every change a member makes is a reque
 - Only an approved yearly change uses the allowance. Rejected and cancelled requests do not, and neither do approved changes made with a reason.
 - A member can have at most one pending request.
 - After the first entry, administrators cannot edit beneficiaries directly. Changes come from member requests.
+- No one approves their own beneficiaries. Administrators cannot enter or review their own; another administrator must.
 - Inactive members cannot see their beneficiaries.
 
 ## Data model
@@ -37,7 +38,7 @@ All commands are callable Cloud Functions and take a client-generated `requestId
 | --- | --- | --- |
 | `submitBeneficiaryChange({ requestId, beneficiaries, reason? })` | Active member, for themselves | Creates a `pending` request. The server sets the type: `initial` when the member has no approved list, `annual` when this calendar year's change is unused, otherwise `exceptional`, which requires `reason` (`{ category, text? }`). Refused while another request is pending. |
 | `cancelBeneficiaryChange({ requestId })` | Active member who owns the request | Marks a `pending` request `cancelled`. The annual allowance is not used. |
-| `setInitialBeneficiaries({ requestId, memberId, beneficiaries })` | Administrator | Records a member's first beneficiaries directly, as an `initial` request that is already `approved`. Refused when the member already has beneficiaries or a pending request. |
+| `setInitialBeneficiaries({ requestId, memberId, beneficiaries })` | Administrator | Records a member's first beneficiaries directly, as an `initial` request that is already `approved`. Refused when the member already has beneficiaries or a pending request, and for the administrator's own record: administrators submit their own beneficiaries as members, for another administrator to approve. |
 
 Approving and rejecting requests is covered by #67.
 
