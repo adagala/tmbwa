@@ -38,3 +38,5 @@ export const generateContributionReminders = Notifications.generateContributionR
 export const submitBeneficiaryChange = Beneficiaries.submitBeneficiaryChange;
 export const cancelBeneficiaryChange = Beneficiaries.cancelBeneficiaryChange;
 export const setInitialBeneficiaries = Beneficiaries.setInitialBeneficiaries;
+export const approveBeneficiaryChange = Beneficiaries.approveBeneficiaryChange;
+export const rejectBeneficiaryChange = Beneficiaries.rejectBeneficiaryChange;

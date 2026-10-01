@@ -17,5 +17,7 @@ Beneficiary commands write audit events in the same transaction as the change. T
 | `beneficiary.change_requested` | Member | `type`, `beneficiaryCount`, `baseVersion`, `reasonCategory` (when a reason is given) |
 | `beneficiary.change_cancelled` | Member | `type` |
 | `beneficiary.initial_set` | Administrator | `beneficiaryCount`, `version` |
+| `beneficiary.change_approved` | Administrator | `type`, `beneficiaryCount`, `version`, `annualChangeYear` (annual requests only) |
+| `beneficiary.change_rejected` | Administrator | `type`, `beneficiaryCount` |
 
 Beneficiary events record IDs and counts only. They never contain beneficiary names, dates of birth, contact details or ID numbers.

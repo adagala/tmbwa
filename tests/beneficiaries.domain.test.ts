@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   classifyBeneficiaryRequest,
   isValidBeneficiaryRequestId,
+  lastAnnualChangeYearAfterApproval,
   nairobiYear,
 } from '../functions/src/beneficiaries/domain';
 
@@ -54,5 +55,20 @@ describe('beneficiary request classification', () => {
     for (const value of ['short', 'has/slash-in-it', '../../members/x', 'a'.repeat(129), 42, undefined]) {
       expect(isValidBeneficiaryRequestId(value)).toBe(false);
     }
+  });
+});
+
+describe('annual allowance after approval', () => {
+  it('uses the allowance of the year an annual request was submitted', () => {
+    expect(lastAnnualChangeYearAfterApproval('annual', null, 2026)).toBe(2026);
+    expect(lastAnnualChangeYearAfterApproval('annual', 2025, 2026)).toBe(2026);
+    // Never moves backwards.
+    expect(lastAnnualChangeYearAfterApproval('annual', 2027, 2026)).toBe(2027);
+  });
+
+  it('leaves the allowance untouched for initial and exceptional changes', () => {
+    expect(lastAnnualChangeYearAfterApproval('initial', null, 2026)).toBeNull();
+    expect(lastAnnualChangeYearAfterApproval('exceptional', 2026, 2026)).toBe(2026);
+    expect(lastAnnualChangeYearAfterApproval('exceptional', 2025, 2026)).toBe(2025);
   });
 });

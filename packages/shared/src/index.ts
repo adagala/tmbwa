@@ -360,6 +360,8 @@ export const notificationEventDocumentSchema = z.object({
     'contributions.created',
     'contribution.due',
     'contribution.arrears',
+    'beneficiary.change_approved',
+    'beneficiary.change_rejected',
   ]),
   memberId: z.string(),
   receiptNumber: z.string().optional(),
