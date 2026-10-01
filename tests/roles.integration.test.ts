@@ -250,7 +250,8 @@ describe('assignMemberRoles', () => {
       (member.roles as string[]).includes('super_admin'),
     );
     expect(remaining).toHaveLength(1);
-  });
+    // Contending transactions back off and retry in the emulator.
+  }, 20_000);
 
   it('makes a revoked role stop working immediately', async () => {
     await assign({ roles: ['treasurer'] });
@@ -312,18 +313,19 @@ describe('assignMemberRoles Auth side effects', () => {
     });
   });
 
+  // Contending transactions back off and retry in the emulator, so this takes
+  // a few seconds; the interleaving itself is covered deterministically above.
   it('leaves claims matching the record after concurrent assignments', async () => {
     await Promise.allSettled([
       assign({ roles: ['treasurer'] }),
       assign({ roles: ['auditor'] }),
-      assign({ roles: ['registrar'] }),
     ]);
     const finalRoles = (await memberDoc()).roles;
     expect(authCalls.setCustomUserClaims).toHaveBeenLastCalledWith(TARGET, {
       role: 'member',
       roles: finalRoles,
     });
-  });
+  }, 20_000);
 });
 
 describe('member role triggers', () => {
