@@ -6,7 +6,8 @@ import {
   assertSucceeds,
   initializeTestEnvironment,
 } from '@firebase/rules-unit-testing';
-import { collection, collectionGroup, deleteDoc, deleteField, doc, getDoc, getDocs, orderBy, query, setDoc, updateDoc, where } from 'firebase/firestore';
+import { Firestore, collection, collectionGroup, deleteDoc, deleteField, doc, getDoc, getDocs, orderBy, query, setDoc, updateDoc, where } from 'firebase/firestore';
+import { legacyRoleFor, normalizeRoles, roleHasPermission, roles, type Permission, type Role } from 'tmbwa-shared';
 
 const projectId = 'demo-tmbwa';
 let testEnv: RulesTestEnvironment;
@@ -313,5 +314,127 @@ describe('Firestore authorization', () => {
       await assertFails(getDoc(doc(db, 'members/member-a/payment_locks/stk_top_up')));
       await assertFails(setDoc(doc(db, 'members/member-a/payment_locks/stk_top_up'), { status: 'failed' }));
     }
+  });
+});
+
+describe('role-based access', () => {
+  const OFFICER = 'officer';
+  const past = new Date('2020-03-15T09:00:00Z');
+
+  async function seedOfficer(roles: Role[], status = 'active') {
+    await seed();
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      const db = context.firestore();
+      const held = normalizeRoles(roles);
+      await setDoc(doc(db, `members/${OFFICER}`), {
+        firstname: 'Olive', lastname: 'Officer', email: 'officer@example.test',
+        role: legacyRoleFor(held), roles: held, status, balance: 0, contributionBalance: 0,
+      });
+      await setDoc(doc(db, 'members/member-a/beneficiaries/beneficiary-1'), { firstname: 'Baraka' });
+      await setDoc(doc(db, 'members/member-a/beneficiary_state/current'), { version: 1 });
+      await setDoc(doc(db, 'beneficiary_change_requests/request-a'), { memberId: 'member-a', status: 'pending' });
+      await setDoc(doc(db, 'stats/--stats--'), { totalMembers: 2 });
+      await setDoc(doc(db, 'audit_events/event-1'), { action: 'payment.reversed', memberId: 'member-a' });
+      await setDoc(doc(db, 'kcb_payment_notifications/R-1'), { status: 'unresolved', amount: 500 });
+      await setDoc(doc(db, 'kcb_stk_requests/stk-1'), { memberId: 'member-a', status: 'pending' });
+      await setDoc(doc(db, 'notification_events/event-1'), { memberId: 'member-a' });
+      await setDoc(doc(db, 'notification_deliveries/delivery-1'), { memberId: 'member-a' });
+      await setDoc(doc(db, 'contribution_rates/rate-1'), { amount: 500, effectiveFrom: '2026-01-01' });
+    });
+  }
+
+  const officerDb = (roles: Role[]) => {
+    const held = normalizeRoles(roles);
+    return testEnv.authenticatedContext(OFFICER, { role: legacyRoleFor(held), roles: held }).firestore();
+  };
+
+  // Every client access an officer might attempt, with the permission that governs it.
+  const checks: [string, Permission, (db: Firestore) => Promise<unknown>][] = [
+    ['read a member', 'members.read', (db) => getDoc(doc(db, 'members/member-a'))],
+    ['list members', 'members.read', (db) => getDocs(collection(db, 'members'))],
+    ['edit member details', 'members.write', (db) => updateDoc(doc(db, 'members/member-a'), { firstname: 'Alicia' })],
+    ['add a member', 'members.write', (db) => setDoc(doc(db, 'members/new-member'), { role: 'member', datejoined: past })],
+    ['read contributions', 'payments.read', (db) => getDocs(collection(db, 'members/member-a/contributions'))],
+    ['read payments', 'payments.read', (db) => getDocs(collection(db, 'members/member-a/payments'))],
+    ['query all contributions', 'payments.read', (db) => getDocs(query(collectionGroup(db, 'contributions'), orderBy('month')))],
+    ['query all payments', 'payments.read', (db) => getDocs(query(collectionGroup(db, 'payments'), orderBy('paymentdate', 'desc')))],
+    ['read KCB payments', 'payments.read', (db) => getDocs(collection(db, 'kcb_payment_notifications'))],
+    ['read STK requests', 'payments.read', (db) => getDoc(doc(db, 'kcb_stk_requests/stk-1'))],
+    ['read contribution rates', 'payments.read', (db) => getDocs(collection(db, 'contribution_rates'))],
+    ['read monthly statistics', 'reports.read', (db) => getDoc(doc(db, 'monthly_stats/2026-08-01'))],
+    ['read statistics', 'reports.read', (db) => getDoc(doc(db, 'stats/--stats--'))],
+    ['read the audit log', 'audit.read', (db) => getDocs(collection(db, 'audit_events'))],
+    ['read beneficiaries', 'beneficiaries.read', (db) => getDocs(collection(db, 'members/member-a/beneficiaries'))],
+    ['read beneficiary state', 'beneficiaries.read', (db) => getDoc(doc(db, 'members/member-a/beneficiary_state/current'))],
+    ['list beneficiary requests', 'beneficiaries.read', (db) => getDocs(collection(db, 'beneficiary_change_requests'))],
+    ['read notification deliveries', 'notifications.retry', (db) => getDocs(collection(db, 'notification_deliveries'))],
+    ['read notification events', 'notifications.retry', (db) => getDoc(doc(db, 'notification_events/event-1'))],
+    ['read member notifications', 'notifications.retry', (db) => getDocs(collection(db, 'members/member-a/notifications'))],
+    ['set a contribution rate', 'rates.manage', (db) => setDoc(doc(db, 'contribution_rates/rate-2'), { amount: 600, effectiveFrom: '2027-01-01' })],
+  ];
+
+  const officerRoles = roles.filter((role) => role !== 'member');
+  const cases = officerRoles.flatMap((role) =>
+    checks.map(([label, permission, attempt]) => ({
+      role,
+      label,
+      attempt,
+      allowed: roleHasPermission([role], permission),
+    })),
+  );
+
+  it.each(cases)('$role: $label → allowed $allowed', async ({ role, attempt, allowed }) => {
+    await seedOfficer([role]);
+    const result = attempt(officerDb([role]));
+    await (allowed ? assertSucceeds(result) : assertFails(result));
+  });
+
+  it('never lets an auditor read beneficiary personal data', async () => {
+    await seedOfficer(['auditor']);
+    const db = officerDb(['auditor']);
+    await assertFails(getDocs(collection(db, 'members/member-a/beneficiaries')));
+    await assertFails(getDoc(doc(db, 'members/member-a/beneficiaries/beneficiary-1')));
+    await assertFails(getDoc(doc(db, 'members/member-a/beneficiary_state/current')));
+    await assertFails(getDoc(doc(db, 'beneficiary_change_requests/request-a')));
+    await assertFails(getDocs(collection(db, 'beneficiary_change_requests')));
+    await assertFails(getDocs(query(collection(db, 'beneficiary_change_requests'), where('memberId', '==', 'member-a'))));
+  });
+
+  it('lets a registrar who is also a welfare officer manage members and beneficiaries but nothing financial', async () => {
+    const both: Role[] = ['registrar', 'welfare_officer'];
+    await seedOfficer(both);
+    const db = officerDb(both);
+    await assertSucceeds(updateDoc(doc(db, 'members/member-a'), { firstname: 'Alicia' }));
+    await assertSucceeds(getDocs(collection(db, 'members/member-a/beneficiaries')));
+    await assertSucceeds(getDocs(collection(db, 'beneficiary_change_requests')));
+    await assertFails(getDocs(collection(db, 'members/member-a/payments')));
+    await assertFails(getDocs(collection(db, 'audit_events')));
+    await assertFails(getDoc(doc(db, 'monthly_stats/2026-08-01')));
+  });
+
+  it('requires the token and the member record to agree', async () => {
+    // The record now says auditor; the token still claims treasurer. Only a
+    // role both grant counts, so the officer has no officer access at all.
+    await seedOfficer(['auditor']);
+    const stale = officerDb(['treasurer']);
+    await assertFails(getDocs(collection(stale, 'members/member-a/payments')));
+    await assertFails(getDocs(collection(stale, 'audit_events')));
+    await assertFails(getDocs(collection(stale, 'kcb_payment_notifications')));
+    await assertFails(getDocs(collection(stale, 'members')));
+  });
+
+  it('denies a suspended officer', async () => {
+    await seedOfficer(['treasurer'], 'suspended');
+    const db = officerDb(['treasurer']);
+    await assertFails(getDocs(collection(db, 'members')));
+    await assertFails(getDocs(collection(db, 'members/member-a/payments')));
+  });
+
+  it('keeps legacy administrators working until the fallback is removed', async () => {
+    await seed();
+    const db = testEnv.authenticatedContext('admin', { role: 'administrator' }).firestore();
+    await assertSucceeds(getDocs(collection(db, 'members/member-a/beneficiaries')));
+    await assertSucceeds(getDocs(collection(db, 'audit_events')));
+    await assertSucceeds(getDocs(collection(db, 'notification_deliveries')));
   });
 });

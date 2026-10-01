@@ -11,6 +11,7 @@ import {
   RiExchange2Line,
   RiHeartsLine,
 } from '@remixicon/react';
+import { pagePermissions } from '@/lib/access';
 
 export const siteConfig = {
   name: 'Dashboard',
@@ -35,19 +36,19 @@ export const navigation = [
     name: 'Overview',
     href: siteConfig.baseLinks.overview,
     icon: RiHome2Line,
-    administratorOnly: true,
+    permission: pagePermissions.overview,
   },
   {
     name: 'Members',
     href: siteConfig.baseLinks.members,
     icon: RiGroupLine,
-    administratorOnly: true,
+    permission: pagePermissions.members,
   },
   {
     name: 'Contributions',
     href: siteConfig.baseLinks.contributions,
     icon: RiWalletLine,
-    administratorOnly: true,
+    permission: pagePermissions.contributions,
   },
   { name: 'Profile', href: siteConfig.baseLinks.profile, icon: RiUserLine },
   {
@@ -59,25 +60,25 @@ export const navigation = [
     name: 'Report',
     href: '/report',
     icon: RiFileTextLine,
-    administratorOnly: true,
+    permission: pagePermissions.report,
   },
   {
     name: 'Audit trail',
     href: '/audit',
     icon: RiHistoryLine,
-    administratorOnly: true,
+    permission: pagePermissions.audit,
   },
   {
     name: 'KCB Reconciliation',
     href: '/kcb-reconciliation',
     icon: RiExchange2Line,
-    administratorOnly: true,
+    permission: pagePermissions.kcbReconciliation,
   },
   {
     name: 'Beneficiary requests',
     href: '/beneficiary-requests',
     icon: RiHeartsLine,
-    administratorOnly: true,
+    permission: pagePermissions.beneficiaryRequests,
     showPendingBeneficiaryCount: true,
   },
   {

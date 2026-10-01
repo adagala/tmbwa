@@ -1,4 +1,6 @@
 import { Label } from '@/components/Label';
+import { rolesFromClaims } from 'tmbwa-shared';
+import { landingPath } from '@/lib/access';
 import { Input } from '@/components/Input';
 import { Button } from '@/components/Button';
 import { useState } from 'react';
@@ -32,11 +34,9 @@ export default function LogIn() {
       .then(async (credential) => {
         const token = await credential.user.getIdTokenResult();
         const requestedPath = getPostSignInPath(location.state);
-        navigate(
-          requestedPath ??
-            (token.claims.role === 'administrator' ? '/overview' : '/profile'),
-          { replace: true },
-        );
+        navigate(requestedPath ?? landingPath(rolesFromClaims(token.claims)), {
+          replace: true,
+        });
       })
       .catch(() => {
         toast({

@@ -104,18 +104,29 @@ export function MemberAccount({
   member: Member;
   ownProfile?: boolean;
 }) {
-  const { role } = useUser();
+  const { can } = useUser();
+  // Officers see only what their roles let them read; the rules refuse the rest.
+  const canSeeFinance = ownProfile || can('payments.read');
+  const canSeeBeneficiaries = ownProfile || can('beneficiaries.read');
+  const availableTabs = memberProfileTabs.filter(
+    (tab) =>
+      (tab !== 'beneficiaries' || canSeeBeneficiaries) &&
+      (tab === 'details' || tab === 'beneficiaries' || canSeeFinance),
+  );
   const [searchParams, setSearchParams] = useSearchParams();
   const [contributions, setContributions] = useState<Contribution[]>([]);
   const [contributionsLoaded, setContributionsLoaded] = useState(false);
   const [payments, setPayments] = useState<Payment[]>([]);
   const tabParam = searchParams.get('tab');
-  const currentTab: MemberProfileTab = isMemberProfileTab(tabParam)
-    ? tabParam
-    : 'contributions';
+  const currentTab: MemberProfileTab =
+    isMemberProfileTab(tabParam) && availableTabs.includes(tabParam)
+      ? tabParam
+      : canSeeFinance
+        ? 'contributions'
+        : 'details';
 
   useEffect(() => {
-    if (!member.member_id) return;
+    if (!member.member_id || !canSeeFinance) return;
     setContributionsLoaded(false);
     const unsubscribeContributions = getMemberContributions(
       (contributions) => {
@@ -131,7 +142,7 @@ export function MemberAccount({
       unsubscribeContributions();
       unsubscribePayments();
     };
-  }, [member.member_id]);
+  }, [member.member_id, canSeeFinance]);
 
   const updateTab = (tab: string) => {
     const next = new URLSearchParams(searchParams);
@@ -160,7 +171,7 @@ export function MemberAccount({
       : undefined;
   // The backend independently rejects inactive members and other members.
   const canTopUp =
-    member.status === 'active' && (ownProfile || role === 'administrator');
+    member.status === 'active' && (ownProfile || can('kcb.reconcile'));
 
   return (
     <div className="flex flex-col gap-6">
@@ -176,9 +187,11 @@ export function MemberAccount({
             ) : null
           }
           detail={
-            contributionsLoaded
-              ? arrearsSummary(contributions)
-              : 'Checking contributions…'
+            !canSeeFinance
+              ? undefined
+              : contributionsLoaded
+                ? arrearsSummary(contributions)
+                : 'Checking contributions…'
           }
         >
           <span className={balanceColor}>{formatKes(balance)}</span>
@@ -204,7 +217,7 @@ export function MemberAccount({
             >
               {member.isFeesPaid ? 'Paid' : 'Not paid'}
             </Badge>
-            {role === 'administrator' ? (
+            {can('members.write') ? (
               <Tooltip showArrow={false} content="Update">
                 <DialogMembershipFeeUpdate member={member} />
               </Tooltip>
@@ -219,22 +232,30 @@ export function MemberAccount({
             <RiUserLine className="-ml-1 size-4" aria-hidden="true" />
             Details
           </TabsTrigger>
-          <TabsTrigger value="contributions" className="inline-flex gap-2">
-            <RiFileList3Line className="-ml-1 size-4" aria-hidden="true" />
-            Contributions
-          </TabsTrigger>
-          <TabsTrigger value="transactions" className="inline-flex gap-2">
-            <RiAccountBoxLine className="-ml-1 size-4" aria-hidden="true" />
-            Transactions
-          </TabsTrigger>
-          <TabsTrigger value="statement" className="inline-flex gap-2">
-            <RiPrinterLine className="-ml-1 size-4" aria-hidden="true" />
-            Statement
-          </TabsTrigger>
-          <TabsTrigger value="beneficiaries" className="inline-flex gap-2">
-            <RiHeartsLine className="-ml-1 size-4" aria-hidden="true" />
-            Beneficiaries
-          </TabsTrigger>
+          {canSeeFinance ? (
+            <TabsTrigger value="contributions" className="inline-flex gap-2">
+              <RiFileList3Line className="-ml-1 size-4" aria-hidden="true" />
+              Contributions
+            </TabsTrigger>
+          ) : null}
+          {canSeeFinance ? (
+            <TabsTrigger value="transactions" className="inline-flex gap-2">
+              <RiAccountBoxLine className="-ml-1 size-4" aria-hidden="true" />
+              Transactions
+            </TabsTrigger>
+          ) : null}
+          {canSeeFinance ? (
+            <TabsTrigger value="statement" className="inline-flex gap-2">
+              <RiPrinterLine className="-ml-1 size-4" aria-hidden="true" />
+              Statement
+            </TabsTrigger>
+          ) : null}
+          {canSeeBeneficiaries ? (
+            <TabsTrigger value="beneficiaries" className="inline-flex gap-2">
+              <RiHeartsLine className="-ml-1 size-4" aria-hidden="true" />
+              Beneficiaries
+            </TabsTrigger>
+          ) : null}
         </TabsList>
         <TabsContent value="details">
           <Profile
@@ -243,27 +264,35 @@ export function MemberAccount({
             showAccountSummary={false}
           />
         </TabsContent>
-        <TabsContent value="contributions">
-          <Contributions
-            member={member}
-            contributions={contributions}
-            missingMonths={missingMonths}
-            joinedAt={joined}
-          />
-        </TabsContent>
-        <TabsContent value="transactions">
-          <Transactions member={member} payments={payments} />
-        </TabsContent>
-        <TabsContent value="statement" className="mt-6">
-          <StatementPrint
-            member={member}
-            contributions={contributions}
-            payments={payments}
-          />
-        </TabsContent>
-        <TabsContent value="beneficiaries">
-          <Beneficiaries member={member} ownProfile={ownProfile} />
-        </TabsContent>
+        {canSeeFinance ? (
+          <TabsContent value="contributions">
+            <Contributions
+              member={member}
+              contributions={contributions}
+              missingMonths={missingMonths}
+              joinedAt={joined}
+            />
+          </TabsContent>
+        ) : null}
+        {canSeeFinance ? (
+          <TabsContent value="transactions">
+            <Transactions member={member} payments={payments} />
+          </TabsContent>
+        ) : null}
+        {canSeeFinance ? (
+          <TabsContent value="statement" className="mt-6">
+            <StatementPrint
+              member={member}
+              contributions={contributions}
+              payments={payments}
+            />
+          </TabsContent>
+        ) : null}
+        {canSeeBeneficiaries ? (
+          <TabsContent value="beneficiaries">
+            <Beneficiaries member={member} ownProfile={ownProfile} />
+          </TabsContent>
+        ) : null}
       </Tabs>
     </div>
   );

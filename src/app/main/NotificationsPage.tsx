@@ -83,7 +83,9 @@ const deliveryBadgeVariant = (status: string) => {
 };
 
 export default function NotificationsPage() {
-  const { user, role } = useUser();
+  const { user, can } = useUser();
+  // Delivery monitoring is for officers who can retry deliveries.
+  const canMonitorDeliveries = can('notifications.retry');
   const [notifications, setNotifications] = useState<MemberNotification[]>([]);
   const [deliveries, setDeliveries] = useState<NotificationDelivery[]>([]);
   const [notificationPage, setNotificationPage] = useState(0);
@@ -102,16 +104,15 @@ export default function NotificationsPage() {
       user.uid,
       setEnabled,
     );
-    const unsubscribeDeliveries =
-      role === 'administrator'
-        ? subscribeToNotificationDeliveries(setDeliveries)
-        : undefined;
+    const unsubscribeDeliveries = canMonitorDeliveries
+      ? subscribeToNotificationDeliveries(setDeliveries)
+      : undefined;
     return () => {
       unsubscribeNotifications();
       unsubscribePreference();
       unsubscribeDeliveries?.();
     };
-  }, [role, user]);
+  }, [canMonitorDeliveries, user]);
 
   useEffect(() => {
     const lastPage = Math.max(
@@ -410,7 +411,7 @@ export default function NotificationsPage() {
           {enabled ? 'Turn off' : 'Turn on'}
         </Button>
       </Card>
-      {role === 'administrator' ? (
+      {canMonitorDeliveries ? (
         <Tabs defaultValue="inbox">
           <TabsList
             variant="solid"

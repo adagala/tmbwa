@@ -94,7 +94,8 @@ function MemberLink({ id }: { id: string }) {
 }
 
 export default function AuditPage() {
-  const { role } = useUser();
+  const { role, can } = useUser();
+  const allowed = can('audit.read');
   const [rows, setRows] = useState<AuditRow[]>([]);
   const [page, setPage] = useState(0);
   const [pageStarts, setPageStarts] = useState<
@@ -105,7 +106,7 @@ export default function AuditPage() {
   const [error, setError] = useState<string>();
 
   useEffect(() => {
-    if (role !== 'administrator') return;
+    if (!allowed) return;
 
     setIsLoading(true);
     setError(undefined);
@@ -137,7 +138,7 @@ export default function AuditPage() {
         setIsLoading(false);
       },
     );
-  }, [page, pageStarts, role]);
+  }, [page, pageStarts, allowed]);
 
   const showNextPage = () => {
     const nextPageStart = rows[rows.length - 1]?.snapshot;
@@ -147,8 +148,7 @@ export default function AuditPage() {
     setPage((current) => current + 1);
   };
 
-  if (role && role !== 'administrator')
-    return <Navigate to="/profile" replace />;
+  if (role && !allowed) return <Navigate to="/profile" replace />;
 
   return (
     <div className="flex flex-col gap-6">

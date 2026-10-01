@@ -12,7 +12,7 @@ import useUser from '@/hooks/useUser';
 
 export function Sidebar() {
   const { pathname } = useLocation();
-  const { role } = useUser();
+  const { can } = useUser();
   const isActive = (itemHref: string) => {
     if (itemHref === siteConfig.baseLinks.settings) {
       return pathname.startsWith('/settings');
@@ -32,8 +32,7 @@ export function Sidebar() {
             <ul role="list" className="space-y-0.5">
               {navigation
                 .filter(
-                  (item) =>
-                    !('administratorOnly' in item) || role === 'administrator',
+                  (item) => !('permission' in item) || can(item.permission),
                 )
                 .map((item) => (
                   <li key={item.name}>

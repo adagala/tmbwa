@@ -21,7 +21,7 @@ export function Profile({
   ownProile: boolean;
   showAccountSummary?: boolean;
 }) {
-  const { role } = useUser();
+  const { can } = useUser();
   const accountState =
     member.balance === 0
       ? 'neutral'
@@ -77,7 +77,7 @@ export function Profile({
             {member.win}
           </dd>
         </div>
-        {role === 'administrator' || ownProile ? (
+        {can('members.read') || ownProile ? (
           <>
             <div className="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-0">
               <dt className="text-sm font-medium leading-6 text-gray-900 dark:text-gray-100">
@@ -107,7 +107,7 @@ export function Profile({
                 <Badge variant={member.isFeesPaid ? 'success' : 'error'}>
                   {member.isFeesPaid ? 'Paid' : 'Not paid'}
                 </Badge>
-                {role === 'administrator' ? (
+                {can('members.write') ? (
                   <Tooltip showArrow={false} content="Update">
                     <DialogMembershipFeeUpdate member={member} />
                   </Tooltip>

@@ -6,15 +6,49 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // The claim alone is not enough: a revoked or suspended administrator's
-    // token stays valid until it expires, so the member record must agree.
-    function isAdministrator() {
-      return signedIn() && request.auth.token.role == 'administrator' &&
-        administratorRecord(get(/databases/$(database)/documents/members/$(request.auth.uid)).data);
+    // Mirrors ROLE_PERMISSIONS in packages/shared/src/authorization.ts for
+    // the permissions that govern reads; tests/firestore.rules.test.ts checks
+    // every role against that map.
+    function permissionRoles() {
+      return {
+        'members.read': ['super_admin', 'treasurer', 'registrar', 'welfare_officer', 'auditor'],
+        'members.write': ['super_admin', 'registrar'],
+        'beneficiaries.read': ['super_admin', 'welfare_officer'],
+        'payments.read': ['super_admin', 'treasurer', 'auditor'],
+        'kcb.reconcile': ['super_admin', 'treasurer'],
+        'audit.read': ['super_admin', 'treasurer', 'auditor'],
+        'reports.read': ['super_admin', 'treasurer', 'auditor'],
+        'rates.manage': ['super_admin'],
+        'notifications.retry': ['super_admin']
+      };
     }
 
-    function administratorRecord(actor) {
-      return actor.get('role', '') == 'administrator' && actor.get('status', '') == 'active';
+    // Roles claimed by the token. The legacy administrator claim counts as
+    // super_admin until it is retired.
+    function claimedRoles() {
+      return request.auth.token.get('roles', []).concat(
+        request.auth.token.get('role', '') == 'administrator' ? ['super_admin'] : []);
+    }
+
+    // Roles held by the member record; records that predate `roles` carry
+    // only the legacy role.
+    function recordRoles(record) {
+      return record.get('roles',
+        record.get('role', '') == 'administrator' ? ['member', 'super_admin'] : ['member']);
+    }
+
+    // A role counts only when both the token and an active member record
+    // grant it: a revoked or suspended officer's token stays valid until it
+    // expires, the record does not. Same rule as requirePermission.
+    function grantedRoles() {
+      let record = get(/databases/$(database)/documents/members/$(request.auth.uid)).data;
+      return record.get('status', '') == 'active'
+        ? claimedRoles().toSet().intersection(recordRoles(record).toSet())
+        : [].toSet();
+    }
+
+    function can(permission) {
+      return signedIn() && grantedRoles().hasAny(permissionRoles()[permission]);
     }
 
     function isOwner(memberId) {
@@ -64,26 +98,26 @@ service cloud.firestore {
     }
 
     match /members/{memberId} {
-      allow get: if isAdministrator() || isActiveOwner(memberId);
-      allow list: if isAdministrator();
-      allow create: if isAdministrator() && validDateJoinedValue() && newMemberRoleOnly();
+      allow get: if can('members.read') || isActiveOwner(memberId);
+      allow list: if can('members.read');
+      allow create: if can('members.write') && validDateJoinedValue() && newMemberRoleOnly();
       allow delete: if false;
-      allow update: if (isAdministrator() && administratorMemberFieldsOnly() &&
+      allow update: if (can('members.write') && administratorMemberFieldsOnly() &&
           validDateJoinedOnUpdate()) ||
         (isActiveOwner(memberId) && ownerProfileFieldsOnly());
 
       match /contributions/{contributionId} {
-        allow read: if isAdministrator() || isActiveOwner(memberId);
+        allow read: if can('payments.read') || isActiveOwner(memberId);
         allow write: if false;
       }
 
       match /payments/{paymentId} {
-        allow read: if isAdministrator() || isActiveOwner(memberId);
+        allow read: if can('payments.read') || isActiveOwner(memberId);
         allow write: if false;
       }
 
       match /notification_preferences/{preferenceId} {
-        allow read: if isAdministrator() || isActiveOwner(memberId);
+        allow read: if can('notifications.retry') || isActiveOwner(memberId);
         allow create, update: if isActiveOwner(memberId) &&
           request.resource.data.keys().hasOnly(['inAppEnabled', 'updatedAt']) &&
           request.resource.data.inAppEnabled is bool;
@@ -91,7 +125,7 @@ service cloud.firestore {
       }
 
       match /notifications/{notificationId} {
-        allow read: if isAdministrator() || isActiveOwner(memberId);
+        allow read: if can('notifications.retry') || isActiveOwner(memberId);
         allow update: if isActiveOwner(memberId) &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']) &&
           request.resource.data.read is bool;
@@ -99,40 +133,44 @@ service cloud.firestore {
       }
 
       // Beneficiary changes go through trusted Cloud Functions only.
+      // Beneficiaries hold third-party personal data: auditors and treasurers
+      // never read them.
       match /beneficiaries/{beneficiaryId} {
-        allow read: if isAdministrator() || isActiveOwner(memberId);
+        allow read: if can('beneficiaries.read') || isActiveOwner(memberId);
         allow write: if false;
       }
 
       match /beneficiary_state/{stateId} {
-        allow read: if isAdministrator() || isActiveOwner(memberId);
+        allow read: if can('beneficiaries.read') || isActiveOwner(memberId);
         allow write: if false;
       }
     }
 
     // Members must constrain list queries to their own memberId.
     match /beneficiary_change_requests/{requestId} {
-      allow read: if isAdministrator() ||
+      allow read: if can('beneficiaries.read') ||
         (resource.data.memberId == request.auth.uid &&
           isActiveOwner(request.auth.uid));
       allow write: if false;
     }
 
     match /{path=**}/contributions/{contributionId} {
-      allow read: if isAdministrator();
+      allow read: if can('payments.read');
     }
 
     match /{path=**}/payments/{paymentId} {
-      allow read: if isAdministrator();
+      allow read: if can('payments.read');
     }
 
     match /monthly_stats/{statId} {
-      allow read: if isAdministrator();
+      allow read: if can('reports.read');
       allow write: if false;
     }
 
+    // Maintained by Cloud Functions only.
     match /stats/{statId} {
-      allow read, write: if isAdministrator();
+      allow read: if can('reports.read');
+      allow write: if false;
     }
 
     match /financial_commands/{commandId} {
@@ -140,12 +178,12 @@ service cloud.firestore {
     }
 
     match /audit_events/{eventId} {
-      allow read: if isAdministrator();
+      allow read: if can('audit.read');
       allow write: if false;
     }
 
     match /kcb_payment_notifications/{notificationId} {
-      allow read: if isAdministrator();
+      allow read: if can('payments.read');
       allow write: if false;
     }
 
@@ -154,23 +192,23 @@ service cloud.firestore {
     }
 
     match /kcb_stk_requests/{requestId} {
-      allow read: if isAdministrator() || (signedIn() && resource.data.memberId == request.auth.uid);
+      allow read: if can('payments.read') || (signedIn() && resource.data.memberId == request.auth.uid);
       allow write: if false;
     }
 
     match /notification_events/{eventId} {
-      allow read: if isAdministrator();
+      allow read: if can('notifications.retry');
       allow write: if false;
     }
 
     match /notification_deliveries/{deliveryId} {
-      allow read: if isAdministrator();
+      allow read: if can('notifications.retry');
       allow write: if false;
     }
 
     match /contribution_rates/{rateId} {
-      allow read: if isAdministrator();
-      allow create: if isAdministrator() &&
+      allow read: if can('payments.read');
+      allow create: if can('rates.manage') &&
         request.resource.data.keys().hasOnly(['amount', 'effectiveFrom', 'updatedAt', 'updatedBy']) &&
         request.resource.data.amount is number && request.resource.data.amount > 0 &&
         request.resource.data.effectiveFrom is string &&

@@ -81,12 +81,16 @@ export const DialogContributionDetails = ({
   member?: Member;
   setOpen: React.Dispatch<React.SetStateAction<boolean>>;
 }) => {
-  const { role, user } = useUser();
+  const { user, can } = useUser();
   const { toast } = useToast();
   const [isRequestingStk, setIsRequestingStk] = React.useState(false);
   const [stkPhone, setStkPhone] = React.useState(member?.phonenumber ?? '');
   const isValidStkPhone = isKenyanMobileNumber(stkPhone);
-  const isAdministrator = role === 'administrator';
+  // No one manages their own contributions; the backend refuses it too.
+  const isOwnContribution = user?.uid === contribution.member_id;
+  const canManageContributions =
+    can('contributions.manage') && !isOwnContribution;
+  const canReversePayments = can('payments.reverse') && !isOwnContribution;
   const history = buildHistory(contribution);
   const reversedCorrectionIds = new Set(
     contribution.legacy_corrections
@@ -102,8 +106,7 @@ export const DialogContributionDetails = ({
   const hasBalanceDue = contribution.balance > 0;
   const canRequestStk =
     !!user &&
-    (isAdministrator ||
-      (role === 'member' && user.uid === contribution.member_id)) &&
+    (isOwnContribution || can('kcb.reconcile')) &&
     member?.status === 'active' &&
     hasBalanceDue &&
     contribution.paid !== ContributionStatusEnum.Enum.paid;
@@ -219,7 +222,7 @@ export const DialogContributionDetails = ({
             <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-50">
               History
             </h3>
-            {isAdministrator ? (
+            {canManageContributions ? (
               <DialogLegacyContributionCorrection contribution={contribution} />
             ) : null}
           </div>
@@ -249,7 +252,7 @@ export const DialogContributionDetails = ({
                             ? formatNairobiDate(event.date)
                             : 'Pending'}
                         </span>
-                        {isAdministrator ? (
+                        {canReversePayments ? (
                           <DialogDeleteContributionPayment
                             contribution={contribution}
                             payment={payment}
@@ -301,7 +304,7 @@ export const DialogContributionDetails = ({
                         ? ` · ${formatNairobiDate(event.date)}`
                         : null}
                     </p>
-                    {isAdministrator &&
+                    {canManageContributions &&
                     correction.type === 'correction' &&
                     !isReversed ? (
                       <DialogReverseLegacyCorrection
@@ -362,7 +365,7 @@ export const DialogContributionDetails = ({
             </div>
           ) : null}
           <div className="flex items-center justify-between gap-2">
-            {member && isAdministrator ? (
+            {member && canManageContributions ? (
               <DialogDeleteContribution
                 contribution={contribution}
                 member={member}

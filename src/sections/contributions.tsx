@@ -35,7 +35,10 @@ const Contributions = React.forwardRef<HTMLDivElement, ContributionsProps>(
     }: ContributionsProps,
     ref,
   ) => {
-    const { role } = useUser();
+    const { user, can } = useUser();
+    // No one adds contributions to their own account; the backend refuses it too.
+    const canManage =
+      can('contributions.manage') && user?.uid !== member.member_id;
     const [open, setOpen] = React.useState(false);
     const [contribution, setContribution] = React.useState<Contribution>();
     return (
@@ -45,7 +48,7 @@ const Contributions = React.forwardRef<HTMLDivElement, ContributionsProps>(
             <RiWalletLine className="size-5 shrink-0" aria-hidden="true" />
             Contribution History
           </div>
-          {role === 'administrator' && member.status === 'active' && (
+          {canManage && member.status === 'active' && (
             <DialogAddContribution
               member={member}
               triggerVariant={
@@ -57,7 +60,7 @@ const Contributions = React.forwardRef<HTMLDivElement, ContributionsProps>(
           )}
         </div>
         {missingMonths && missingMonths.length > 0 && joinedAt ? (
-          role === 'administrator' ? (
+          canManage ? (
             <MissingMonthsAdminNotice
               member={member}
               missingMonths={missingMonths}
@@ -69,7 +72,7 @@ const Contributions = React.forwardRef<HTMLDivElement, ContributionsProps>(
             />
           )
         ) : null}
-        {!joinedAt && role === 'administrator' ? (
+        {!joinedAt && canManage ? (
           <Callout
             className="mb-4"
             variant="neutral"

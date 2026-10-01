@@ -4,7 +4,7 @@ This guide explains how administrators can add funds for a member, reconcile KCB
 
 ## Before you begin
 
-- Sign in using an account with the TMBWA administrator role.
+- Sign in with an account that holds an officer role. Each role sees only its own screens; see [Manage member roles](#manage-member-roles).
 - Use a current web browser.
 - Amounts are shown in Kenya shillings (KES), and transaction times use East Africa Time.
 - Confirm the source records before performing any financial action. Do not use reconciliation to guess or rewrite financial history.
@@ -149,7 +149,17 @@ The change is recorded in the audit log with your reason. The member is signed o
 
 You cannot change your own roles; another super admin must do it. The last remaining super admin cannot be removed. Roles can be removed from inactive members but not granted to them.
 
-Until the administrator screens move to per-role access, only super admins can use them. Treasurers, registrars, welfare officers and auditors can already perform their actions through trusted commands, but the screens for those roles follow in a later release.
+Each role sees only the screens it needs:
+
+| Role | Screens |
+| --- | --- |
+| Super admin | Everything |
+| Treasurer | Overview, Members, Contributions, Report, Audit trail, KCB Reconciliation |
+| Registrar | Members (add and edit members, change status) |
+| Welfare officer | Members, Beneficiary requests |
+| Auditor | Overview, Members, Contributions, Report, Audit trail (read-only, no beneficiary details) |
+
+An officer with several roles sees the screens of all of them.
 
 ## View notifications and monitor delivery
 
