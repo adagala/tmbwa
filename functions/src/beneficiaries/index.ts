@@ -22,6 +22,7 @@ import {
   beneficiaryStateData,
   validateDocumentWrite,
 } from '../firestoreData';
+import { requirePermission } from '../authorization';
 
 type CommandData = Record<string, unknown>;
 type Auth = { uid: string; token: Record<string, unknown> } | undefined;
@@ -35,14 +36,6 @@ const beneficiariesRef = (memberId: string) => db().collection(`members/${member
 const requireSignedIn = (auth: Auth) => {
   if (!auth) throw new HttpsError('unauthenticated', 'Sign in is required.');
   return auth.uid;
-};
-
-const requireAdministrator = (auth: Auth) => {
-  const uid = requireSignedIn(auth);
-  if (auth?.token.role !== 'administrator') {
-    throw new HttpsError('permission-denied', 'Administrator access is required.');
-  }
-  return uid;
 };
 
 const requireRequestId = (data: CommandData) => {
@@ -87,12 +80,14 @@ export const writeBeneficiaryAuditEvent = (
   actorId: string,
   memberId: string,
   changes: Record<string, unknown>,
+  actorRoles?: string[],
 ) => {
   const path = `audit_events/${action.replace(/[._]/g, '-')}-${requestId}`;
   // Record IDs and counts only, never beneficiary personal details.
   transaction.create(db().doc(path), validateDocumentWrite(auditEventDocumentSchema, {
     requestId,
     actorId,
+    ...(actorRoles && { actorRoles }),
     action,
     memberId,
     targetId: requestId,
@@ -246,7 +241,7 @@ export const cancelBeneficiaryChange = onCall(async (request) => {
 // Administrators record a member's first beneficiaries directly, without the
 // approval step. Later changes must come from the member and be approved.
 export const setInitialBeneficiaries = onCall(async (request) => {
-  const actorId = requireAdministrator(request.auth);
+  const { actorId, actorRoles } = await requirePermission(request.auth, 'beneficiaries.review');
   const data = request.data as CommandData;
   const requestId = requireRequestId(data);
   const memberId = typeof data.memberId === 'string' ? data.memberId.trim() : '';
@@ -302,7 +297,7 @@ export const setInitialBeneficiaries = onCall(async (request) => {
     writeBeneficiaryAuditEvent(transaction, 'beneficiary.initial_set', requestId, actorId, memberId, {
       beneficiaryCount: beneficiaries.length,
       version: 1,
-    });
+    }, actorRoles);
     return { requestId, type: 'initial', status: 'approved', duplicate: false };
   });
 });
@@ -332,6 +327,7 @@ type Decision = 'approved' | 'rejected';
 // audit event and the member notification, or nothing at all.
 const reviewBeneficiaryChange = async (
   actorId: string,
+  actorRoles: string[],
   requestId: string,
   decision: Decision,
   note: string | undefined,
@@ -412,7 +408,7 @@ const reviewBeneficiaryChange = async (
       ...(decision === 'approved' && changeRequest.type === 'annual' && {
         annualChangeYear: nextState.lastAnnualChangeYear,
       }),
-    });
+    }, actorRoles);
     // A deleted member's request can still be rejected to close it, but there
     // is no one left to notify.
     if (memberExists) {
@@ -427,15 +423,15 @@ const reviewBeneficiaryChange = async (
   });
 
 export const approveBeneficiaryChange = onCall(async (request) => {
-  const actorId = requireAdministrator(request.auth);
+  const { actorId, actorRoles } = await requirePermission(request.auth, 'beneficiaries.review');
   const data = request.data as CommandData;
   const requestId = requireRequestId(data);
-  return reviewBeneficiaryChange(actorId, requestId, 'approved', reviewNote(data.reviewNote, false));
+  return reviewBeneficiaryChange(actorId, actorRoles, requestId, 'approved', reviewNote(data.reviewNote, false));
 });
 
 export const rejectBeneficiaryChange = onCall(async (request) => {
-  const actorId = requireAdministrator(request.auth);
+  const { actorId, actorRoles } = await requirePermission(request.auth, 'beneficiaries.review');
   const data = request.data as CommandData;
   const requestId = requireRequestId(data);
-  return reviewBeneficiaryChange(actorId, requestId, 'rejected', reviewNote(data.reviewNote, true));
+  return reviewBeneficiaryChange(actorId, actorRoles, requestId, 'rejected', reviewNote(data.reviewNote, true));
 });

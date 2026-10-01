@@ -1,6 +1,8 @@
 import { z } from 'zod';
 import { isMobilePhone } from 'validator';
 
+export * from './authorization';
+
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
@@ -397,6 +399,9 @@ export const memberNotificationDocumentSchema = z.object({
 export const auditEventDocumentSchema = z.object({
   requestId: z.string(),
   actorId: z.string(),
+  // Roles the actor held when the action was performed. Absent on system
+  // events and on events written before role-based permissions.
+  actorRoles: z.array(z.string()).optional(),
   action: z.string(),
   memberId: z.string(),
   targetId: z.string(),

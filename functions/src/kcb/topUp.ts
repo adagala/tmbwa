@@ -98,6 +98,8 @@ export const recordStkTopUp = (
     notificationExists: boolean;
     notificationReceivedAt?: unknown;
     actorId: string;
+    // Set when an officer acts; absent for system callbacks.
+    actorRoles?: string[];
     auditPath: string;
     auditRequestId: string;
     auditChanges?: Record<string, unknown>;
@@ -236,6 +238,7 @@ export const recordStkTopUp = (
       {
         requestId: args.auditRequestId,
         actorId: args.actorId,
+        ...(args.actorRoles && { actorRoles: args.actorRoles }),
         action: 'kcb_payment.top_up_reconciled',
         memberId: args.memberId,
         targetId: args.paymentId,
