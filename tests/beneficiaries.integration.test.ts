@@ -290,6 +290,13 @@ describe('setInitialBeneficiaries', () => {
     await expect(setInitial('request-000004')).rejects.toMatchObject({ code: 'failed-precondition' });
   });
 
+  it('refuses to let an administrator set their own beneficiaries', async () => {
+    await expect(setInitial(REQUEST, {}, { uid: MEMBER, token: { role: 'administrator' } }))
+      .rejects.toMatchObject({ code: 'permission-denied' });
+    expect(await approvedBeneficiaries()).toEqual([]);
+    expect(await requestDoc(REQUEST)).toBeUndefined();
+  });
+
   it('requires an administrator and an existing member', async () => {
     await expect(setInitial(REQUEST, {}, memberAuth())).rejects.toMatchObject({ code: 'permission-denied' });
     await expect(setInitial(REQUEST, { memberId: 'missing-member' })).rejects.toMatchObject({ code: 'not-found' });
