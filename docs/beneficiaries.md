@@ -41,7 +41,18 @@ All commands are callable Cloud Functions and take a client-generated `requestId
 | `approveBeneficiaryChange({ requestId, reviewNote? })` | Administrator | Replaces the approved beneficiaries with the request's list and increments `version`. An `annual` request uses the allowance of the Nairobi calendar year it was **submitted** in, so a December request approved in January leaves the new year's change free. Refused when the approved list changed after the request was made (`baseVersion` mismatch); reject it and ask the member to resubmit. |
 | `rejectBeneficiaryChange({ requestId, reviewNote })` | Administrator | Marks the request `rejected` with a required note (up to 500 characters). The approved list and the annual allowance are unchanged. |
 
-Approving or rejecting clears the member's pending request and sends them an in-app notification (`beneficiary.change_approved` or `beneficiary.change_rejected`). The notification text contains no beneficiary details or review note; the member reads the note in the app. Repeating the same decision returns `duplicate: true` and writes nothing; any other decision on a request that is no longer `pending` is refused, so two administrators acting at once produce exactly one decision.
+Approval is refused when the member's document no longer exists (for example after `deleteMemberSafely`); such a request can still be rejected to close it, without a notification. Approving or rejecting clears the member's pending request and sends them an in-app notification (`beneficiary.change_approved` or `beneficiary.change_rejected`). The notification text contains no beneficiary details or review note; the member reads the note in the app. Repeating the same decision returns `duplicate: true` and writes nothing; any other decision on a request that is no longer `pending` is refused, so two administrators acting at once produce exactly one decision.
+
+## Deployment
+
+Deploy in this order. The notification workers must run the shared schema and renderer that know the beneficiary event types before the review commands go live; older workers reject those events, so decisions would be recorded but members would not be notified.
+
+1. Firestore rules: `firebase deploy --only firestore:rules`.
+2. Notification workers: `firebase deploy --only functions:queueNotificationDeliveries,functions:processNotificationOutbox`.
+3. Member and initial-entry commands: `firebase deploy --only functions:submitBeneficiaryChange,functions:cancelBeneficiaryChange,functions:setInitialBeneficiaries`.
+4. Review commands: `firebase deploy --only functions:approveBeneficiaryChange,functions:rejectBeneficiaryChange`.
+
+After step 4, approve or reject a request for a test member and confirm a document appears in `members/{memberId}/notifications` within a few minutes (the outbox runs every 5 minutes).
 
 ## Status
 

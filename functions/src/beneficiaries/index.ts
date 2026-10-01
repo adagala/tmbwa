@@ -339,6 +339,11 @@ const reviewBeneficiaryChange = async (
     if (changeRequest.status !== 'pending') {
       throw new HttpsError('failed-precondition', `This request is already ${changeRequest.status}.`);
     }
+    // Reading the member also serializes this decision against member deletion.
+    const memberExists = (await transaction.get(db().doc(`members/${memberId}`))).exists;
+    if (decision === 'approved' && !memberExists) {
+      throw new HttpsError('failed-precondition', 'This member no longer exists. Reject the request instead.');
+    }
     const state = beneficiaryStateData(await transaction.get(stateRef(memberId)));
 
     let nextState = { ...state, pendingRequestId: state.pendingRequestId === requestId ? null : state.pendingRequestId };
@@ -392,12 +397,16 @@ const reviewBeneficiaryChange = async (
         annualChangeYear: nextState.lastAnnualChangeYear,
       }),
     });
-    const notificationPath = `notification_events/${action.replace(/[._]/g, '-')}-${requestId}`;
-    transaction.create(db().doc(notificationPath), validateDocumentWrite(notificationEventDocumentSchema, {
-      type: action,
-      memberId,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    }, notificationPath));
+    // A deleted member's request can still be rejected to close it, but there
+    // is no one left to notify.
+    if (memberExists) {
+      const notificationPath = `notification_events/${action.replace(/[._]/g, '-')}-${requestId}`;
+      transaction.create(db().doc(notificationPath), validateDocumentWrite(notificationEventDocumentSchema, {
+        type: action,
+        memberId,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, notificationPath));
+    }
     return { requestId, memberId, status: decision, duplicate: false };
   });
 

@@ -6,6 +6,8 @@ process.env.GCLOUD_PROJECT = 'demo-tmbwa';
 const { admin } = await import('../functions/src/firebaseAdmin');
 admin.initializeApp({ projectId: 'demo-tmbwa' });
 const beneficiaries = await import('../functions/src/beneficiaries');
+const financial = await import('../functions/src/financial');
+const notifications = await import('../functions/src/notifications');
 
 const db = () => admin.firestore();
 const MEMBER = 'member-beneficiary';
@@ -385,11 +387,46 @@ describe('approveBeneficiaryChange', () => {
     expect(decisions).toHaveLength(1);
   });
 
+  it('refuses to approve a request from a deleted member, who can still be rejected', async () => {
+    await submit(REQUEST);
+    await call(financial.deleteMemberSafely, adminAuth, { requestId: 'delete-member-1', memberId: MEMBER });
+    await expect(approve(REQUEST)).rejects.toMatchObject({ code: 'failed-precondition' });
+    expect(await approvedBeneficiaries()).toEqual([]);
+    expect(await requestDoc(REQUEST)).toMatchObject({ status: 'pending' });
+
+    await expect(reject(REQUEST, { reviewNote: 'Member deleted' })).resolves.toMatchObject({ status: 'rejected' });
+    expect(await notificationEvents()).toEqual([]);
+  });
+
   it('requires an administrator', async () => {
     await submit(REQUEST);
     await expect(approve(REQUEST, {}, memberAuth())).rejects.toMatchObject({ code: 'permission-denied' });
     await expect(approve(REQUEST, {}, null)).rejects.toMatchObject({ code: 'unauthenticated' });
     await expect(approve(REQUEST, { reviewNote: 'x'.repeat(501) })).rejects.toMatchObject({ code: 'invalid-argument' });
+  });
+});
+
+describe('beneficiary decision notifications', () => {
+  type Runnable = { run: (event: never) => Promise<unknown> };
+
+  it('reach the member through the notification workers', async () => {
+    await submit(REQUEST);
+    await approve(REQUEST);
+    await submit('request-000002', { reason: { category: 'marriage' } });
+    await reject('request-000002');
+
+    for (const event of (await db().collection('notification_events').get()).docs) {
+      await (notifications.queueNotificationDeliveries as unknown as Runnable).run(
+        { data: event, params: { eventId: event.id } } as never,
+      );
+    }
+    await (notifications.processNotificationOutbox as unknown as Runnable).run({} as never);
+
+    const delivered = (await db().collection(`members/${MEMBER}/notifications`).get()).docs.map((item) => item.data());
+    expect(delivered.map((item) => item.title).sort()).toEqual([
+      'Beneficiary change approved', 'Beneficiary change not approved',
+    ]);
+    expect(JSON.stringify(delivered)).not.toContain('Baraka');
   });
 });
 
