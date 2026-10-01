@@ -5,7 +5,6 @@ import { z } from 'zod';
 import {
   MemberBalanceTypeEnum,
   PaymentTypeEnum,
-  RoleEnum,
   StkPurposeEnum,
   StatusEnum,
   auditEventDocumentSchema,
