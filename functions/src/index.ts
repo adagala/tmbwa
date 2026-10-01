@@ -6,6 +6,7 @@ import * as Contribution from './contributions';
 import * as Financial from './financial';
 import * as Kcb from './kcb';
 import * as Notifications from './notifications';
+import * as Beneficiaries from './beneficiaries';
 
 export const newMember = Member.newMember;
 export const updateMember = Member.updateMember;
@@ -34,3 +35,6 @@ export const queueNotificationDeliveries = Notifications.queueNotificationDelive
 export const processNotificationOutbox = Notifications.processNotificationOutbox;
 export const retryNotificationDelivery = Notifications.retryNotificationDelivery;
 export const generateContributionReminders = Notifications.generateContributionReminders;
+export const submitBeneficiaryChange = Beneficiaries.submitBeneficiaryChange;
+export const cancelBeneficiaryChange = Beneficiaries.cancelBeneficiaryChange;
+export const setInitialBeneficiaries = Beneficiaries.setInitialBeneficiaries;

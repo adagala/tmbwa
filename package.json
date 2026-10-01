@@ -20,8 +20,8 @@
     "format": "prettier --write src index.html vite.config.ts tailwind.config.js postcss.config.js tsconfig.json tsconfig.app.json tsconfig.node.json",
     "format:check": "prettier --check src index.html vite.config.ts tailwind.config.js postcss.config.js tsconfig.json tsconfig.app.json tsconfig.node.json",
     "test:rules": "firebase emulators:exec --config firebase.rules-test.json --only firestore --project demo-tmbwa \"vitest run tests/firestore.rules.test.ts\"",
-    "test:unit": "vitest run tests/authRedirect.test.ts tests/beneficiaries.schemas.test.ts tests/contributionMonths.test.ts tests/financial.domain.test.ts tests/financialReporting.test.ts tests/firestore.schemas.test.ts tests/kcb.domain.test.ts tests/kcbReconciliation.test.ts tests/kenyanPhone.test.ts tests/missingMonths.test.ts tests/notifications.domain.test.ts",
-    "test:integration": "firebase emulators:exec --config firebase.rules-test.json --only firestore --project demo-tmbwa \"vitest run --no-file-parallelism tests/accountTopUp.integration.test.ts tests/bulkContributions.integration.test.ts\"",
+    "test:unit": "vitest run tests/authRedirect.test.ts tests/beneficiaries.domain.test.ts tests/beneficiaries.schemas.test.ts tests/contributionMonths.test.ts tests/financial.domain.test.ts tests/financialReporting.test.ts tests/firestore.schemas.test.ts tests/kcb.domain.test.ts tests/kcbReconciliation.test.ts tests/kenyanPhone.test.ts tests/missingMonths.test.ts tests/notifications.domain.test.ts",
+    "test:integration": "firebase emulators:exec --config firebase.rules-test.json --only firestore --project demo-tmbwa \"vitest run --no-file-parallelism tests/accountTopUp.integration.test.ts tests/beneficiaries.integration.test.ts tests/bulkContributions.integration.test.ts\"",
     "test": "npm run test:unit && npm run test:rules && npm run test:integration",
     "preview": "vite preview",
     "deploy": "npm run build && firebase deploy --only hosting"
