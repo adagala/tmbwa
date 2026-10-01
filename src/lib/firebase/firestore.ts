@@ -28,7 +28,6 @@ import {
   parsePaymentDocument,
 } from 'tmbwa-shared/firebase';
 import {
-  MemberRole,
   MEMBER_STATUS,
   MonthlyStats,
   Role,
@@ -57,7 +56,6 @@ const isVisibleMemberDoc = (snapshot: QueryDocumentSnapshot) =>
   isVisibleMember(snapshot.ref.parent.parent?.id);
 
 type MemberFilters = {
-  role?: MemberRole | '';
   memberName?: string;
 };
 
@@ -77,16 +75,11 @@ type MonthlyStatsFilters = {
 export const getMembers = (
   cb: (data: Member[]) => void,
   filters: MemberFilters = {
-    role: '',
     memberName: '',
   },
 ) => {
-  const { role, memberName } = filters;
+  const { memberName } = filters;
   let q = query(collection(db, 'members'));
-
-  if (role) {
-    q = query(q, where('role', '==', role));
-  }
 
   if (memberName) {
     q = query(q, orderBy(`firstnameSearchableIndex.${memberName}`));
@@ -110,7 +103,7 @@ export const getMembers = (
 export const getMemberById = (
   memberId: string,
   cb: (data: Member | null) => void,
-  user?: { role: MemberRole; roles?: Role[]; user: User },
+  user?: { roles: Role[]; user: User },
 ) => {
   const memberRef = doc(db, 'members', memberId);
   const unsubscribe = onSnapshot(
@@ -127,9 +120,7 @@ export const getMemberById = (
         // the interface catch up with the server-owned record.
         if (
           user &&
-          (memberData.role !== user.role ||
-            (user.roles &&
-              !sameRoles(memberRoles(memberData), normalizeRoles(user.roles))))
+          !sameRoles(memberRoles(memberData), normalizeRoles(user.roles))
         ) {
           await user.user.getIdToken(true);
         }

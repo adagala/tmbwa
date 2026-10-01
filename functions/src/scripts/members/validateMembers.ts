@@ -3,7 +3,13 @@ import { dirname, resolve } from 'path';
 import { cert } from 'firebase-admin/app';
 import { Timestamp } from 'firebase-admin/firestore';
 import { UserRecord } from 'firebase-admin/auth';
-import { memberDocumentSchema } from 'tmbwa-shared';
+import {
+  memberDocumentSchema,
+  memberRoles,
+  normalizeRoles,
+  rolesFromClaims,
+  sameRoles,
+} from 'tmbwa-shared';
 import { admin } from '../../firebaseAdmin';
 import { arrayToChunks } from '../../utils';
 
@@ -148,9 +154,9 @@ const validateAuthUsers = async (
     if (user.displayName !== displayName) {
       issues.push(`auth: display name out of sync (auth has ${JSON.stringify(user.displayName ?? null)})`);
     }
-    const role = doc.get('role');
-    if (role && user.customClaims?.role !== role) {
-      issues.push(`auth: role claim out of sync (auth has ${JSON.stringify(user.customClaims?.role ?? null)})`);
+    const roles = memberRoles(doc.data());
+    if (!sameRoles(normalizeRoles(rolesFromClaims(user.customClaims)), roles)) {
+      issues.push(`auth: roles claim out of sync (auth has ${JSON.stringify(user.customClaims?.roles ?? null)})`);
     }
   });
 };

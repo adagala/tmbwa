@@ -7,13 +7,13 @@ import {
   initializeTestEnvironment,
 } from '@firebase/rules-unit-testing';
 import { Firestore, collection, collectionGroup, deleteDoc, deleteField, doc, getDoc, getDocs, orderBy, query, setDoc, updateDoc, where } from 'firebase/firestore';
-import { legacyRoleFor, normalizeRoles, roleHasPermission, roles, type Permission, type Role } from 'tmbwa-shared';
+import { normalizeRoles, roleHasPermission, roles, type Permission, type Role } from 'tmbwa-shared';
 
 // The payload addMember sends for a new member.
 const newMember = (datejoined: unknown, overrides: Record<string, unknown> = {}) => ({
   firstname: 'Nia', lastname: 'New', membernumber: '0002/26', win: 'WIN-2',
   phonenumber: '+254712345679', gender: 'female', email: 'nia@example.test',
-  isFeesPaid: false, datejoined, role: 'member', status: 'active',
+  isFeesPaid: false, datejoined, status: 'active',
   balance: 0, contributionBalance: 0, reservedKcbCredit: 0, ...overrides,
 });
 
@@ -37,12 +37,11 @@ afterAll(async () => testEnv.cleanup());
 async function seed() {
   await testEnv.withSecurityRulesDisabled(async (context) => {
     const db = context.firestore();
-    // Administrator access needs an active record that agrees with the claim.
+    // Officer access needs an active record that agrees with the claim.
     await setDoc(doc(db, 'members/admin'), {
       firstname: 'Ada',
       lastname: 'Admin',
       email: 'admin@example.test',
-      role: 'administrator',
       roles: ['member', 'super_admin'],
       balance: 0,
       contributionBalance: 0,
@@ -95,9 +94,7 @@ describe('Firestore authorization', () => {
 
   it('allows administrators to manage non-financial member fields and read reports', async () => {
     await seed();
-    const db = testEnv.authenticatedContext('admin', {
-      role: 'administrator',
-    }).firestore();
+    const db = testEnv.authenticatedContext('admin', { roles: ['super_admin'] }).firestore();
     await assertSucceeds(getDocs(collection(db, 'members')));
     await assertSucceeds(updateDoc(doc(db, 'members/member-a'), { firstname: 'Alicia' }));
     await assertFails(updateDoc(doc(db, 'members/member-a'), { status: 'suspended' }));
@@ -106,7 +103,7 @@ describe('Firestore authorization', () => {
 
   it('keeps roles server-owned', async () => {
     await seed();
-    const db = testEnv.authenticatedContext('admin', { role: 'administrator' }).firestore();
+    const db = testEnv.authenticatedContext('admin', { roles: ['super_admin'] }).firestore();
     const past = new Date('2020-03-15T09:00:00Z');
     await assertFails(updateDoc(doc(db, 'members/member-a'), { role: 'administrator' }));
     await assertFails(updateDoc(doc(db, 'members/member-a'), { roles: ['member', 'super_admin'] }));
@@ -116,18 +113,18 @@ describe('Firestore authorization', () => {
     await assertSucceeds(setDoc(doc(db, 'members/new-member'), newMember(past)));
   });
 
-  it('denies an administrator claim the member record no longer supports', async () => {
+  it('denies a super admin claim the member record no longer supports', async () => {
     await seed();
-    const db = testEnv.authenticatedContext('admin', { role: 'administrator' }).firestore();
+    const db = testEnv.authenticatedContext('admin', { roles: ['super_admin'] }).firestore();
     const setAdmin = (fields: Record<string, unknown>) =>
       testEnv.withSecurityRulesDisabled(async (context) =>
         updateDoc(doc(context.firestore(), 'members/admin'), fields));
 
-    await setAdmin({ role: 'member', roles: ['member'] });
+    await setAdmin({ roles: ['member'] });
     await assertFails(getDocs(collection(db, 'members')));
     await assertFails(getDoc(doc(db, 'members/member-a')));
 
-    await setAdmin({ role: 'administrator', roles: ['member', 'super_admin'], status: 'suspended' });
+    await setAdmin({ roles: ['member', 'super_admin'], status: 'suspended' });
     await assertFails(getDocs(collection(db, 'members')));
     await assertFails(getDoc(doc(db, 'monthly_stats/2026-08-01')));
 
@@ -138,7 +135,7 @@ describe('Firestore authorization', () => {
 
   it('allows only administrators to set a valid date joined', async () => {
     await seed();
-    const adminDb = testEnv.authenticatedContext('admin', { role: 'administrator' }).firestore();
+    const adminDb = testEnv.authenticatedContext('admin', { roles: ['super_admin'] }).firestore();
     const memberDb = testEnv.authenticatedContext('member-a', { role: 'member' }).firestore();
     const past = new Date('2020-03-15T09:00:00Z');
     const future = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
@@ -158,13 +155,13 @@ describe('Firestore authorization', () => {
     await seed();
     await testEnv.withSecurityRulesDisabled(async (context) =>
       updateDoc(doc(context.firestore(), 'members/member-a'), { datejoined: 'legacy-text' }));
-    const db = testEnv.authenticatedContext('admin', { role: 'administrator' }).firestore();
+    const db = testEnv.authenticatedContext('admin', { roles: ['super_admin'] }).firestore();
     await assertSucceeds(updateDoc(doc(db, 'members/member-a'), { firstname: 'Alicia' }));
   });
 
   it('denies direct administrator financial writes', async () => {
     await seed();
-    const db = testEnv.authenticatedContext('admin', { role: 'administrator' }).firestore();
+    const db = testEnv.authenticatedContext('admin', { roles: ['super_admin'] }).firestore();
     await assertFails(updateDoc(doc(db, 'members/member-a'), { balance: 500 }));
     await assertFails(deleteDoc(doc(db, 'members/member-a')));
     await assertFails(deleteDoc(doc(db, 'members/member-a/payments/payment-1')));
@@ -173,7 +170,7 @@ describe('Firestore authorization', () => {
 
   it('allows only administrators to run reporting collection-group queries', async () => {
     await seed();
-    const adminDb = testEnv.authenticatedContext('admin', { role: 'administrator' }).firestore();
+    const adminDb = testEnv.authenticatedContext('admin', { roles: ['super_admin'] }).firestore();
     const memberDb = testEnv.authenticatedContext('member-a', { role: 'member' }).firestore();
     await assertSucceeds(getDocs(query(collectionGroup(adminDb, 'contributions'), where('month', '==', '2026-08-01'), orderBy('month'))));
     await assertSucceeds(getDocs(query(collectionGroup(adminDb, 'payments'), orderBy('paymentdate', 'desc'))));
@@ -278,7 +275,7 @@ describe('Firestore authorization', () => {
 
     it('allows administrators to read every member beneficiary and request', async () => {
       await seedBeneficiaries();
-      const db = testEnv.authenticatedContext('admin', { role: 'administrator' }).firestore();
+      const db = testEnv.authenticatedContext('admin', { roles: ['super_admin'] }).firestore();
       await assertSucceeds(getDocs(collection(db, 'members/member-a/beneficiaries')));
       await assertSucceeds(getDoc(doc(db, 'members/member-b/beneficiary_state/current')));
       await assertSucceeds(getDocs(query(collection(db, 'beneficiary_change_requests'), where('status', '==', 'pending'))));
@@ -301,7 +298,7 @@ describe('Firestore authorization', () => {
     it('denies all client writes, including by administrators', async () => {
       await seedBeneficiaries();
       const memberDb = testEnv.authenticatedContext('member-a', { role: 'member' }).firestore();
-      const adminDb = testEnv.authenticatedContext('admin', { role: 'administrator' }).firestore();
+      const adminDb = testEnv.authenticatedContext('admin', { roles: ['super_admin'] }).firestore();
       for (const db of [memberDb, adminDb]) {
         await assertFails(setDoc(doc(db, 'members/member-a/beneficiaries/beneficiary-2'), beneficiary));
         await assertFails(updateDoc(doc(db, 'members/member-a/beneficiaries/beneficiary-1'), { firstname: 'Changed' }));
@@ -317,7 +314,7 @@ describe('Firestore authorization', () => {
   it('keeps STK payment locks server-only', async () => {
     await seed();
     const memberDb = testEnv.authenticatedContext('member-a', { role: 'member' }).firestore();
-    const adminDb = testEnv.authenticatedContext('admin', { role: 'administrator' }).firestore();
+    const adminDb = testEnv.authenticatedContext('admin', { roles: ['super_admin'] }).firestore();
     for (const db of [memberDb, adminDb]) {
       await assertFails(getDoc(doc(db, 'members/member-a/payment_locks/stk_top_up')));
       await assertFails(setDoc(doc(db, 'members/member-a/payment_locks/stk_top_up'), { status: 'failed' }));
@@ -336,7 +333,7 @@ describe('role-based access', () => {
       const held = normalizeRoles(roles);
       await setDoc(doc(db, `members/${OFFICER}`), {
         firstname: 'Olive', lastname: 'Officer', email: 'officer@example.test',
-        role: legacyRoleFor(held), roles: held, status, balance: 0, contributionBalance: 0,
+        roles: held, status, balance: 0, contributionBalance: 0,
       });
       await setDoc(doc(db, 'members/member-a/beneficiaries/beneficiary-1'), { firstname: 'Baraka' });
       await setDoc(doc(db, 'members/member-a/beneficiary_state/current'), { version: 1 });
@@ -353,7 +350,7 @@ describe('role-based access', () => {
 
   const officerDb = (roles: Role[]) => {
     const held = normalizeRoles(roles);
-    return testEnv.authenticatedContext(OFFICER, { role: legacyRoleFor(held), roles: held }).firestore();
+    return testEnv.authenticatedContext(OFFICER, { roles: held }).firestore();
   };
 
   // Every client access an officer might attempt, with the permission that governs it.
@@ -459,11 +456,18 @@ describe('role-based access', () => {
     await assertFails(getDocs(collection(db, 'members/member-a/payments')));
   });
 
-  it('keeps legacy administrators working until the fallback is removed', async () => {
+  it('grants nothing for the retired administrator claim or record field', async () => {
     await seed();
-    const db = testEnv.authenticatedContext('admin', { role: 'administrator' }).firestore();
-    await assertSucceeds(getDocs(collection(db, 'members/member-a/beneficiaries')));
-    await assertSucceeds(getDocs(collection(db, 'audit_events')));
-    await assertSucceeds(getDocs(collection(db, 'notification_deliveries')));
+    await testEnv.withSecurityRulesDisabled(async (context) =>
+      setDoc(doc(context.firestore(), 'members/legacy-admin'), { role: 'administrator', status: 'active' }));
+    // A retired claim with a record that still carries roles.
+    const claimOnly = testEnv.authenticatedContext('admin', { role: 'administrator' }).firestore();
+    // A current claim with a record that only carries the retired field.
+    const fieldOnly = testEnv.authenticatedContext('legacy-admin', { roles: ['super_admin'] }).firestore();
+    for (const db of [claimOnly, fieldOnly]) {
+      await assertFails(getDocs(collection(db, 'members')));
+      await assertFails(getDocs(collection(db, 'members/member-a/beneficiaries')));
+      await assertFails(getDocs(collection(db, 'audit_events')));
+    }
   });
 });

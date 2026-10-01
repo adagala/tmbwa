@@ -13,11 +13,11 @@ const db = () => admin.firestore();
 const MEMBER = 'member-beneficiary';
 const OTHER = 'member-other';
 
-const adminAuth = { uid: 'admin-1', token: { role: 'administrator' } };
+const adminAuth = { uid: 'admin-1', token: { roles: ['super_admin'] } };
 const memberAuth = (uid = MEMBER) => ({ uid, token: { role: 'member' } });
 // Officers must hold an active member record to act.
 const seedOfficers = (...uids: string[]) =>
-  Promise.all(uids.map((uid) => db().doc(`members/${uid}`).set({ status: 'active', role: 'administrator' })));
+  Promise.all(uids.map((uid) => db().doc(`members/${uid}`).set({ status: 'active', roles: ['member', 'super_admin'] })));
 
 const beneficiary = (firstname = 'Baraka') => ({
   firstname,
@@ -280,7 +280,7 @@ describe('setInitialBeneficiaries', () => {
 
   it('treats initial-entry ID reuse by another administrator as a conflict', async () => {
     await setInitial(REQUEST);
-    await expect(setInitial(REQUEST, {}, { uid: 'admin-2', token: { role: 'administrator' } }))
+    await expect(setInitial(REQUEST, {}, { uid: 'admin-2', token: { roles: ['super_admin'] } }))
       .rejects.toMatchObject({ code: 'already-exists' });
   });
 
@@ -296,8 +296,8 @@ describe('setInitialBeneficiaries', () => {
   });
 
   it('refuses to let an administrator set their own beneficiaries', async () => {
-    await db().doc(`members/${MEMBER}`).update({ role: 'administrator' });
-    await expect(setInitial(REQUEST, {}, { uid: MEMBER, token: { role: 'administrator' } }))
+    await db().doc(`members/${MEMBER}`).update({ roles: ['member', 'super_admin'] });
+    await expect(setInitial(REQUEST, {}, { uid: MEMBER, token: { roles: ['super_admin'] } }))
       .rejects.toMatchObject({ code: 'permission-denied', message: expect.stringContaining('their own beneficiaries') });
     expect(await approvedBeneficiaries()).toEqual([]);
     expect(await requestDoc(REQUEST)).toBeUndefined();
@@ -392,7 +392,7 @@ describe('approveBeneficiaryChange', () => {
     await submit(REQUEST);
     const results = await Promise.allSettled([
       approve(REQUEST),
-      reject(REQUEST, { reviewNote: 'Duplicate request' }, { uid: 'admin-2', token: { role: 'administrator' } }),
+      reject(REQUEST, { reviewNote: 'Duplicate request' }, { uid: 'admin-2', token: { roles: ['super_admin'] } }),
     ]);
     expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
     expect(await notificationEvents()).toHaveLength(1);
@@ -412,8 +412,8 @@ describe('approveBeneficiaryChange', () => {
   });
 
   it('stops administrators reviewing their own request', async () => {
-    const selfAdmin = { uid: MEMBER, token: { role: 'administrator' } };
-    await db().doc(`members/${MEMBER}`).update({ role: 'administrator' });
+    const selfAdmin = { uid: MEMBER, token: { roles: ['super_admin'] } };
+    await db().doc(`members/${MEMBER}`).update({ roles: ['member', 'super_admin'] });
     await submit(REQUEST, {}, selfAdmin);
     const ownReview = { code: 'permission-denied', message: expect.stringContaining('their own beneficiary change') };
     await expect(approve(REQUEST, {}, selfAdmin)).rejects.toMatchObject(ownReview);

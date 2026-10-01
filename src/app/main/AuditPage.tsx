@@ -94,7 +94,7 @@ function MemberLink({ id }: { id: string }) {
 }
 
 export default function AuditPage() {
-  const { role, can } = useUser();
+  const { user, can } = useUser();
   const allowed = can('audit.read');
   const [rows, setRows] = useState<AuditRow[]>([]);
   const [page, setPage] = useState(0);
@@ -148,7 +148,7 @@ export default function AuditPage() {
     setPage((current) => current + 1);
   };
 
-  if (role && !allowed) return <Navigate to="/profile" replace />;
+  if (user && !allowed) return <Navigate to="/profile" replace />;
 
   return (
     <div className="flex flex-col gap-6">

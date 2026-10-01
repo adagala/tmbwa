@@ -5,7 +5,6 @@ import {
   ROLE,
   type Role,
   auditEventDocumentSchema,
-  legacyRoleFor,
   memberRoles,
   normalizeRoles,
   roles as knownRoles,
@@ -47,17 +46,15 @@ const auditAction = (granted: Role[], revoked: Role[]) => {
 };
 
 // Removing super_admin must leave another active super admin, or nobody could
-// manage roles again. Legacy administrators count until the backfill runs.
+// manage roles again.
 const assertAnotherSuperAdmin = async (
   transaction: FirebaseFirestore.Transaction,
   memberId: string,
 ) => {
-  const members = db().collection('members');
-  const [assigned, legacy] = await Promise.all([
-    transaction.get(members.where('roles', 'array-contains', ROLE.SUPER_ADMIN)),
-    transaction.get(members.where('role', '==', 'administrator')),
-  ]);
-  const remaining = [...assigned.docs, ...legacy.docs].some(
+  const superAdmins = await transaction.get(
+    db().collection('members').where('roles', 'array-contains', ROLE.SUPER_ADMIN),
+  );
+  const remaining = superAdmins.docs.some(
     (member) =>
       member.id !== memberId &&
       member.get('status') === MEMBER_STATUS.ACTIVE &&
@@ -158,7 +155,6 @@ export const assignMemberRoles = onCall(async (request) => {
     });
     transaction.update(memberRef, {
       roles,
-      role: legacyRoleFor(roles),
       rolesUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
       rolesUpdatedBy: actorId,
     });

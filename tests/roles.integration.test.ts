@@ -25,7 +25,7 @@ type Callable = { run: (request: never) => Promise<Record<string, unknown>> };
 const call = (fn: unknown, auth: unknown, data: Record<string, unknown>) =>
   (fn as Callable).run({ auth, data, rawRequest: {} } as never);
 
-const superAuth = (uid = SUPER) => ({ uid, token: { role: 'administrator', roles: ['super_admin'] } });
+const superAuth = (uid = SUPER) => ({ uid, token: { roles: ['super_admin'] } });
 
 let sequence = 0;
 const nextRequestId = () => `role-request-${String(++sequence).padStart(4, '0')}`;
@@ -58,8 +58,8 @@ const memberFields = (overrides: Record<string, unknown> = {}) => ({
 });
 
 const seed = async () => {
-  await db().doc(`members/${SUPER}`).set({ status: 'active', role: 'administrator', roles: ['member', 'super_admin'] });
-  await db().doc(`members/${OTHER_SUPER}`).set({ status: 'active', role: 'administrator', roles: ['member', 'super_admin'] });
+  await db().doc(`members/${SUPER}`).set({ status: 'active', roles: ['member', 'super_admin'] });
+  await db().doc(`members/${OTHER_SUPER}`).set({ status: 'active', roles: ['member', 'super_admin'] });
   await db().doc(`members/${TARGET}`).set(memberFields());
 };
 
@@ -102,12 +102,9 @@ describe('assignMemberRoles', () => {
     });
     expect(await memberDoc()).toMatchObject({
       roles: ['member', 'registrar', 'welfare_officer'],
-      // Narrower roles do not get legacy administrator access.
-      role: 'member',
       rolesUpdatedBy: SUPER,
     });
     expect(authCalls.setCustomUserClaims).toHaveBeenCalledWith(TARGET, {
-      role: 'member',
       roles: ['member', 'registrar', 'welfare_officer'],
     });
     expect(authCalls.revokeRefreshTokens).toHaveBeenCalledWith(TARGET);
@@ -142,12 +139,16 @@ describe('assignMemberRoles', () => {
     });
   });
 
-  it('keeps legacy administrator access in step with super admin', async () => {
+  it('no longer writes the retired role field or claim', async () => {
     await assign({ roles: ['super_admin'] });
-    expect(await memberDoc()).toMatchObject({ role: 'administrator', roles: ['member', 'super_admin'] });
+    // The fixture's retired `role` field is left exactly as it was.
+    expect((await memberDoc()).role).toBe('member');
+    expect(authCalls.setCustomUserClaims).toHaveBeenLastCalledWith(TARGET, {
+      roles: ['member', 'super_admin'],
+    });
 
     await assign({ roles: [] });
-    expect(await memberDoc()).toMatchObject({ role: 'member', roles: ['member'] });
+    expect(await memberDoc()).toMatchObject({ roles: ['member'] });
     expect((await auditEvents()).map((event) => event.action).sort()).toEqual(['role.granted', 'role.revoked']);
   });
 
@@ -204,7 +205,7 @@ describe('assignMemberRoles', () => {
 
   it('honours a super admin revocation before the old token expires', async () => {
     // super-1 still holds a super_admin token, but the record no longer agrees.
-    await db().doc(`members/${SUPER}`).update({ roles: ['member'], role: 'member' });
+    await db().doc(`members/${SUPER}`).update({ roles: ['member'] });
     await expect(assign({ roles: ['treasurer'] })).rejects.toMatchObject({ code: 'permission-denied' });
   });
 
@@ -230,13 +231,12 @@ describe('assignMemberRoles', () => {
     await expect(assign({ roles: [] })).resolves.toMatchObject({ roles: ['member'] });
   });
 
-  it('can remove a legacy administrator while another super admin remains', async () => {
+  it('treats a record carrying only the retired administrator role as a plain member', async () => {
     await db().doc(`members/${TARGET}`).update({ role: 'administrator' });
     await expect(assign({ roles: ['treasurer'] })).resolves.toMatchObject({
-      previousRoles: ['member', 'super_admin'],
+      previousRoles: ['member'],
       roles: ['member', 'treasurer'],
     });
-    expect(await memberDoc()).toMatchObject({ role: 'member' });
   });
 
   it('never leaves the association without a super admin', async () => {
@@ -280,7 +280,6 @@ describe('assignMemberRoles Auth side effects', () => {
 
     await expect(assign(data)).resolves.toMatchObject({ duplicate: true });
     expect(authCalls.setCustomUserClaims).toHaveBeenLastCalledWith(TARGET, {
-      role: 'member',
       roles: ['member', 'treasurer'],
     });
     expect(authCalls.revokeRefreshTokens).toHaveBeenCalledTimes(1);
@@ -304,11 +303,10 @@ describe('assignMemberRoles Auth side effects', () => {
   it('never leaves claims at an assignment that a newer one replaced', async () => {
     // While the first command writes claims, a second assignment commits.
     authCalls.setCustomUserClaims.mockImplementationOnce(async () => {
-      await db().doc(`members/${TARGET}`).update({ roles: ['member', 'auditor'], role: 'member' });
+      await db().doc(`members/${TARGET}`).update({ roles: ['member', 'auditor'] });
     });
     await assign({ roles: ['treasurer'] });
     expect(authCalls.setCustomUserClaims).toHaveBeenLastCalledWith(TARGET, {
-      role: 'member',
       roles: ['member', 'auditor'],
     });
   });
@@ -322,7 +320,6 @@ describe('assignMemberRoles Auth side effects', () => {
     ]);
     const finalRoles = (await memberDoc()).roles;
     expect(authCalls.setCustomUserClaims).toHaveBeenLastCalledWith(TARGET, {
-      role: 'member',
       roles: finalRoles,
     });
   }, 20_000);
@@ -341,10 +338,8 @@ describe('member role triggers', () => {
     } as never);
   };
 
-  it('leaves claims alone when backfilling roles that match the legacy role', async () => {
+  it('leaves claims alone when backfilling roles for a plain member', async () => {
     await runUpdate({ roles: ['member'] });
-    await db().doc(`members/${OTHER_SUPER}`).set(memberFields({ role: 'administrator', email: 'super@example.test' }));
-    await runUpdate({ roles: ['member', 'super_admin'] }, OTHER_SUPER);
     expect(authCalls.setCustomUserClaims).not.toHaveBeenCalled();
   });
 
@@ -361,7 +356,6 @@ describe('member role triggers', () => {
     await trigger.run({ data: { before: treasurer, after: auditorAgain }, params: { memberId: TARGET } } as never);
     await trigger.run({ data: { before: auditor, after: treasurer }, params: { memberId: TARGET } } as never);
     expect(authCalls.setCustomUserClaims).toHaveBeenLastCalledWith(TARGET, {
-      role: 'member',
       roles: ['member', 'auditor'],
     });
   });
@@ -369,7 +363,6 @@ describe('member role triggers', () => {
   it('repairs claims when the effective roles change', async () => {
     await runUpdate({ roles: ['member', 'auditor'] });
     expect(authCalls.setCustomUserClaims).toHaveBeenCalledWith(TARGET, {
-      role: 'member',
       roles: ['member', 'auditor'],
     });
   });
@@ -383,7 +376,6 @@ describe('member role triggers', () => {
     } as never);
     expect((await ref.get()).get('roles')).toEqual(['member']);
     expect(authCalls.setCustomUserClaims).toHaveBeenCalledWith('new-member', {
-      role: 'member',
       roles: ['member'],
     });
   });

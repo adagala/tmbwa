@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  MEMBER_ROLE,
   MEMBER_STATUS,
   contributionDocumentSchema,
   contributionReadDocumentSchema,
@@ -28,7 +27,7 @@ const member = {
   phonenumber: '+254700000000',
   gender: 'female',
   email: 'amina@example.com',
-  role: MEMBER_ROLE.MEMBER,
+  roles: ['member'],
   isFeesPaid: true,
   status: MEMBER_STATUS.ACTIVE,
   balance: 0,

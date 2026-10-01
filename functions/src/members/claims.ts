@@ -1,5 +1,5 @@
 import { admin } from '../firebaseAdmin';
-import { type Role, legacyRoleFor, memberRoles, sameRoles } from 'tmbwa-shared';
+import { type Role, memberRoles, sameRoles } from 'tmbwa-shared';
 
 const MAX_SYNC_ATTEMPTS = 5;
 
@@ -16,10 +16,8 @@ export const syncRoleClaims = async (memberId: string): Promise<Role[] | undefin
   for (let attempt = 0; attempt < MAX_SYNC_ATTEMPTS; attempt += 1) {
     if (!snapshot.exists) return undefined;
     const roles = memberRoles(snapshot.data());
-    await admin.auth().setCustomUserClaims(memberId, {
-      role: legacyRoleFor(roles),
-      roles,
-    });
+    // Replaces every claim, which also drops the retired `role` claim.
+    await admin.auth().setCustomUserClaims(memberId, { roles });
     const latest = await ref.get();
     if (!latest.exists || sameRoles(memberRoles(latest.data()), roles)) return roles;
     snapshot = latest;

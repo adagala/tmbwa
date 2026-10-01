@@ -20,12 +20,15 @@ const KCB_SHARED_REFERENCE = defineString('KCB_SHARED_REFERENCE', {
   default: '7969138',
 });
 
-const requireAdministrator = (
+// Development tool only (see validateDevSimulatorConfig): limited to super
+// admins by the `roles` claim. This codebase does not share tmbwa-shared.
+const requireSuperAdmin = (
   auth: { uid: string; token: Record<string, unknown> } | undefined,
 ) => {
   if (!auth) throw new HttpsError('unauthenticated', 'Sign in is required.');
-  if (auth.token.role !== 'administrator') {
-    throw new HttpsError('permission-denied', 'Administrator access is required.');
+  const roles = auth.token.roles;
+  if (!Array.isArray(roles) || !roles.includes('super_admin')) {
+    throw new HttpsError('permission-denied', 'Super admin access is required.');
   }
   return auth.uid;
 };
@@ -40,7 +43,7 @@ const requiredString = (data: Data, key: string) => {
 
 export const sendKcbDevTillNotification = onCall(
   async (request) => {
-    const actorId = requireAdministrator(request.auth);
+    const actorId = requireSuperAdmin(request.auth);
     const data = request.data as Data;
     const requestId = requiredString(data, 'requestId');
     const amount = Number(data.amount);

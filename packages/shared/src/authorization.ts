@@ -5,9 +5,6 @@
 // Authorization is permission-based. A user holds one or more roles through
 // the `roles` custom claim, and each role grants a fixed set of permissions.
 // Trusted backend commands check permissions, never role names.
-//
-// Transitional: the legacy `role: 'administrator'` claim is treated as
-// `super_admin` until every administrator has been assigned specific roles.
 
 export const ROLE = {
   MEMBER: 'member',
@@ -72,18 +69,14 @@ export const ROLE_PERMISSIONS: Readonly<Record<Role, readonly Permission[]>> = {
   auditor: ['members.read', 'payments.read', 'audit.read', 'reports.read'],
 };
 
-const LEGACY_ADMINISTRATOR_ROLE = 'administrator';
-
 const isRole = (value: unknown): value is Role =>
   typeof value === 'string' && (roles as readonly string[]).includes(value);
 
-// Resolves roles from verified token claims. Unknown values are ignored.
+// Resolves roles from the `roles` claim of a verified token. Unknown values,
+// and the retired single `role` claim, grant nothing.
 export const rolesFromClaims = (claims: Record<string, unknown> | undefined): Role[] => {
-  if (!claims) return [];
-  const resolved = new Set<Role>(Array.isArray(claims.roles) ? claims.roles.filter(isRole) : []);
-  if (claims.role === LEGACY_ADMINISTRATOR_ROLE) resolved.add(ROLE.SUPER_ADMIN);
-  if (claims.role === ROLE.MEMBER) resolved.add(ROLE.MEMBER);
-  return roles.filter((role) => resolved.has(role));
+  const claimed = claims && Array.isArray(claims.roles) ? claims.roles.filter(isRole) : [];
+  return roles.filter((role) => claimed.includes(role));
 };
 
 export const roleHasPermission = (roleList: readonly Role[], permission: Permission) =>
@@ -97,15 +90,8 @@ export const normalizeRoles = (list: readonly unknown[]): Role[] =>
 export const sameRoles = (a: readonly Role[], b: readonly Role[]) =>
   a.length === b.length && a.every((role, index) => role === b[index]);
 
-// Roles held according to a member document. Once `roles` is present it is
-// authoritative; records that predate it carry only the legacy `role` field.
-export const memberRoles = (member: { roles?: unknown; role?: unknown } | undefined): Role[] => {
-  if (Array.isArray(member?.roles)) return normalizeRoles(member.roles);
-  return normalizeRoles(member?.role === LEGACY_ADMINISTRATOR_ROLE ? [ROLE.SUPER_ADMIN] : []);
-};
-
-// The legacy single role still drives Firestore rules and screens that do not
-// check permissions yet. Only super admins keep full administrator access
-// there; narrower roles apply to trusted commands until those move over.
-export const legacyRoleFor = (roleList: readonly Role[]) =>
-  roleList.includes(ROLE.SUPER_ADMIN) ? LEGACY_ADMINISTRATOR_ROLE : ROLE.MEMBER;
+// Roles held according to a member document's server-owned `roles` field.
+// A record without it holds only `member`; the retired `role` field that
+// older records still carry grants nothing.
+export const memberRoles = (member: { roles?: unknown } | undefined): Role[] =>
+  normalizeRoles(Array.isArray(member?.roles) ? member.roles : []);

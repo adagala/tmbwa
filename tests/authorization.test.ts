@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   ROLE_PERMISSIONS,
-  legacyRoleFor,
   memberRoles,
   normalizeRoles,
   permissions,
@@ -70,12 +69,9 @@ describe('rolesFromClaims', () => {
     ]);
   });
 
-  it('maps the legacy administrator claim to super admin', () => {
-    expect(rolesFromClaims({ role: 'administrator' })).toEqual(['super_admin']);
-  });
-
-  it('keeps the legacy member claim', () => {
-    expect(rolesFromClaims({ role: 'member' })).toEqual(['member']);
+  it('ignores the retired single role claim', () => {
+    expect(rolesFromClaims({ role: 'administrator' })).toEqual([]);
+    expect(rolesFromClaims({ role: 'member' })).toEqual([]);
   });
 
   it('ignores unknown and malformed values', () => {
@@ -101,7 +97,7 @@ describe('member record roles', () => {
     expect(normalizeRoles([])).toEqual(['member']);
   });
 
-  it('treats the roles field as authoritative once present', () => {
+  it('reads roles only from the roles field', () => {
     expect(memberRoles({ roles: ['member', 'registrar'], role: 'member' })).toEqual([
       'member',
       'registrar',
@@ -109,17 +105,9 @@ describe('member record roles', () => {
     expect(memberRoles({ roles: ['member'], role: 'administrator' })).toEqual(['member']);
   });
 
-  it('derives roles from the legacy role on older records', () => {
-    expect(memberRoles({ role: 'administrator' })).toEqual(['member', 'super_admin']);
+  it('grants nothing for the retired role field', () => {
+    expect(memberRoles({ role: 'administrator' })).toEqual(['member']);
     expect(memberRoles({ role: 'member' })).toEqual(['member']);
-    expect(memberRoles({ role: 'root' })).toEqual(['member']);
     expect(memberRoles(undefined)).toEqual(['member']);
-  });
-
-  it('keeps legacy administrator access for super admins only', () => {
-    expect(legacyRoleFor(['member', 'super_admin'])).toBe('administrator');
-    expect(legacyRoleFor(['member', 'treasurer', 'registrar', 'welfare_officer', 'auditor'])).toBe(
-      'member',
-    );
   });
 });
