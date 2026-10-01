@@ -3,24 +3,21 @@ import { useEffect, useState } from 'react';
 
 import { auth } from '@/lib/firebase/clientApp';
 import {
-  MemberRole,
   Permission,
   Role,
   roleHasPermission,
   rolesFromClaims,
 } from 'tmbwa-shared';
 
+// `user` is undefined until the auth state is known, null when signed out.
 export default function useUser() {
   const [user, setUser] = useState<User | null>();
-  const [role, setRole] = useState<MemberRole>();
   const [roles, setRoles] = useState<Role[]>([]);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (authUser) => {
       const idTokenResult = await authUser?.getIdTokenResult();
-      const claims = idTokenResult?.claims;
-      setRole(claims?.role as MemberRole);
-      setRoles(rolesFromClaims(claims));
+      setRoles(rolesFromClaims(idTokenResult?.claims));
       setUser(authUser);
     });
 
@@ -30,5 +27,5 @@ export default function useUser() {
   // Interface hint only: trusted commands and Firestore rules enforce access.
   const can = (permission: Permission) => roleHasPermission(roles, permission);
 
-  return { user, role, roles, can };
+  return { user, roles, can };
 }

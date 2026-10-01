@@ -143,7 +143,7 @@ const AllocationEditor = ({
 };
 
 export default function KcbReconciliationPage() {
-  const { role, can } = useUser();
+  const { user, can } = useUser();
   const allowed = can('kcb.reconcile');
   const [payments, setPayments] = useState<KcbPaymentNotification[]>([]);
   const [creditPayments, setCreditPayments] = useState<
@@ -570,7 +570,7 @@ export default function KcbReconciliationPage() {
     }
   };
 
-  if (role && !allowed) return <Navigate to="/profile" replace />;
+  if (user && !allowed) return <Navigate to="/profile" replace />;
 
   return (
     <div className="flex flex-col gap-6">

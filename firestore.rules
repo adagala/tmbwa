@@ -23,18 +23,16 @@ service cloud.firestore {
       };
     }
 
-    // Roles claimed by the token. The legacy administrator claim counts as
-    // super_admin until it is retired.
+    // Roles claimed by the token. The retired single `role` claim grants
+    // nothing.
     function claimedRoles() {
-      return request.auth.token.get('roles', []).concat(
-        request.auth.token.get('role', '') == 'administrator' ? ['super_admin'] : []);
+      return request.auth.token.get('roles', []);
     }
 
-    // Roles held by the member record; records that predate `roles` carry
-    // only the legacy role.
+    // Roles held by the member record. The retired `role` field that older
+    // records still carry grants nothing.
     function recordRoles(record) {
-      return record.get('roles',
-        record.get('role', '') == 'administrator' ? ['member', 'super_admin'] : ['member']);
+      return record.get('roles', ['member']);
     }
 
     // A role counts only when both the token and an active member record
@@ -72,23 +70,23 @@ service cloud.firestore {
     }
 
     // Roles are server-owned: they change only through assignMemberRoles.
-    function administratorMemberFieldsOnly() {
+    function memberEditorFieldsOnly() {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
         'firstname', 'lastname', 'email', 'membernumber', 'win',
         'phonenumber', 'gender', 'isFeesPaid', 'datejoined'
       ]);
     }
 
-    // A new member is created with profile fields only. Roles, lifecycle and
-    // every financial total start at fixed values; Functions own them after.
+    // A new member is created with profile fields only. Lifecycle and every
+    // financial total start at fixed values, and roles are absent (plain
+    // member); Functions own them after.
     function validNewMember() {
       let member = request.resource.data;
       return member.keys().hasOnly([
           'firstname', 'lastname', 'membernumber', 'win', 'phonenumber',
-          'gender', 'email', 'isFeesPaid', 'datejoined', 'role', 'status',
+          'gender', 'email', 'isFeesPaid', 'datejoined', 'status',
           'balance', 'contributionBalance', 'reservedKcbCredit'
         ]) &&
-        member.role == 'member' &&
         member.status == 'active' &&
         member.balance == 0 &&
         member.contributionBalance == 0 &&
@@ -113,7 +111,7 @@ service cloud.firestore {
       allow list: if can('members.read');
       allow create: if can('members.write') && validDateJoinedValue() && validNewMember();
       allow delete: if false;
-      allow update: if (can('members.write') && administratorMemberFieldsOnly() &&
+      allow update: if (can('members.write') && memberEditorFieldsOnly() &&
           validDateJoinedOnUpdate()) ||
         (isActiveOwner(memberId) && ownerProfileFieldsOnly());
 

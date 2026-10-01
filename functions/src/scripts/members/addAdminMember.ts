@@ -2,7 +2,6 @@ import { admin } from '../../firebaseAdmin';
 import { Member, MonthlyStats, Stats } from '../../types';
 import {
   GENDER,
-  MEMBER_ROLE,
   MEMBER_STATUS,
   MONTHLY_CONTRIBUTION,
   ROLE,
@@ -30,7 +29,6 @@ const member: Member = {
   lastnameSearchableIndex: createIndex(lastname),
   membernumber: '00000/00',
   phonenumber: '+254720123456',
-  role: MEMBER_ROLE.ADMINISTRATOR,
   roles: [ROLE.MEMBER, ROLE.SUPER_ADMIN],
   status: MEMBER_STATUS.ACTIVE,
   isFeesPaid: false,
@@ -74,10 +72,7 @@ const addAdminMember = async () => {
     uid: memberId,
   });
 
-  await admin.auth().setCustomUserClaims(memberId, {
-    role: member.role,
-    roles: member.roles,
-  });
+  await admin.auth().setCustomUserClaims(memberId, { roles: member.roles });
 
   console.log('End of operation addAdminMember ...!');
 };

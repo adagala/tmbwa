@@ -9,17 +9,17 @@ import { MemberAccount } from '@/sections/memberAccount';
 import { MemberHeader } from '@/sections/memberHeader';
 
 export default function ProfilePage() {
-  const { user, role, roles } = useUser();
+  const { user, roles } = useUser();
   const [member, setMember] = useState<Member | null>();
 
   useEffect(() => {
-    if (user?.uid && role) {
+    if (user?.uid) {
       const unsubscribe = getMemberById(
         user.uid,
         (fetchedMember) => {
           setMember(fetchedMember);
         },
-        { role, roles, user },
+        { roles, user },
       );
 
       return () => unsubscribe();

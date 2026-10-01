@@ -5,7 +5,6 @@ import { z } from 'zod';
 import {
   MemberBalanceTypeEnum,
   PaymentTypeEnum,
-  RoleEnum,
   StkPurposeEnum,
   StatusEnum,
   auditEventDocumentSchema,
@@ -52,8 +51,7 @@ export const memberFormSchema = ownMemberFormSchema
 export const memberSchema = memberFormSchema.merge(
   z.object({
     member_id: z.string().min(1, 'ID cannot be empty'),
-    // New members start as plain members; see assignMemberRoles.
-    role: RoleEnum.default('member'),
+    // Server-owned; see assignMemberRoles.
     roles: z.array(z.string()).optional(),
     status: StatusEnum,
     datejoined: z.union([z.date(), z.instanceof(Timestamp)]).optional(),

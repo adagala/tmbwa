@@ -60,11 +60,11 @@ const contributionIds = async () =>
 const payments = async () =>
   (await db().collection(`members/${MEMBER}/payments`).get()).docs.map((item) => item.data());
 
-const adminAuth = { uid: 'admin-1', token: { role: 'administrator' } };
+const adminAuth = { uid: 'admin-1', token: { roles: ['super_admin'] } };
 const memberAuth = { uid: MEMBER, token: { role: 'member' } };
 // Officers must hold an active member record to act.
 const seedOfficers = (...uids: string[]) =>
-  Promise.all(uids.map((uid) => db().doc(`members/${uid}`).set({ status: 'active', role: 'administrator' })));
+  Promise.all(uids.map((uid) => db().doc(`members/${uid}`).set({ status: 'active', roles: ['member', 'super_admin'] })));
 
 const createContributions = (
   months: unknown,

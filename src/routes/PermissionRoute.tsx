@@ -12,9 +12,9 @@ const PermissionRoute = ({
   permission: Permission;
   element: JSX.Element;
 }) => {
-  const { role, roles, can } = useUser();
+  const { user, roles, can } = useUser();
 
-  if (role === undefined) {
+  if (user === undefined) {
     return <Loader />;
   }
 

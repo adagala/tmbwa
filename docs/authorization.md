@@ -17,7 +17,7 @@ Client reads and writes are granted per role. An officer's role counts only when
 | Contribution rates | Read, create | Read | | | Read | |
 | Unknown collections | | | | | | |
 
-No client can write financial records, statistics, beneficiaries, change requests, audit events, roles or KCB records; those change only through trusted Functions. A new member document may contain only profile fields, and must start as `role: member`, `status: active` with `balance`, `contributionBalance` and `reservedKcbCredit` at 0. Inactive or suspended officers lose officer access immediately, even while their token is still valid.
+No client can write financial records, statistics, beneficiaries, change requests, audit events, roles or KCB records; those change only through trusted Functions. A new member document may contain only profile fields, and must start without roles (a plain member), with `status: active` and `balance`, `contributionBalance` and `reservedKcbCredit` at 0. Inactive or suspended officers lose officer access immediately, even while their token is still valid.
 
 Members may update only their own first name, last name, admission number, welfare identification number, phone number, and gender. They cannot change email, role, status, balances, fees, identifiers, search indexes, timestamps, or financial records.
 
@@ -73,9 +73,9 @@ Audit events written by these commands record the actor's roles at the time of t
 
 ### Where roles live
 
-The member record is the source of truth. `members/{id}.roles` holds the member's roles and is server-owned: clients cannot write `role` or `roles`, and new members must be created with `role: member`. Records created before `roles` existed are read from the legacy `role` field (`administrator` means `member` + `super_admin`) until the backfill runs.
+The member record is the source of truth. `members/{id}.roles` holds the member's roles and is server-owned: clients cannot write it, and new members are created without it. A record without `roles` holds only `member`. Older records may still carry the retired `role` field; nothing reads it, and it grants nothing.
 
-Custom claims mirror the record (`roles`, plus the legacy `role`) for Firestore rules and the interface. Because a token keeps its claims until it expires, a role counts for a trusted command only when both the token and the member record grant it, so revoking a role takes effect on the member's next request. Firestore rules apply the same check to administrator access.
+Custom claims mirror the record (`roles`) for Firestore rules and the interface. The retired `role` claim grants nothing. Because a token keeps its claims until it expires, a role counts for a trusted command only when both the token and the member record grant it, so revoking a role takes effect on the member's next request. Firestore rules apply the same check to administrator access.
 
 ### Assigning roles
 
@@ -86,14 +86,35 @@ Super admins change roles with the `assignMemberRoles` command (**Manage roles**
 - refuses to remove the last active super admin;
 - grants roles only to active members, but can always remove them;
 - is idempotent on `requestId`, recorded in `role_assignments/{requestId}`;
-- writes the member's `roles`, the matching legacy `role`, and one audit event in a single transaction;
+- writes the member's `roles` and one audit event in a single transaction;
 - then syncs the member's custom claims and revokes their refresh tokens, which signs them out of existing sessions.
 
 Those Auth steps happen after the commit and can fail. Session revocation is recorded as `sessionsRevokedAt` on the assignment, so retrying the same `requestId` finishes whatever is left. Claims are always set by `syncRoleClaims`, which reads the member record as it is now and repeats until the roles it wrote are still current. A late event or a slow command therefore cannot leave claims at an older assignment. The member triggers call the same sync when effective roles change, and give new members `roles: [member]`.
 
-### Transitional legacy role
+### Retiring the legacy administrator role
 
-Until every administrator has been assigned specific roles, the legacy `role: administrator` (claim and record) is treated as `super_admin` by trusted commands, Firestore rules and the interface. The legacy `role` is `administrator` only for super admins; other officers keep `role: member` and get their access from `roles`. Removing this fallback is the last step of the migration.
+Earlier releases treated the single `role: administrator` claim and record field as `super_admin`. That fallback is gone: access comes only from `roles`. Before deploying the release that removed it, confirm that nobody still depends on it:
+
+```bash
+cd functions
+npm run backfill:member-roles -- --apply  # if any record still lacks roles
+npm run roles:readiness                   # lists officers and blockers; exits 1 if not ready
+npm run roles:readiness -- --sync-claims  # if officers' claims lack their roles
+```
+
+The readiness report is read-only by default. It lists every officer and blocks on: records without `roles`, officers without an Auth user, officers whose claims don't carry their roles, and no active super admin. `--sync-claims` writes the missing claims (in a form both releases accept) without signing anyone out. It writes them from each record as it is at that moment, retrying if a role changes meanwhile, then re-checks from fresh state. Synced officers pick the claims up when their token refreshes, so wait an hour or ask them to sign in again. Then run the report again.
+
+Deploy only when it reports `Ready: no blockers.`
+
+**Rollback.** The previous release requires a `role` field on every member record and waits on the `role` claim to load its screens. Members created or reassigned under roles-only access have neither, so repair them before redeploying it:
+
+```bash
+cd functions
+npm run roles:restore-legacy             # dry run: lists records and claims to restore
+npm run roles:restore-legacy -- --apply  # restores both from each member's current roles
+```
+
+The repair sets `role` (`administrator` for super admins, otherwise `member`) and the matching claims, without changing anyone's roles or signing anyone out. It is safe to re-run. Pause role changes from the time you run it until the previous release is deployed, then redeploy it.
 
 ### Interface
 
@@ -110,6 +131,6 @@ npm run backfill:member-roles -- --apply  # writes roles
 npm run backfill:member-roles             # verify: reports 0 members need roles
 ```
 
-The backfill derives `roles` from the legacy `role` and writes only `roles` and `rolesBackfilledAt`. It skips members that already have `roles`, so it is safe to re-run. It reports, but does not change, unrecognised legacy roles and records whose `roles` and `role` disagree. Effective roles do not change, so claims and sessions are untouched. No data rollback is needed: earlier releases ignore the `roles` field.
+The backfill derives `roles` from the retired `role` field (`administrator` becomes `member` + `super_admin`) and writes only `roles` and `rolesBackfilledAt`. It skips members that already have `roles`, so it is safe to re-run, and it reports unrecognised legacy values. It never touches claims or sessions. No data rollback is needed: earlier releases ignore the `roles` field.
 
 Balances, contribution balances, contributions, payments, and monthly statistics are server-owned. Even administrators cannot write these fields directly through the client SDK; they must use the callable financial commands.

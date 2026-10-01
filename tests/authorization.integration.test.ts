@@ -272,9 +272,15 @@ describe.each(cases)('$name authorization', ({ fn, allowed, denied, data }) => {
     );
   });
 
-  it('allows the legacy administrator claim', async () => {
+  it('allows a super admin', async () => {
     expect(authorizationFailures).not.toContain(
-      await outcome(call(fn, { uid: ACTOR, token: { role: 'administrator' } }, data(TARGET))),
+      await outcome(call(fn, withRoles(['super_admin']), data(TARGET))),
+    );
+  });
+
+  it('denies the retired administrator claim', async () => {
+    expect(await outcome(call(fn, { uid: ACTOR, token: { role: 'administrator' } }, data(TARGET)))).toBe(
+      'permission-denied',
     );
   });
 
@@ -300,18 +306,18 @@ describe('roles held by the member record', () => {
     ).rejects.toMatchObject({ code: 'permission-denied' });
   });
 
-  it('accepts a legacy administrator record for a legacy administrator token', async () => {
+  it('grants nothing for a record that only carries the retired administrator role', async () => {
     await db().doc(`members/${ACTOR}`).set({ status: 'active', role: 'administrator' });
     await expect(
-      call(financial.listLegacyContributionInventory, { uid: ACTOR, token: { role: 'administrator' } }, {}),
-    ).resolves.toMatchObject({ scanned: 0 });
+      call(financial.listLegacyContributionInventory, withRoles(['super_admin']), {}),
+    ).rejects.toMatchObject({ code: 'permission-denied' });
   });
 
-  it('denies a legacy administrator token once the record is a plain member', async () => {
-    await db().doc(`members/${ACTOR}`).set({ status: 'active', role: 'member' });
+  it('accepts a super admin whose record holds the role', async () => {
+    await seedActor('active', ACTOR, ['member', 'super_admin']);
     await expect(
-      call(financial.listLegacyContributionInventory, { uid: ACTOR, token: { role: 'administrator' } }, {}),
-    ).rejects.toMatchObject({ code: 'permission-denied' });
+      call(financial.listLegacyContributionInventory, withRoles(['super_admin']), {}),
+    ).resolves.toMatchObject({ scanned: 0 });
   });
 });
 

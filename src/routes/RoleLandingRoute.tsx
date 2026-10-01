@@ -4,9 +4,9 @@ import { Navigate } from 'react-router-dom';
 import { landingPath } from '@/lib/access';
 
 export default function RoleLandingRoute() {
-  const { user, role, roles } = useUser();
+  const { user, roles } = useUser();
 
-  if (user === undefined || (user && role === undefined)) {
+  if (user === undefined) {
     return <Loader />;
   }
 

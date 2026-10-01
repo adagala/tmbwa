@@ -1,12 +1,13 @@
 import { admin } from '../../firebaseAdmin';
-import { legacyRoleFor, memberRoles } from 'tmbwa-shared';
+import { ROLE, type Role, normalizeRoles } from 'tmbwa-shared';
 
 admin.initializeApp({ credential: admin.credential.applicationDefault() });
 
 // Sets the server-owned `roles` field on members that predate it, derived from
-// the legacy `role` field: administrator -> [member, super_admin], anything
-// else -> [member]. Effective roles do not change, so custom claims and
-// sessions are left alone.
+// the retired `role` field: administrator -> [member, super_admin], anything
+// else -> [member]. Run it, from any release, before the legacy role stops
+// granting access; after that a record without `roles` holds only `member`.
+// It never touches custom claims or sessions; see rolesReadiness for those.
 //
 // Dry run by default; nothing is written without --apply. Safe to re-run:
 // members that already have `roles` are skipped. Only `roles` and
@@ -18,6 +19,10 @@ admin.initializeApp({ credential: admin.credential.applicationDefault() });
 const APPLY_FLAG = '--apply';
 const KNOWN_LEGACY_ROLES = ['member', 'administrator'];
 
+// The only place the retired `role` field is still read.
+const rolesFromLegacyRole = (data: FirebaseFirestore.DocumentData | undefined): Role[] =>
+  normalizeRoles(data?.role === 'administrator' ? [ROLE.SUPER_ADMIN] : []);
+
 const backfillMemberRoles = async () => {
   const apply = process.argv.includes(APPLY_FLAG);
   const firestore = admin.firestore();
@@ -27,21 +32,13 @@ const backfillMemberRoles = async () => {
   const unknownLegacy = pending.filter(
     (doc) => !KNOWN_LEGACY_ROLES.includes(doc.get('role')),
   );
-  const inconsistent = snapshot.docs.filter(
-    (doc) =>
-      Array.isArray(doc.get('roles')) &&
-      doc.get('role') !== legacyRoleFor(memberRoles(doc.data())),
-  );
 
   console.log(`${apply ? 'Applying' : 'Dry run:'} ${pending.length} of ${snapshot.size} member(s) need roles.`);
   pending.forEach((doc) => {
-    console.log(`${doc.id}: role ${JSON.stringify(doc.get('role') ?? null)} -> ${JSON.stringify(memberRoles(doc.data()))}`);
+    console.log(`${doc.id}: role ${JSON.stringify(doc.get('role') ?? null)} -> ${JSON.stringify(rolesFromLegacyRole(doc.data()))}`);
   });
   unknownLegacy.forEach((doc) => {
     console.warn(`${doc.id}: unrecognised legacy role ${JSON.stringify(doc.get('role') ?? null)}; treated as member.`);
-  });
-  inconsistent.forEach((doc) => {
-    console.warn(`${doc.id}: legacy role ${JSON.stringify(doc.get('role') ?? null)} does not match roles ${JSON.stringify(doc.get('roles'))}; not changed, review manually.`);
   });
   if (!apply || !pending.length) return;
 
@@ -52,7 +49,7 @@ const backfillMemberRoles = async () => {
       if (!current.exists) return 'deleted';
       if (Array.isArray(current.get('roles'))) return 'already set';
       transaction.update(doc.ref, {
-        roles: memberRoles(current.data()),
+        roles: rolesFromLegacyRole(current.data()),
         rolesBackfilledAt: admin.firestore.FieldValue.serverTimestamp(),
       });
       return 'written';

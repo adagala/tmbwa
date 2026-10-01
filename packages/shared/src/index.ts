@@ -7,10 +7,6 @@ export * from './authorization';
 // Constants
 // ---------------------------------------------------------------------------
 
-export const MEMBER_ROLE = {
-  MEMBER: 'member',
-  ADMINISTRATOR: 'administrator',
-} as const;
 export const MEMBER_STATUS = {
   ACTIVE: 'active',
   INACTIVE: 'inactive',
@@ -87,10 +83,6 @@ export const unallocatedPaymentAmount = (
     ? Math.max(Number(amount) - Number(contributionAmount), 0)
     : Number(storedAmount);
 
-export const member_roles = [
-  MEMBER_ROLE.MEMBER,
-  MEMBER_ROLE.ADMINISTRATOR,
-] as const;
 export const member_status = [
   MEMBER_STATUS.ACTIVE,
   MEMBER_STATUS.INACTIVE,
@@ -134,7 +126,6 @@ export const months = [
 // ---------------------------------------------------------------------------
 
 export const StatusEnum = z.enum(member_status);
-export const RoleEnum = z.enum(member_roles);
 export const GenderEnum = z.enum(genders);
 export const ContributionStatusEnum = z.enum(contribution_status);
 export const PaymentTypeEnum = z.enum(payment_type);
@@ -169,7 +160,6 @@ export const memberFormBaseSchema = memberBaseSchema.merge(
       .string()
       .email('Invalid email address')
       .min(1, 'Email cannot be empty'),
-    role: RoleEnum,
     isFeesPaid: z.boolean().default(false),
   }),
 );
@@ -752,7 +742,6 @@ export const resetPasswordSchema = z.object({
 // TypeScript types
 // ---------------------------------------------------------------------------
 
-export type MemberRole = z.infer<typeof RoleEnum>;
 export type MemberStatus = z.infer<typeof StatusEnum>;
 export type Gender = z.infer<typeof GenderEnum>;
 export type PaymentStatus = z.infer<typeof ContributionStatusEnum>;

@@ -5,10 +5,10 @@ import { getPostSignInPath } from './authRedirect';
 import { landingPath } from '@/lib/access';
 
 const PublicRoute = ({ element }: { element: JSX.Element }) => {
-  const { user, role, roles } = useUser();
+  const { user, roles } = useUser();
   const location = useLocation();
 
-  if (user === undefined || (user && role === undefined)) {
+  if (user === undefined) {
     return <Loader />;
   }
 
