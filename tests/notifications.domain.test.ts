@@ -25,6 +25,11 @@ describe('member notification domain', () => {
     });
   });
 
+  it('reports beneficiary decisions without beneficiary details', () => {
+    expect(renderNotification({ type: 'beneficiary.change_approved' }).title).toBe('Beneficiary change approved');
+    expect(renderNotification({ type: 'beneficiary.change_rejected' }).title).toBe('Beneficiary change not approved');
+  });
+
   it('uses bounded exponential retry delays', () => {
     expect(nextAttemptDelayMs(1)).toBe(60_000);
     expect(nextAttemptDelayMs(3)).toBe(240_000);

@@ -38,9 +38,11 @@ All commands are callable Cloud Functions and take a client-generated `requestId
 | `submitBeneficiaryChange({ requestId, beneficiaries, reason? })` | Active member, for themselves | Creates a `pending` request. The server sets the type: `initial` when the member has no approved list, `annual` when this calendar year's change is unused, otherwise `exceptional`, which requires `reason` (`{ category, text? }`). Refused while another request is pending. |
 | `cancelBeneficiaryChange({ requestId })` | Active member who owns the request | Marks a `pending` request `cancelled`. The annual allowance is not used. |
 | `setInitialBeneficiaries({ requestId, memberId, beneficiaries })` | Administrator | Records a member's first beneficiaries directly, as an `initial` request that is already `approved`. Refused when the member already has beneficiaries or a pending request. |
+| `approveBeneficiaryChange({ requestId, reviewNote? })` | Administrator | Replaces the approved beneficiaries with the request's list and increments `version`. An `annual` request uses the allowance of the Nairobi calendar year it was **submitted** in, so a December request approved in January leaves the new year's change free. Refused when the approved list changed after the request was made (`baseVersion` mismatch); reject it and ask the member to resubmit. |
+| `rejectBeneficiaryChange({ requestId, reviewNote })` | Administrator | Marks the request `rejected` with a required note (up to 500 characters). The approved list and the annual allowance are unchanged. |
 
-Approving and rejecting requests is covered by #67.
+Approving or rejecting clears the member's pending request and sends them an in-app notification (`beneficiary.change_approved` or `beneficiary.change_rejected`). The notification text contains no beneficiary details or review note; the member reads the note in the app. Repeating the same decision returns `duplicate: true` and writes nothing; any other decision on a request that is no longer `pending` is refused, so two administrators acting at once produce exactly one decision.
 
 ## Status
 
-The data model, validation and access rules (#65) and the member and initial-entry commands (#66) are in place. The review commands (#67) and the screens (#68) follow.
+The data model, validation and access rules (#65), the member and initial-entry commands (#66) and the review commands (#67) are in place. The screens (#68) follow.

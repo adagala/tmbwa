@@ -27,3 +27,15 @@ export const classifyBeneficiaryRequest = (
 // Firestore document IDs come from the client, so restrict them to a safe shape.
 export const isValidBeneficiaryRequestId = (value: unknown): value is string =>
   typeof value === 'string' && /^[A-Za-z0-9_-]{8,128}$/.test(value);
+
+// An approved annual change uses the allowance of the year it was submitted,
+// so a December request approved in January leaves the new year's change free.
+// Initial and exceptional changes never use the allowance.
+export const lastAnnualChangeYearAfterApproval = (
+  type: BeneficiaryChangeRequestType,
+  lastAnnualChangeYear: number | null,
+  submittedYear: number,
+) =>
+  type === 'annual'
+    ? Math.max(lastAnnualChangeYear ?? submittedYear, submittedYear)
+    : lastAnnualChangeYear;

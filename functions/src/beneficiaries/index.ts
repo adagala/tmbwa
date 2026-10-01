@@ -7,10 +7,16 @@ import {
   beneficiaryDocumentSchema,
   beneficiaryListSchema,
   beneficiaryStateDocumentSchema,
+  notificationEventDocumentSchema,
   type Beneficiary,
   type BeneficiaryChangeReason,
 } from 'tmbwa-shared';
-import { classifyBeneficiaryRequest, isValidBeneficiaryRequestId, nairobiYear } from './domain';
+import {
+  classifyBeneficiaryRequest,
+  isValidBeneficiaryRequestId,
+  lastAnnualChangeYearAfterApproval,
+  nairobiYear,
+} from './domain';
 import {
   beneficiaryChangeRequestData,
   beneficiaryStateData,
@@ -291,4 +297,120 @@ export const setInitialBeneficiaries = onCall(async (request) => {
     });
     return { requestId, type: 'initial', status: 'approved', duplicate: false };
   });
+});
+
+const MAX_REVIEW_NOTE_LENGTH = 500;
+
+const reviewNote = (value: unknown, required: boolean) => {
+  if (value !== undefined && value !== null && typeof value !== 'string') {
+    throw new HttpsError('invalid-argument', 'reviewNote must be text.');
+  }
+  const note = typeof value === 'string' ? value.trim() : '';
+  if (required && !note) throw new HttpsError('invalid-argument', 'A note is required to reject a request.');
+  if (note.length > MAX_REVIEW_NOTE_LENGTH) {
+    throw new HttpsError('invalid-argument', `reviewNote must be at most ${MAX_REVIEW_NOTE_LENGTH} characters.`);
+  }
+  return note || undefined;
+};
+
+const timestampDate = (value: unknown) =>
+  value && typeof (value as { toDate?: unknown }).toDate === 'function'
+    ? (value as { toDate: () => Date }).toDate()
+    : undefined;
+
+type Decision = 'approved' | 'rejected';
+
+// Shared by approve and reject: one transaction records the decision, the
+// audit event and the member notification, or nothing at all.
+const reviewBeneficiaryChange = async (
+  actorId: string,
+  requestId: string,
+  decision: Decision,
+  note: string | undefined,
+) =>
+  db().runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(requestRef(requestId));
+    if (!snapshot.exists) throw new HttpsError('not-found', 'Beneficiary change request not found.');
+    const changeRequest = beneficiaryChangeRequestData(snapshot);
+    const { memberId } = changeRequest;
+    if (changeRequest.status === decision) {
+      return { requestId, memberId, status: decision, duplicate: true };
+    }
+    if (changeRequest.status !== 'pending') {
+      throw new HttpsError('failed-precondition', `This request is already ${changeRequest.status}.`);
+    }
+    const state = beneficiaryStateData(await transaction.get(stateRef(memberId)));
+
+    let nextState = { ...state, pendingRequestId: state.pendingRequestId === requestId ? null : state.pendingRequestId };
+    if (decision === 'approved') {
+      // The approved list changed after the member submitted: refuse to overwrite it.
+      if (state.version !== changeRequest.baseVersion) {
+        throw new HttpsError(
+          'failed-precondition',
+          'The member\'s beneficiaries changed after this request was made. Reject it and ask the member to resubmit.',
+        );
+      }
+      // Still before any write, as transactions require.
+      const existing = await transaction.get(beneficiariesRef(memberId));
+      const submittedYear = nairobiYear(timestampDate(snapshot.get('submittedAt')) ?? new Date());
+      nextState = {
+        ...nextState,
+        version: state.version + 1,
+        lastAnnualChangeYear: lastAnnualChangeYearAfterApproval(
+          changeRequest.type,
+          state.lastAnnualChangeYear,
+          submittedYear,
+        ),
+      };
+      replaceApprovedBeneficiaries(
+        transaction,
+        memberId,
+        existing,
+        changeRequest.proposedBeneficiaries,
+        requestId,
+        actorId,
+      );
+    }
+
+    transaction.update(snapshot.ref, {
+      status: decision,
+      reviewedBy: actorId,
+      reviewedAt: admin.firestore.FieldValue.serverTimestamp(),
+      ...(note && { reviewNote: note }),
+    });
+    writeState(transaction, memberId, {
+      version: nextState.version,
+      lastAnnualChangeYear: nextState.lastAnnualChangeYear,
+      pendingRequestId: nextState.pendingRequestId,
+    });
+    const action = decision === 'approved' ? 'beneficiary.change_approved' : 'beneficiary.change_rejected';
+    writeBeneficiaryAuditEvent(transaction, action, requestId, actorId, memberId, {
+      type: changeRequest.type,
+      beneficiaryCount: changeRequest.proposedBeneficiaries.length,
+      ...(decision === 'approved' && { version: nextState.version }),
+      ...(decision === 'approved' && changeRequest.type === 'annual' && {
+        annualChangeYear: nextState.lastAnnualChangeYear,
+      }),
+    });
+    const notificationPath = `notification_events/${action.replace(/[._]/g, '-')}-${requestId}`;
+    transaction.create(db().doc(notificationPath), validateDocumentWrite(notificationEventDocumentSchema, {
+      type: action,
+      memberId,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, notificationPath));
+    return { requestId, memberId, status: decision, duplicate: false };
+  });
+
+export const approveBeneficiaryChange = onCall(async (request) => {
+  const actorId = requireAdministrator(request.auth);
+  const data = request.data as CommandData;
+  const requestId = requireRequestId(data);
+  return reviewBeneficiaryChange(actorId, requestId, 'approved', reviewNote(data.reviewNote, false));
+});
+
+export const rejectBeneficiaryChange = onCall(async (request) => {
+  const actorId = requireAdministrator(request.auth);
+  const data = request.data as CommandData;
+  const requestId = requireRequestId(data);
+  return reviewBeneficiaryChange(actorId, requestId, 'rejected', reviewNote(data.reviewNote, true));
 });

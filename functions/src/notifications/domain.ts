@@ -5,7 +5,9 @@ export type NotificationEvent = {
     | 'contribution.created'
     | 'contributions.created'
     | 'contribution.due'
-    | 'contribution.arrears';
+    | 'contribution.arrears'
+    | 'beneficiary.change_approved'
+    | 'beneficiary.change_rejected';
   receiptNumber?: string;
   amount?: number;
   contributionId?: string;
@@ -45,6 +47,18 @@ export const renderNotification = (event: NotificationEvent): NotificationMessag
       return {
         title: 'Contribution in arrears',
         body: `Your ${event.contributionId ?? 'monthly'} contribution has an outstanding balance.`,
+      };
+    // Beneficiary details and the administrator's note stay in the app,
+    // not in notification text.
+    case 'beneficiary.change_approved':
+      return {
+        title: 'Beneficiary change approved',
+        body: 'Your beneficiary change request was approved. Your beneficiaries are now updated.',
+      };
+    case 'beneficiary.change_rejected':
+      return {
+        title: 'Beneficiary change not approved',
+        body: 'Your beneficiary change request was not approved. See your beneficiaries for the administrator\'s note.',
       };
     default:
       throw new Error('Unsupported notification event.');

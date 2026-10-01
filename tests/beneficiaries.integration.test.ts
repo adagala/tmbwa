@@ -32,6 +32,10 @@ const submit = (requestId: string, data: Record<string, unknown> = {}, auth: unk
   });
 const cancel = (requestId: string, auth: unknown = memberAuth()) =>
   call(beneficiaries.cancelBeneficiaryChange, auth, { requestId });
+const approve = (requestId: string, data: Record<string, unknown> = {}, auth: unknown = adminAuth) =>
+  call(beneficiaries.approveBeneficiaryChange, auth, { requestId, ...data });
+const reject = (requestId: string, data: Record<string, unknown> = { reviewNote: 'Details incomplete' }, auth: unknown = adminAuth) =>
+  call(beneficiaries.rejectBeneficiaryChange, auth, { requestId, ...data });
 const setInitial = (requestId: string, data: Record<string, unknown> = {}, auth: unknown = adminAuth) =>
   call(beneficiaries.setInitialBeneficiaries, auth, {
     requestId, memberId: MEMBER, beneficiaries: [beneficiary(), beneficiary('Neema')], ...data,
@@ -48,6 +52,8 @@ const stateDoc = async (id = MEMBER) => (await db().doc(`members/${id}/beneficia
 const requestDoc = async (id: string) => (await db().doc(`beneficiary_change_requests/${id}`).get()).data();
 const approvedBeneficiaries = async () =>
   (await db().collection(`members/${MEMBER}/beneficiaries`).get()).docs.map((item) => item.data());
+const notificationEvents = async () =>
+  (await db().collection('notification_events').get()).docs.map((item) => item.data());
 const auditEvents = async () =>
   (await db().collection('audit_events').get()).docs.map((item) => item.data());
 
@@ -286,5 +292,140 @@ describe('setInitialBeneficiaries', () => {
     await expect(setInitial(REQUEST, {}, memberAuth())).rejects.toMatchObject({ code: 'permission-denied' });
     await expect(setInitial(REQUEST, { memberId: 'missing-member' })).rejects.toMatchObject({ code: 'not-found' });
     await expect(setInitial(REQUEST, { beneficiaries: [] })).rejects.toMatchObject({ code: 'invalid-argument' });
+  });
+});
+
+describe('approveBeneficiaryChange', () => {
+  it('replaces the approved list and uses the annual allowance', async () => {
+    await setInitial('request-initial-1');
+    await submit(REQUEST, { beneficiaries: [beneficiary('Imani'), { ...beneficiary('Zawadi'), relationship: 'daughter' }] });
+    await expect(approve(REQUEST, { reviewNote: ' Looks good ' })).resolves.toEqual({
+      requestId: REQUEST, memberId: MEMBER, status: 'approved', duplicate: false,
+    });
+
+    const approved = await approvedBeneficiaries();
+    expect(approved.map((item) => item.firstname).sort()).toEqual(['Imani', 'Zawadi']);
+    expect(approved[0]).toMatchObject({ requestId: REQUEST, approvedBy: 'admin-1' });
+    expect(await stateDoc()).toMatchObject({ version: 2, lastAnnualChangeYear: 2026, pendingRequestId: null });
+    expect(await requestDoc(REQUEST)).toMatchObject({
+      status: 'approved', reviewedBy: 'admin-1', reviewNote: 'Looks good',
+    });
+
+    const audit = (await auditEvents()).find((event) => event.action === 'beneficiary.change_approved');
+    expect(audit).toMatchObject({
+      actorId: 'admin-1', memberId: MEMBER, targetId: REQUEST,
+      changes: { type: 'annual', beneficiaryCount: 2, version: 2, annualChangeYear: 2026 },
+    });
+    expect(JSON.stringify(audit)).not.toContain('Imani');
+    expect(await notificationEvents()).toEqual([
+      expect.objectContaining({ type: 'beneficiary.change_approved', memberId: MEMBER }),
+    ]);
+
+    // The annual change is now used, so the next one needs a reason.
+    await expect(submit('request-000002')).rejects.toMatchObject({ code: 'failed-precondition' });
+    await expect(submit('request-000002', { reason: { category: 'birth_or_adoption' } }))
+      .resolves.toMatchObject({ type: 'exceptional' });
+  });
+
+  it('does not use the annual allowance for initial or exceptional changes', async () => {
+    await submit(REQUEST);
+    await approve(REQUEST);
+    expect(await stateDoc()).toMatchObject({ version: 1, lastAnnualChangeYear: null });
+
+    await seedState({ version: 1, lastAnnualChangeYear: 2026 });
+    await submit('request-000002', { reason: { category: 'marriage' } });
+    await approve('request-000002');
+    expect(await stateDoc()).toMatchObject({ version: 2, lastAnnualChangeYear: 2026 });
+    await seedState({ version: 2, lastAnnualChangeYear: 2025 });
+    await expect(submit('request-000003')).resolves.toMatchObject({ type: 'annual' });
+  });
+
+  it('counts a December request approved in January against the year it was submitted', async () => {
+    await seedState({ version: 1, lastAnnualChangeYear: 2025 });
+    vi.setSystemTime(new Date('2026-12-30T10:00:00+03:00'));
+    await submit(REQUEST);
+    vi.setSystemTime(new Date('2027-01-04T10:00:00+03:00'));
+    await approve(REQUEST);
+    expect(await stateDoc()).toMatchObject({ lastAnnualChangeYear: 2026 });
+    await expect(submit('request-000002')).resolves.toMatchObject({ type: 'annual' });
+  });
+
+  it('refuses a request made against an older approved list', async () => {
+    await seedState({ version: 1 });
+    await submit(REQUEST);
+    await db().doc(`members/${MEMBER}/beneficiary_state/current`).update({ version: 2 });
+    await expect(approve(REQUEST)).rejects.toMatchObject({ code: 'failed-precondition' });
+    expect(await requestDoc(REQUEST)).toMatchObject({ status: 'pending' });
+    expect(await approvedBeneficiaries()).toEqual([]);
+  });
+
+  it('is idempotent and refuses requests that are no longer pending', async () => {
+    await submit(REQUEST);
+    await approve(REQUEST);
+    await expect(approve(REQUEST)).resolves.toMatchObject({ duplicate: true });
+    await expect(reject(REQUEST)).rejects.toMatchObject({ code: 'failed-precondition' });
+    expect(await notificationEvents()).toHaveLength(1);
+    expect((await auditEvents()).filter((event) => event.action === 'beneficiary.change_approved')).toHaveLength(1);
+
+    await submit('request-000002', { reason: { category: 'marriage' } });
+    await cancel('request-000002');
+    await expect(approve('request-000002')).rejects.toMatchObject({ code: 'failed-precondition' });
+    await expect(approve('request-missing')).rejects.toMatchObject({ code: 'not-found' });
+  });
+
+  it('records exactly one decision when administrators act at once', async () => {
+    await submit(REQUEST);
+    const results = await Promise.allSettled([
+      approve(REQUEST),
+      reject(REQUEST, { reviewNote: 'Duplicate request' }, { uid: 'admin-2', token: { role: 'administrator' } }),
+    ]);
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(await notificationEvents()).toHaveLength(1);
+    const decisions = (await auditEvents()).filter((event) => event.action !== 'beneficiary.change_requested');
+    expect(decisions).toHaveLength(1);
+  });
+
+  it('requires an administrator', async () => {
+    await submit(REQUEST);
+    await expect(approve(REQUEST, {}, memberAuth())).rejects.toMatchObject({ code: 'permission-denied' });
+    await expect(approve(REQUEST, {}, null)).rejects.toMatchObject({ code: 'unauthenticated' });
+    await expect(approve(REQUEST, { reviewNote: 'x'.repeat(501) })).rejects.toMatchObject({ code: 'invalid-argument' });
+  });
+});
+
+describe('rejectBeneficiaryChange', () => {
+  it('keeps the approved list and the annual allowance', async () => {
+    await setInitial('request-initial-1');
+    await submit(REQUEST, { beneficiaries: [beneficiary('Imani')] });
+    await expect(reject(REQUEST)).resolves.toMatchObject({ status: 'rejected', duplicate: false });
+
+    expect((await approvedBeneficiaries()).map((item) => item.firstname).sort()).toEqual(['Baraka', 'Neema']);
+    expect(await stateDoc()).toMatchObject({ version: 1, lastAnnualChangeYear: null, pendingRequestId: null });
+    expect(await requestDoc(REQUEST)).toMatchObject({
+      status: 'rejected', reviewedBy: 'admin-1', reviewNote: 'Details incomplete',
+    });
+    expect((await auditEvents()).find((event) => event.action === 'beneficiary.change_rejected'))
+      .toMatchObject({ changes: { type: 'annual', beneficiaryCount: 1 } });
+    expect(await notificationEvents()).toEqual([
+      expect.objectContaining({ type: 'beneficiary.change_rejected', memberId: MEMBER }),
+    ]);
+    // The annual change is still available.
+    await expect(submit('request-000002')).resolves.toMatchObject({ type: 'annual' });
+  });
+
+  it('requires a note and an administrator', async () => {
+    await submit(REQUEST);
+    await expect(reject(REQUEST, {})).rejects.toMatchObject({ code: 'invalid-argument' });
+    await expect(reject(REQUEST, { reviewNote: '   ' })).rejects.toMatchObject({ code: 'invalid-argument' });
+    await expect(reject(REQUEST, undefined, memberAuth())).rejects.toMatchObject({ code: 'permission-denied' });
+    expect(await requestDoc(REQUEST)).toMatchObject({ status: 'pending' });
+  });
+
+  it('is idempotent for a retried rejection', async () => {
+    await submit(REQUEST);
+    await reject(REQUEST);
+    await expect(reject(REQUEST)).resolves.toMatchObject({ duplicate: true });
+    await expect(approve(REQUEST)).rejects.toMatchObject({ code: 'failed-precondition' });
+    expect(await notificationEvents()).toHaveLength(1);
   });
 });
