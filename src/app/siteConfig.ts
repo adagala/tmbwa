@@ -9,6 +9,7 @@ import {
   RiNotification3Line,
   RiBookOpenLine,
   RiExchange2Line,
+  RiHeartsLine,
 } from '@remixicon/react';
 
 export const siteConfig = {
@@ -71,6 +72,13 @@ export const navigation = [
     href: '/kcb-reconciliation',
     icon: RiExchange2Line,
     administratorOnly: true,
+  },
+  {
+    name: 'Beneficiary requests',
+    href: '/beneficiary-requests',
+    icon: RiHeartsLine,
+    administratorOnly: true,
+    showPendingBeneficiaryCount: true,
   },
   {
     name: 'Notifications',
