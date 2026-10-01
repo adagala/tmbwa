@@ -16,7 +16,7 @@ import {
   notificationPreferenceData,
   validateDocumentWrite,
 } from '../firestoreData';
-import { requirePermission } from '../authorization';
+import { assertActorActive, requirePermission } from '../authorization';
 
 type Data = Record<string, unknown>;
 const db = () => admin.firestore();
@@ -89,6 +89,7 @@ export const retryNotificationDelivery = onCall(async (request) => {
   if (!deliveryId) throw new HttpsError('invalid-argument', 'deliveryId is required.');
   const ref = db().doc(`notification_deliveries/${deliveryId}`);
   await db().runTransaction(async (transaction) => {
+    await assertActorActive(transaction, actorId);
     const snapshot = await transaction.get(ref);
     if (!snapshot.exists) throw new HttpsError('not-found', 'Delivery not found.');
     if (!['failed', 'dead_letter'].includes(notificationDeliveryData(snapshot).status)) {

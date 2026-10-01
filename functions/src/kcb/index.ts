@@ -63,7 +63,11 @@ import {
   recordStkTopUp,
   stkTopUpLockRef,
 } from './topUp';
-import { assertNotOwnRecord, requirePermission } from '../authorization';
+import {
+  assertActorActive,
+  assertNotOwnRecord,
+  requirePermission,
+} from '../authorization';
 
 type Data = Record<string, unknown>;
 
@@ -304,6 +308,7 @@ export const reconcileKcbPayment = onCall(async (request) => {
   const allocations = requiredAllocations(data.allocations);
 
   return db().runTransaction(async (transaction) => {
+    await assertActorActive(transaction, actorId);
     const commandRef = db().doc(`financial_commands/${requestId}`);
     const notificationRef = db().doc(
       `kcb_payment_notifications/${providerTransactionId}`,
@@ -641,6 +646,7 @@ export const allocateKcbPaymentCredit = onCall(async (request) => {
     throw new HttpsError('invalid-argument', 'Add at least one allocation.');
   }
   return db().runTransaction(async (transaction) => {
+    await assertActorActive(transaction, actorId);
     const commandRef = db().doc(`financial_commands/${requestId}`);
     const notificationRef = db().doc(`kcb_payment_notifications/${providerTransactionId}`);
     const [command, notificationSnapshot] = await Promise.all([
@@ -797,6 +803,7 @@ export const rejectKcbPayment = onCall(async (request) => {
   const providerTransactionId = requiredString(data, 'providerTransactionId');
   const reason = requiredString(data, 'reason');
   return db().runTransaction(async (transaction) => {
+    await assertActorActive(transaction, actorId);
     const commandRef = db().doc(`financial_commands/${requestId}`);
     const notificationRef = db().doc(
       `kcb_payment_notifications/${providerTransactionId}`,
@@ -908,6 +915,7 @@ export const resolveKcbStkUnknownOutcome = onCall(async (request) => {
   const stkRequestId = requiredString(data, 'stkRequestId');
   const reason = requiredString(data, 'reason');
   return db().runTransaction(async (transaction) => {
+    await assertActorActive(transaction, actorId);
     const commandRef = db().doc(`financial_commands/${commandId}`);
     const stkRequestRef = db().doc(`kcb_stk_requests/${stkRequestId}`);
     const [command, stkRequestSnapshot] = await Promise.all([
@@ -1087,6 +1095,9 @@ export const requestKcbStkPush = onCall(
         .where('memberId', '==', memberId)
         .where('contributionId', '==', contributionId);
     const preparation = await db().runTransaction(async (transaction) => {
+      if (requesterId !== memberId) {
+        await assertActorActive(transaction, requesterId);
+      }
       const [existing, member, contribution, lock, contributionStkRequests] =
         await Promise.all([
           transaction.get(requestRef),

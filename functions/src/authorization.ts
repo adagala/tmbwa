@@ -12,6 +12,14 @@ export type CallableAuth = { uid: string; token: Record<string, unknown> } | und
 
 export type Actor = { actorId: string; actorRoles: Role[] };
 
+const actorRef = (actorId: string) => admin.firestore().doc(`members/${actorId}`);
+
+const assertActive = (actor: FirebaseFirestore.DocumentSnapshot) => {
+  if (actor.get('status') !== MEMBER_STATUS.ACTIVE) {
+    throw new HttpsError('permission-denied', 'Your account is not active.');
+  }
+};
+
 // Admin SDK writes bypass Firestore rules, so every privileged callable must
 // pass through this check. It confirms the permission and that the actor's
 // member record is still active: a suspended or inactive member keeps their
@@ -25,11 +33,19 @@ export const requirePermission = async (
   if (!roleHasPermission(actorRoles, permission)) {
     throw new HttpsError('permission-denied', 'You do not have permission to perform this action.');
   }
-  const actor = await admin.firestore().doc(`members/${auth.uid}`).get();
-  if (actor.get('status') !== MEMBER_STATUS.ACTIVE) {
-    throw new HttpsError('permission-denied', 'Your account is not active.');
-  }
+  assertActive(await actorRef(auth.uid).get());
   return { actorId: auth.uid, actorRoles };
+};
+
+// Privileged mutations must also call this first inside their transaction.
+// Reading the actor there puts their member record in the transaction's read
+// set, so a concurrent suspension forces a retry that is then refused, rather
+// than letting a command authorized moments earlier commit.
+export const assertActorActive = async (
+  transaction: FirebaseFirestore.Transaction,
+  actorId: string,
+) => {
+  assertActive(await transaction.get(actorRef(actorId)));
 };
 
 // No one performs privileged actions on their own member record.

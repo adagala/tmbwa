@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Runs against the Firestore emulator only (see `npm run test:integration`).
 process.env.GCLOUD_PROJECT = 'demo-tmbwa';
@@ -38,6 +38,24 @@ const withRoles = (roles: string[], uid = ACTOR) => ({ uid, token: { roles } });
 
 const seedActor = (status = 'active', uid = ACTOR) =>
   db().doc(`members/${uid}`).set({ status });
+
+const seedTarget = () =>
+  db().doc(`members/${TARGET}`).set({
+    firstname: 'Synthetic',
+    lastname: 'Member',
+    membernumber: '0001/26',
+    win: 'WIN-1',
+    phonenumber: '0712345678',
+    gender: 'female',
+    email: 'synthetic@example.test',
+    role: 'member',
+    isFeesPaid: true,
+    status: 'active',
+    balance: 0,
+    contributionBalance: 0,
+    reservedKcbCredit: 0,
+    datejoined: admin.firestore.Timestamp.fromDate(new Date('2026-01-10T09:00:00+03:00')),
+  });
 
 const clearFirestore = () =>
   fetch(
@@ -97,7 +115,13 @@ const cases: Case[] = [
     fn: financial.correctLegacyContribution,
     allowed: 'treasurer',
     denied: 'auditor',
-    data: (memberId) => ({ requestId, memberId, contributionId: '2026-09-01', reason: 'Correction' }),
+    data: (memberId) => ({
+      requestId,
+      memberId,
+      contributionId: '2026-09-01',
+      correctedPaidAmount: 500,
+      reason: 'Correction',
+    }),
   },
   {
     name: 'reverseLegacyContributionCorrection',
@@ -171,7 +195,19 @@ const cases: Case[] = [
     fn: beneficiaries.setInitialBeneficiaries,
     allowed: 'welfare_officer',
     denied: 'treasurer',
-    data: (memberId) => ({ requestId, memberId, beneficiaries: [] }),
+    data: (memberId) => ({
+      requestId,
+      memberId,
+      beneficiaries: [
+        {
+          firstname: 'Baraka',
+          lastname: 'Synthetic',
+          relationship: 'son',
+          dateOfBirth: '2015-04-20',
+          idnumber: '',
+        },
+      ],
+    }),
   },
   {
     name: 'approveBeneficiaryChange',
@@ -391,22 +427,7 @@ describe('requestKcbStkPush on behalf of another member', () => {
 
 describe('audit events record the actor\'s roles', () => {
   it('stores the roles held when the action was performed', async () => {
-    await db().doc(`members/${TARGET}`).set({
-      firstname: 'Synthetic',
-      lastname: 'Member',
-      membernumber: '0001/26',
-      win: 'WIN-1',
-      phonenumber: '0712345678',
-      gender: 'female',
-      email: 'synthetic@example.test',
-      role: 'member',
-      isFeesPaid: true,
-      status: 'active',
-      balance: 0,
-      contributionBalance: 0,
-      reservedKcbCredit: 0,
-      datejoined: admin.firestore.Timestamp.fromDate(new Date('2026-01-10T09:00:00+03:00')),
-    });
+    await seedTarget();
     await call(financial.createContribution, withRoles(['treasurer', 'auditor']), {
       requestId,
       memberId: TARGET,
@@ -418,5 +439,66 @@ describe('audit events record the actor\'s roles', () => {
       actorRoles: ['treasurer', 'auditor'],
       action: 'contribution.created',
     });
+  });
+});
+
+describe('suspension between authorization and commit', () => {
+  // Suspends the actor after requirePermission has passed but before the
+  // command's transaction runs, as a concurrent status change would.
+  const suspendBeforeTransaction = () => {
+    const firestore = db();
+    const runTransaction = firestore.runTransaction.bind(firestore);
+    vi.spyOn(firestore, 'runTransaction').mockImplementation((async (
+      ...args: Parameters<typeof runTransaction>
+    ) => {
+      await firestore.doc(`members/${ACTOR}`).update({ status: 'suspended' });
+      return runTransaction(...args);
+    }) as typeof runTransaction);
+  };
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const notActive = { code: 'permission-denied', message: 'Your account is not active.' };
+  const readOnlyOrRetired = [
+    'recordContributionPayment',
+    'adjustMemberBalance',
+    'listLegacyContributionInventory',
+  ];
+  const mutations = cases.filter(({ name }) => !readOnlyOrRetired.includes(name));
+
+  it.each(mutations)('$name re-checks the actor inside its transaction', async ({ fn, allowed, data }) => {
+    suspendBeforeTransaction();
+    await expect(call(fn, withRoles([allowed]), data(TARGET))).rejects.toMatchObject(notActive);
+  });
+
+  it('refuses a mutation that would otherwise commit, writing nothing', async () => {
+    await seedTarget();
+    suspendBeforeTransaction();
+    await expect(
+      call(financial.createContribution, withRoles(['treasurer']), {
+        requestId,
+        memberId: TARGET,
+        month: '2026-09-01',
+      }),
+    ).rejects.toMatchObject(notActive);
+    expect((await db().doc(`members/${TARGET}/contributions/2026-09-01`).get()).exists).toBe(false);
+    expect((await db().doc(`financial_commands/${requestId}`).get()).exists).toBe(false);
+    expect((await db().doc(`audit_events/${requestId}`).get()).exists).toBe(false);
+    expect((await db().doc(`members/${TARGET}`).get()).get('balance')).toBe(0);
+  });
+
+  it('re-checks an officer prompting an STK payment for another member', async () => {
+    suspendBeforeTransaction();
+    await expect(
+      call(kcb.requestKcbStkPush, withRoles(['treasurer']), {
+        requestId,
+        memberId: TARGET,
+        contributionId: '2026-09-01',
+        amount: 500,
+      }),
+    ).rejects.toMatchObject(notActive);
+    expect((await db().collection('kcb_stk_requests').get()).empty).toBe(true);
   });
 });

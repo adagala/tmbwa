@@ -56,6 +56,8 @@ Every privileged command goes through `requirePermission` (`functions/src/author
 - rejects callers whose roles lack the permission;
 - rejects callers whose member record is not `active`, even when their token still carries privileged claims.
 
+Every privileged command that writes data also calls `assertActorActive` first inside its Firestore transaction. Because the actor's member record is then part of the transaction, suspending an officer while their command is in flight makes the transaction retry, and the retry is refused.
+
 No one may perform a privileged financial, KCB or member-lifecycle action on their own member record, whatever their roles. This includes super admins. Beneficiary review already enforced the same rule.
 
 Audit events written by these commands record the actor's roles at the time of the action in `actorRoles`.

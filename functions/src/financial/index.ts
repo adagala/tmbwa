@@ -33,7 +33,12 @@ import {
 } from '../firestoreData';
 import { isActiveStkRequestStatus } from '../kcb/domain';
 import { getCurrentMonth } from '../utils';
-import { type Actor, assertNotOwnRecord, requirePermission } from '../authorization';
+import {
+  type Actor,
+  assertActorActive,
+  assertNotOwnRecord,
+  requirePermission,
+} from '../authorization';
 
 type CommandData = Record<string, unknown>;
 
@@ -139,6 +144,7 @@ export const reverseContributionPayment = onCall(async (request) => {
   const paymentId = requiredString(data, 'paymentId');
 
   return db().runTransaction(async (transaction) => {
+    await assertActorActive(transaction, actorId);
     const command = await readCommand(transaction, requestId);
     if (command.exists) {
       return { requestId, duplicate: true };
@@ -355,6 +361,7 @@ export const createContribution = onCall(async (request) => {
   }
 
   return db().runTransaction(async (transaction) => {
+    await assertActorActive(transaction, actorId);
     const command = await readCommand(transaction, requestId);
     if (command.exists) {
       return { requestId, duplicate: true };
@@ -411,6 +418,7 @@ export const createContributions = onCall(async (request) => {
   assertNotOwnRecord(actorId, memberId);
 
   return db().runTransaction(async (transaction) => {
+    await assertActorActive(transaction, actorId);
     const command = await readCommand(transaction, requestId);
     if (command.exists) {
       return { requestId, duplicate: true };
@@ -523,6 +531,7 @@ export const correctLegacyContribution = onCall(async (request) => {
     ? data.originalPaymentDateMillis : undefined;
 
   return db().runTransaction(async (transaction) => {
+    await assertActorActive(transaction, actorId);
     const command = await readCommand(transaction, requestId);
     if (command.exists) return { requestId, duplicate: true };
     const memberRef = db().doc(`members/${memberId}`);
@@ -611,6 +620,7 @@ export const reverseLegacyContributionCorrection = onCall(async (request) => {
   const correctionId = requiredString(data, 'correctionId');
   const reason = requiredString(data, 'reason');
   return db().runTransaction(async (transaction) => {
+    await assertActorActive(transaction, actorId);
     const command = await readCommand(transaction, requestId);
     if (command.exists) return { requestId, duplicate: true };
     const correctionRef = db().doc(`members/${memberId}/legacy_corrections/${correctionId}`);
@@ -728,6 +738,7 @@ export const removeContribution = onCall(async (request) => {
   assertNotOwnRecord(actorId, memberId);
   const contributionId = requiredString(data, 'contributionId');
   return db().runTransaction(async (transaction) => {
+    await assertActorActive(transaction, actorId);
     const command = await readCommand(transaction, requestId);
     if (command.exists) {
       return { requestId, duplicate: true };
@@ -795,6 +806,7 @@ export const deleteMemberSafely = onCall(async (request) => {
   const memberId = requiredString(data, 'memberId');
   assertNotOwnRecord(actorId, memberId);
   return db().runTransaction(async (transaction) => {
+    await assertActorActive(transaction, actorId);
     const command = await readCommand(transaction, requestId);
     if (command.exists) return { requestId, duplicate: true };
     const memberRef = db().doc(`members/${memberId}`);
@@ -845,6 +857,7 @@ export const transitionMemberStatus = onCall(async (request) => {
     throw new HttpsError('invalid-argument', 'Unsupported member status.');
   }
   const result = await db().runTransaction(async (transaction) => {
+    await assertActorActive(transaction, actorId);
     const command = await readCommand(transaction, requestId);
     const memberRef = db().doc(`members/${memberId}`);
     const snapshot = await transaction.get(memberRef);

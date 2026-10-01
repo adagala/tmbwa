@@ -22,7 +22,7 @@ import {
   beneficiaryStateData,
   validateDocumentWrite,
 } from '../firestoreData';
-import { requirePermission } from '../authorization';
+import { assertActorActive, requirePermission } from '../authorization';
 
 type CommandData = Record<string, unknown>;
 type Auth = { uid: string; token: Record<string, unknown> } | undefined;
@@ -257,6 +257,7 @@ export const setInitialBeneficiaries = onCall(async (request) => {
   const beneficiaries = parseInput(beneficiaryListSchema, data.beneficiaries);
 
   return db().runTransaction(async (transaction) => {
+    await assertActorActive(transaction, actorId);
     const existingRequest = await transaction.get(requestRef(requestId));
     if (existingRequest.exists) {
       return existingRequestResult(
@@ -333,6 +334,7 @@ const reviewBeneficiaryChange = async (
   note: string | undefined,
 ) =>
   db().runTransaction(async (transaction) => {
+    await assertActorActive(transaction, actorId);
     const snapshot = await transaction.get(requestRef(requestId));
     if (!snapshot.exists) throw new HttpsError('not-found', 'Beneficiary change request not found.');
     const changeRequest = beneficiaryChangeRequestData(snapshot);
