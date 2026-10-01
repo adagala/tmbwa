@@ -62,6 +62,9 @@ const payments = async () =>
 
 const adminAuth = { uid: 'admin-1', token: { role: 'administrator' } };
 const memberAuth = { uid: MEMBER, token: { role: 'member' } };
+// Officers must hold an active member record to act.
+const seedOfficers = (...uids: string[]) =>
+  Promise.all(uids.map((uid) => db().doc(`members/${uid}`).set({ status: 'active' })));
 
 const createContributions = (
   months: unknown,
@@ -88,6 +91,7 @@ beforeAll(() => {
 
 beforeEach(async () => {
   await clearFirestore();
+  await seedOfficers(adminAuth.uid);
   // Only Date is faked so the Firestore client's timers keep working.
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(new Date('2026-09-15T09:00:00+03:00'));

@@ -75,6 +75,16 @@ const payments = async () =>
 
 const memberAuth = (uid = MEMBER) => ({ uid, token: { role: 'member' } });
 const adminAuth = { uid: 'admin-1', token: { role: 'administrator' } };
+// Officers must hold an active member record to act. Contribution generation
+// reads every member, so the record must be complete.
+const seedOfficers = (...uids: string[]) =>
+  Promise.all(uids.map((uid) => db().doc(`members/${uid}`).set({
+    ...memberFields,
+    email: `${uid}@example.test`,
+    status: 'active',
+    balance: 0,
+    contributionBalance: 0,
+  })));
 
 let checkoutSequence = 0;
 
@@ -197,6 +207,7 @@ beforeAll(() => {
 beforeEach(async () => {
   vi.unstubAllGlobals();
   await clearFirestore();
+  await seedOfficers(adminAuth.uid);
 });
 
 afterAll(async () => {

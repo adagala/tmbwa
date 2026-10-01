@@ -33,6 +33,12 @@ import {
 } from '../firestoreData';
 import { isActiveStkRequestStatus } from '../kcb/domain';
 import { getCurrentMonth } from '../utils';
+import {
+  type Actor,
+  assertActorActive,
+  assertNotOwnRecord,
+  requirePermission,
+} from '../authorization';
 
 type CommandData = Record<string, unknown>;
 
@@ -66,14 +72,6 @@ const assertNoActiveStkLock = (
   }
 };
 
-const requireAdministrator = (auth: { uid: string; token: Record<string, unknown> } | undefined) => {
-  if (!auth) throw new HttpsError('unauthenticated', 'Sign in is required.');
-  if (auth.token.role !== 'administrator') {
-    throw new HttpsError('permission-denied', 'Administrator access is required.');
-  }
-  return auth.uid;
-};
-
 const requiredString = (data: CommandData, key: string) => {
   const value = data[key];
   if (typeof value !== 'string' || !value.trim()) {
@@ -87,7 +85,7 @@ const commandRef = (requestId: string) => db().doc(`financial_commands/${request
 const writeAuditEvent = (
   transaction: FirebaseFirestore.Transaction,
   requestId: string,
-  actorId: string,
+  { actorId, actorRoles }: Actor,
   action: string,
   memberId: string,
   targetId: string,
@@ -97,6 +95,7 @@ const writeAuditEvent = (
   transaction.create(db().doc(path), validateDocumentWrite(auditEventDocumentSchema, {
     requestId,
     actorId,
+    actorRoles,
     action,
     memberId,
     targetId,
@@ -128,7 +127,7 @@ const writeCommand = (
 };
 
 export const recordContributionPayment = onCall(async (request) => {
-  requireAdministrator(request.auth);
+  await requirePermission(request.auth, 'payments.record');
   throw new HttpsError(
     'failed-precondition',
     'Manual payments are retired. Reconcile payments through KCB.',
@@ -136,13 +135,16 @@ export const recordContributionPayment = onCall(async (request) => {
 });
 
 export const reverseContributionPayment = onCall(async (request) => {
-  const actorId = requireAdministrator(request.auth);
+  const actor = await requirePermission(request.auth, 'payments.reverse');
+  const { actorId } = actor;
   const data = request.data as CommandData;
   const requestId = requiredString(data, 'requestId');
   const memberId = requiredString(data, 'memberId');
+  assertNotOwnRecord(actorId, memberId);
   const paymentId = requiredString(data, 'paymentId');
 
   return db().runTransaction(async (transaction) => {
+    await assertActorActive(transaction, actorId);
     const command = await readCommand(transaction, requestId);
     if (command.exists) {
       return { requestId, duplicate: true };
@@ -258,7 +260,7 @@ export const reverseContributionPayment = onCall(async (request) => {
         },
       );
     }
-    writeAuditEvent(transaction, requestId, actorId, 'payment.reversed', memberId, paymentId, {
+    writeAuditEvent(transaction, requestId, actor, 'payment.reversed', memberId, paymentId, {
       amount: Number(payment.amount),
       contributionAmount: Number(payment.contribution_amount),
       allocations,
@@ -347,16 +349,19 @@ const writeContributionMonth = (
 };
 
 export const createContribution = onCall(async (request) => {
-  const actorId = requireAdministrator(request.auth);
+  const actor = await requirePermission(request.auth, 'contributions.manage');
+  const { actorId } = actor;
   const data = request.data as CommandData;
   const requestId = requiredString(data, 'requestId');
   const memberId = requiredString(data, 'memberId');
+  assertNotOwnRecord(actorId, memberId);
   const month = requiredString(data, 'month');
   if (!/^\d{4}-(0[1-9]|1[0-2])-01$/.test(month)) {
     throw new HttpsError('invalid-argument', 'month must use YYYY-MM-01.');
   }
 
   return db().runTransaction(async (transaction) => {
+    await assertActorActive(transaction, actorId);
     const command = await readCommand(transaction, requestId);
     if (command.exists) {
       return { requestId, duplicate: true };
@@ -385,7 +390,7 @@ export const createContribution = onCall(async (request) => {
       balance: admin.firestore.FieldValue.increment(-MONTHLY_CONTRIBUTION),
       contributionBalance: admin.firestore.FieldValue.increment(applied),
     });
-    writeAuditEvent(transaction, requestId, actorId, 'contribution.created', memberId, month, {
+    writeAuditEvent(transaction, requestId, actor, 'contribution.created', memberId, month, {
       amount: MONTHLY_CONTRIBUTION,
       appliedFromBalance: applied,
     });
@@ -405,12 +410,15 @@ export const createContribution = onCall(async (request) => {
 // all-or-nothing transaction. Months are billed oldest first so unreserved
 // credit settles the oldest month first.
 export const createContributions = onCall(async (request) => {
-  const actorId = requireAdministrator(request.auth);
+  const actor = await requirePermission(request.auth, 'contributions.manage');
+  const { actorId } = actor;
   const data = request.data as CommandData;
   const requestId = requiredString(data, 'requestId');
   const memberId = requiredString(data, 'memberId');
+  assertNotOwnRecord(actorId, memberId);
 
   return db().runTransaction(async (transaction) => {
+    await assertActorActive(transaction, actorId);
     const command = await readCommand(transaction, requestId);
     if (command.exists) {
       return { requestId, duplicate: true };
@@ -461,7 +469,7 @@ export const createContributions = onCall(async (request) => {
       availableCredit -= applied;
       totalApplied += applied;
       totalOutstanding += balance;
-      writeAuditEvent(transaction, `${requestId}-${month}`, actorId, 'contribution.created', memberId, month, {
+      writeAuditEvent(transaction, `${requestId}-${month}`, actor, 'contribution.created', memberId, month, {
         amount: MONTHLY_CONTRIBUTION,
         appliedFromBalance: applied,
         batchRequestId: requestId,
@@ -492,7 +500,7 @@ export const createContributions = onCall(async (request) => {
 });
 
 export const adjustMemberBalance = onCall(async (request) => {
-  requireAdministrator(request.auth);
+  await requirePermission(request.auth, 'balances.adjust');
   throw new HttpsError(
     'failed-precondition',
     'Manual balance adjustments are retired. Use KCB reconciliation or a legacy correction.',
@@ -500,10 +508,12 @@ export const adjustMemberBalance = onCall(async (request) => {
 });
 
 export const correctLegacyContribution = onCall(async (request) => {
-  const actorId = requireAdministrator(request.auth);
+  const actor = await requirePermission(request.auth, 'contributions.manage');
+  const { actorId } = actor;
   const data = request.data as CommandData;
   const requestId = requiredString(data, 'requestId');
   const memberId = requiredString(data, 'memberId');
+  assertNotOwnRecord(actorId, memberId);
   const contributionId = requiredString(data, 'contributionId');
   const reason = requiredString(data, 'reason');
   let correctedPaidAmount: number;
@@ -521,6 +531,7 @@ export const correctLegacyContribution = onCall(async (request) => {
     ? data.originalPaymentDateMillis : undefined;
 
   return db().runTransaction(async (transaction) => {
+    await assertActorActive(transaction, actorId);
     const command = await readCommand(transaction, requestId);
     if (command.exists) return { requestId, duplicate: true };
     const memberRef = db().doc(`members/${memberId}`);
@@ -593,20 +604,23 @@ export const correctLegacyContribution = onCall(async (request) => {
       contribution: admin.firestore.FieldValue.increment(correction.delta),
       month: contributionId,
     }, { merge: true });
-    writeAuditEvent(transaction, requestId, actorId, 'legacy_contribution.corrected',
+    writeAuditEvent(transaction, requestId, actor, 'legacy_contribution.corrected',
       memberId, contributionId, correctionRecord);
     return { requestId, correctionId: requestId, delta: correction.delta, duplicate: false };
   });
 });
 
 export const reverseLegacyContributionCorrection = onCall(async (request) => {
-  const actorId = requireAdministrator(request.auth);
+  const actor = await requirePermission(request.auth, 'contributions.manage');
+  const { actorId } = actor;
   const data = request.data as CommandData;
   const requestId = requiredString(data, 'requestId');
   const memberId = requiredString(data, 'memberId');
+  assertNotOwnRecord(actorId, memberId);
   const correctionId = requiredString(data, 'correctionId');
   const reason = requiredString(data, 'reason');
   return db().runTransaction(async (transaction) => {
+    await assertActorActive(transaction, actorId);
     const command = await readCommand(transaction, requestId);
     if (command.exists) return { requestId, duplicate: true };
     const correctionRef = db().doc(`members/${memberId}/legacy_corrections/${correctionId}`);
@@ -663,14 +677,14 @@ export const reverseLegacyContributionCorrection = onCall(async (request) => {
     transaction.set(db().doc(`monthly_stats/${contributionId}`), {
       contribution: admin.firestore.FieldValue.increment(-delta), month: contributionId,
     }, { merge: true });
-    writeAuditEvent(transaction, requestId, actorId, 'legacy_contribution.correction_reversed',
+    writeAuditEvent(transaction, requestId, actor, 'legacy_contribution.correction_reversed',
       memberId, contributionId, { correctionId, reason, delta: -delta });
     return { requestId, correctionId, duplicate: false };
   });
 });
 
 export const listLegacyContributionInventory = onCall(async (request) => {
-  requireAdministrator(request.auth);
+  await requirePermission(request.auth, 'contributions.manage');
   const data = request.data as CommandData | undefined;
   const requestedLimit = Number(data?.limit ?? 200);
   const limit = Math.min(Math.max(Number.isInteger(requestedLimit) ? requestedLimit : 200, 1), 500);
@@ -716,12 +730,15 @@ export const listLegacyContributionInventory = onCall(async (request) => {
 });
 
 export const removeContribution = onCall(async (request) => {
-  const actorId = requireAdministrator(request.auth);
+  const actor = await requirePermission(request.auth, 'contributions.manage');
+  const { actorId } = actor;
   const data = request.data as CommandData;
   const requestId = requiredString(data, 'requestId');
   const memberId = requiredString(data, 'memberId');
+  assertNotOwnRecord(actorId, memberId);
   const contributionId = requiredString(data, 'contributionId');
   return db().runTransaction(async (transaction) => {
+    await assertActorActive(transaction, actorId);
     const command = await readCommand(transaction, requestId);
     if (command.exists) {
       return { requestId, duplicate: true };
@@ -772,7 +789,7 @@ export const removeContribution = onCall(async (request) => {
       paymentsCount: admin.firestore.FieldValue.increment(-payments.length),
       month: contributionId,
     }, { merge: true });
-    writeAuditEvent(transaction, requestId, actorId, 'contribution.removed', memberId, contributionId, {
+    writeAuditEvent(transaction, requestId, actor, 'contribution.removed', memberId, contributionId, {
       amount: Number(contribution.amount ?? 0),
       paidAmount,
       removedPaymentIds: payments.map((payment) => payment.payment_id),
@@ -782,11 +799,14 @@ export const removeContribution = onCall(async (request) => {
 });
 
 export const deleteMemberSafely = onCall(async (request) => {
-  const actorId = requireAdministrator(request.auth);
+  const actor = await requirePermission(request.auth, 'members.delete');
+  const { actorId } = actor;
   const data = request.data as CommandData;
   const requestId = requiredString(data, 'requestId');
   const memberId = requiredString(data, 'memberId');
+  assertNotOwnRecord(actorId, memberId);
   return db().runTransaction(async (transaction) => {
+    await assertActorActive(transaction, actorId);
     const command = await readCommand(transaction, requestId);
     if (command.exists) return { requestId, duplicate: true };
     const memberRef = db().doc(`members/${memberId}`);
@@ -807,7 +827,7 @@ export const deleteMemberSafely = onCall(async (request) => {
     writeAuditEvent(
       transaction,
       requestId,
-      actorId,
+      actor,
       'member.deleted',
       memberId,
       memberId,
@@ -826,15 +846,18 @@ const lifecycleTransitions: Record<string, string[]> = {
 };
 
 export const transitionMemberStatus = onCall(async (request) => {
-  const actorId = requireAdministrator(request.auth);
+  const actor = await requirePermission(request.auth, 'members.status');
+  const { actorId } = actor;
   const data = request.data as CommandData;
   const requestId = requiredString(data, 'requestId');
   const memberId = requiredString(data, 'memberId');
+  assertNotOwnRecord(actorId, memberId);
   const status = requiredString(data, 'status');
   if (!Object.prototype.hasOwnProperty.call(lifecycleTransitions, status)) {
     throw new HttpsError('invalid-argument', 'Unsupported member status.');
   }
   const result = await db().runTransaction(async (transaction) => {
+    await assertActorActive(transaction, actorId);
     const command = await readCommand(transaction, requestId);
     const memberRef = db().doc(`members/${memberId}`);
     const snapshot = await transaction.get(memberRef);
@@ -851,7 +874,7 @@ export const transitionMemberStatus = onCall(async (request) => {
     }
     writeCommand(transaction, command.ref, 'transitionMemberStatus', actorId);
     transaction.update(memberRef, { status, statusUpdatedAt: admin.firestore.FieldValue.serverTimestamp(), statusUpdatedBy: actorId });
-    writeAuditEvent(transaction, requestId, actorId, 'member.status_changed', memberId, memberId, { previousStatus, newStatus: status });
+    writeAuditEvent(transaction, requestId, actor, 'member.status_changed', memberId, memberId, { previousStatus, newStatus: status });
     return { requestId, previousStatus, status, duplicate: false };
   });
   await admin.auth().updateUser(memberId, { disabled: result.status !== 'active' });

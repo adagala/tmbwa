@@ -16,15 +16,10 @@ import {
   notificationPreferenceData,
   validateDocumentWrite,
 } from '../firestoreData';
+import { assertActorActive, requirePermission } from '../authorization';
 
 type Data = Record<string, unknown>;
 const db = () => admin.firestore();
-
-const requireAdministrator = (auth: { uid: string; token: Record<string, unknown> } | undefined) => {
-  if (!auth) throw new HttpsError('unauthenticated', 'Sign in is required.');
-  if (auth.token.role !== 'administrator') throw new HttpsError('permission-denied', 'Administrator access is required.');
-  return auth.uid;
-};
 
 export const queueNotificationDeliveries = onDocumentCreated('notification_events/{eventId}', async (event) => {
   const snapshot = event.data;
@@ -88,12 +83,13 @@ export const processNotificationOutbox = onSchedule('every 5 minutes', async () 
 });
 
 export const retryNotificationDelivery = onCall(async (request) => {
-  const actorId = requireAdministrator(request.auth);
+  const { actorId } = await requirePermission(request.auth, 'notifications.retry');
   const data = request.data as Data;
   const deliveryId = typeof data.deliveryId === 'string' ? data.deliveryId.trim() : '';
   if (!deliveryId) throw new HttpsError('invalid-argument', 'deliveryId is required.');
   const ref = db().doc(`notification_deliveries/${deliveryId}`);
   await db().runTransaction(async (transaction) => {
+    await assertActorActive(transaction, actorId);
     const snapshot = await transaction.get(ref);
     if (!snapshot.exists) throw new HttpsError('not-found', 'Delivery not found.');
     if (!['failed', 'dead_letter'].includes(notificationDeliveryData(snapshot).status)) {
