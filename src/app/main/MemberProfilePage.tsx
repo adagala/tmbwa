@@ -16,6 +16,7 @@ import {
 import { DialogDeleteMember } from '@/components/ui/members/DialogDeleteMember';
 import { DialogMemberForm } from '@/components/ui/members/DialogMemberForm';
 import { DialogMemberStatus } from '@/components/ui/members/DialogMemberStatus';
+import { DialogMemberRoles } from '@/components/ui/members/DialogMemberRoles';
 import { Suspense, useEffect, useState } from 'react';
 import { getMemberById } from '@/lib/firebase/firestore';
 import useUser from '@/hooks/useUser';
@@ -24,7 +25,7 @@ import { MemberAccount } from '@/sections/memberAccount';
 import { MemberHeader } from '@/sections/memberHeader';
 
 export default function MemberProfilePage() {
-  const { role } = useUser();
+  const { role, can, user } = useUser();
   const { memberId } = useParams<{ memberId: string }>();
   const [member, setMember] = useState<Member | null>();
   const [isLoading, setIsLoading] = useState(false);
@@ -43,6 +44,9 @@ export default function MemberProfilePage() {
   }, [memberId]);
 
   const isAdministrator = role === 'administrator';
+  // No one manages their own roles; the backend refuses it too.
+  const canManageRoles =
+    can('roles.manage') && !!member && member.member_id !== user?.uid;
 
   return (
     <Suspense fallback={<div>Loading...</div>}>
@@ -74,6 +78,9 @@ export default function MemberProfilePage() {
                   isAdministrator ? (
                     <>
                       <DialogMemberStatus member={member} />
+                      {canManageRoles ? (
+                        <DialogMemberRoles member={member} />
+                      ) : null}
                       <DialogMemberForm
                         member={member}
                         triggerButton={

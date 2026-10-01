@@ -22,7 +22,7 @@ import {
   beneficiaryStateData,
   validateDocumentWrite,
 } from '../firestoreData';
-import { assertActorActive, requirePermission } from '../authorization';
+import { type Actor, reauthorizeActor, requirePermission } from '../authorization';
 
 type CommandData = Record<string, unknown>;
 type Auth = { uid: string; token: Record<string, unknown> } | undefined;
@@ -241,7 +241,8 @@ export const cancelBeneficiaryChange = onCall(async (request) => {
 // Administrators record a member's first beneficiaries directly, without the
 // approval step. Later changes must come from the member and be approved.
 export const setInitialBeneficiaries = onCall(async (request) => {
-  const { actorId, actorRoles } = await requirePermission(request.auth, 'beneficiaries.review');
+  const actor = await requirePermission(request.auth, 'beneficiaries.review');
+  const { actorId, actorRoles } = actor;
   const data = request.data as CommandData;
   const requestId = requireRequestId(data);
   const memberId = typeof data.memberId === 'string' ? data.memberId.trim() : '';
@@ -257,7 +258,7 @@ export const setInitialBeneficiaries = onCall(async (request) => {
   const beneficiaries = parseInput(beneficiaryListSchema, data.beneficiaries);
 
   return db().runTransaction(async (transaction) => {
-    await assertActorActive(transaction, actorId);
+    await reauthorizeActor(transaction, actor);
     const existingRequest = await transaction.get(requestRef(requestId));
     if (existingRequest.exists) {
       return existingRequestResult(
@@ -327,14 +328,14 @@ type Decision = 'approved' | 'rejected';
 // Shared by approve and reject: one transaction records the decision, the
 // audit event and the member notification, or nothing at all.
 const reviewBeneficiaryChange = async (
-  actorId: string,
-  actorRoles: string[],
+  actor: Actor,
   requestId: string,
   decision: Decision,
   note: string | undefined,
 ) =>
   db().runTransaction(async (transaction) => {
-    await assertActorActive(transaction, actorId);
+    await reauthorizeActor(transaction, actor);
+    const { actorId, actorRoles } = actor;
     const snapshot = await transaction.get(requestRef(requestId));
     if (!snapshot.exists) throw new HttpsError('not-found', 'Beneficiary change request not found.');
     const changeRequest = beneficiaryChangeRequestData(snapshot);
@@ -425,15 +426,15 @@ const reviewBeneficiaryChange = async (
   });
 
 export const approveBeneficiaryChange = onCall(async (request) => {
-  const { actorId, actorRoles } = await requirePermission(request.auth, 'beneficiaries.review');
+  const actor = await requirePermission(request.auth, 'beneficiaries.review');
   const data = request.data as CommandData;
   const requestId = requireRequestId(data);
-  return reviewBeneficiaryChange(actorId, actorRoles, requestId, 'approved', reviewNote(data.reviewNote, false));
+  return reviewBeneficiaryChange(actor, requestId, 'approved', reviewNote(data.reviewNote, false));
 });
 
 export const rejectBeneficiaryChange = onCall(async (request) => {
-  const { actorId, actorRoles } = await requirePermission(request.auth, 'beneficiaries.review');
+  const actor = await requirePermission(request.auth, 'beneficiaries.review');
   const data = request.data as CommandData;
   const requestId = requireRequestId(data);
-  return reviewBeneficiaryChange(actorId, actorRoles, requestId, 'rejected', reviewNote(data.reviewNote, true));
+  return reviewBeneficiaryChange(actor, requestId, 'rejected', reviewNote(data.reviewNote, true));
 });

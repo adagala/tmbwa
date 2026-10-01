@@ -88,3 +88,24 @@ export const rolesFromClaims = (claims: Record<string, unknown> | undefined): Ro
 
 export const roleHasPermission = (roleList: readonly Role[], permission: Permission) =>
   roleList.some((role) => ROLE_PERMISSIONS[role].includes(permission));
+
+// Canonical form of a role list: always includes `member`, with no
+// duplicates or unknown values, in the fixed order of `roles`.
+export const normalizeRoles = (list: readonly unknown[]): Role[] =>
+  roles.filter((role) => role === ROLE.MEMBER || list.includes(role));
+
+export const sameRoles = (a: readonly Role[], b: readonly Role[]) =>
+  a.length === b.length && a.every((role, index) => role === b[index]);
+
+// Roles held according to a member document. Once `roles` is present it is
+// authoritative; records that predate it carry only the legacy `role` field.
+export const memberRoles = (member: { roles?: unknown; role?: unknown } | undefined): Role[] => {
+  if (Array.isArray(member?.roles)) return normalizeRoles(member.roles);
+  return normalizeRoles(member?.role === LEGACY_ADMINISTRATOR_ROLE ? [ROLE.SUPER_ADMIN] : []);
+};
+
+// The legacy single role still drives Firestore rules and screens that do not
+// check permissions yet. Only super admins keep full administrator access
+// there; narrower roles apply to trusted commands until those move over.
+export const legacyRoleFor = (roleList: readonly Role[]) =>
+  roleList.includes(ROLE.SUPER_ADMIN) ? LEGACY_ADMINISTRATOR_ROLE : ROLE.MEMBER;

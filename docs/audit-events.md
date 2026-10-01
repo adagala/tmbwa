@@ -8,6 +8,18 @@ Current actions are `payment.recorded`, `payment.reversed`, `contribution.create
 
 Adding several missing months at once (`createContributions`) is one command but writes one `contribution.created` event per month, at `audit_events/{requestId}-{YYYY-MM-01}`. Each event's `changes` include the amount, the credit applied to that month, `batchRequestId` (the command's request ID) and `batchSize`.
 
+## Role events
+
+`assignMemberRoles` writes one event per accepted change at `audit_events/role-assignment-{requestId}`. `memberId` and `targetId` are the member whose roles changed.
+
+| Action | When | `changes` |
+| --- | --- | --- |
+| `role.granted` | Roles were only added | `previousRoles`, `roles`, `granted`, `revoked`, `reason` |
+| `role.revoked` | Roles were only removed | as above |
+| `role.changed` | Roles were both added and removed | as above |
+
+The same details, with the actor, are kept in `role_assignments/{requestId}`, which also makes the command idempotent. Clients cannot read or write it.
+
 ## Beneficiary events
 
 Beneficiary commands write audit events in the same transaction as the change. Their IDs are namespaced by action, for example `audit_events/beneficiary-change-requested-{requestId}`, because a beneficiary request ID may also be used by financial commands. `targetId` is the beneficiary change request ID.

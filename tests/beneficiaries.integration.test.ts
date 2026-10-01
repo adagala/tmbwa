@@ -17,7 +17,7 @@ const adminAuth = { uid: 'admin-1', token: { role: 'administrator' } };
 const memberAuth = (uid = MEMBER) => ({ uid, token: { role: 'member' } });
 // Officers must hold an active member record to act.
 const seedOfficers = (...uids: string[]) =>
-  Promise.all(uids.map((uid) => db().doc(`members/${uid}`).set({ status: 'active' })));
+  Promise.all(uids.map((uid) => db().doc(`members/${uid}`).set({ status: 'active', role: 'administrator' })));
 
 const beneficiary = (firstname = 'Baraka') => ({
   firstname,
@@ -296,8 +296,9 @@ describe('setInitialBeneficiaries', () => {
   });
 
   it('refuses to let an administrator set their own beneficiaries', async () => {
+    await db().doc(`members/${MEMBER}`).update({ role: 'administrator' });
     await expect(setInitial(REQUEST, {}, { uid: MEMBER, token: { role: 'administrator' } }))
-      .rejects.toMatchObject({ code: 'permission-denied' });
+      .rejects.toMatchObject({ code: 'permission-denied', message: expect.stringContaining('their own beneficiaries') });
     expect(await approvedBeneficiaries()).toEqual([]);
     expect(await requestDoc(REQUEST)).toBeUndefined();
   });
@@ -412,9 +413,11 @@ describe('approveBeneficiaryChange', () => {
 
   it('stops administrators reviewing their own request', async () => {
     const selfAdmin = { uid: MEMBER, token: { role: 'administrator' } };
+    await db().doc(`members/${MEMBER}`).update({ role: 'administrator' });
     await submit(REQUEST, {}, selfAdmin);
-    await expect(approve(REQUEST, {}, selfAdmin)).rejects.toMatchObject({ code: 'permission-denied' });
-    await expect(reject(REQUEST, undefined, selfAdmin)).rejects.toMatchObject({ code: 'permission-denied' });
+    const ownReview = { code: 'permission-denied', message: expect.stringContaining('their own beneficiary change') };
+    await expect(approve(REQUEST, {}, selfAdmin)).rejects.toMatchObject(ownReview);
+    await expect(reject(REQUEST, undefined, selfAdmin)).rejects.toMatchObject(ownReview);
     expect(await requestDoc(REQUEST)).toMatchObject({ status: 'pending' });
     expect(await approvedBeneficiaries()).toEqual([]);
     // Another administrator can review it.

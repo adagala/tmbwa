@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   ROLE_PERMISSIONS,
+  legacyRoleFor,
+  memberRoles,
+  normalizeRoles,
   permissions,
   roleHasPermission,
   roles,
@@ -85,5 +88,38 @@ describe('rolesFromClaims', () => {
     expect(rolesFromClaims({ roles: ['super_admin', 'super_admin'], role: 'administrator' })).toEqual([
       'super_admin',
     ]);
+  });
+});
+
+describe('member record roles', () => {
+  it('normalizes role lists', () => {
+    expect(normalizeRoles(['auditor', 'treasurer', 'auditor', 'owner'])).toEqual([
+      'member',
+      'treasurer',
+      'auditor',
+    ]);
+    expect(normalizeRoles([])).toEqual(['member']);
+  });
+
+  it('treats the roles field as authoritative once present', () => {
+    expect(memberRoles({ roles: ['member', 'registrar'], role: 'member' })).toEqual([
+      'member',
+      'registrar',
+    ]);
+    expect(memberRoles({ roles: ['member'], role: 'administrator' })).toEqual(['member']);
+  });
+
+  it('derives roles from the legacy role on older records', () => {
+    expect(memberRoles({ role: 'administrator' })).toEqual(['member', 'super_admin']);
+    expect(memberRoles({ role: 'member' })).toEqual(['member']);
+    expect(memberRoles({ role: 'root' })).toEqual(['member']);
+    expect(memberRoles(undefined)).toEqual(['member']);
+  });
+
+  it('keeps legacy administrator access for super admins only', () => {
+    expect(legacyRoleFor(['member', 'super_admin'])).toBe('administrator');
+    expect(legacyRoleFor(['member', 'treasurer', 'registrar', 'welfare_officer', 'auditor'])).toBe(
+      'member',
+    );
   });
 });

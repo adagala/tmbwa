@@ -5,6 +5,7 @@ import { z } from 'zod';
 import {
   MemberBalanceTypeEnum,
   PaymentTypeEnum,
+  RoleEnum,
   StkPurposeEnum,
   StatusEnum,
   auditEventDocumentSchema,
@@ -35,10 +36,9 @@ export const ownMemberFormSchema = memberBaseSchema.extend({
     ),
 });
 
+// Roles are not part of the form: they change only through assignMemberRoles.
 export const memberFormSchema = ownMemberFormSchema
-  .merge(
-    memberFormBaseSchema.pick({ email: true, role: true, isFeesPaid: true }),
-  )
+  .merge(memberFormBaseSchema.pick({ email: true, isFeesPaid: true }))
   .extend({
     // Administrator-only. Required on the form; stored documents may predate it.
     datejoined: z
@@ -52,6 +52,9 @@ export const memberFormSchema = ownMemberFormSchema
 export const memberSchema = memberFormSchema.merge(
   z.object({
     member_id: z.string().min(1, 'ID cannot be empty'),
+    // New members start as plain members; see assignMemberRoles.
+    role: RoleEnum.default('member'),
+    roles: z.array(z.string()).optional(),
     status: StatusEnum,
     datejoined: z.union([z.date(), z.instanceof(Timestamp)]).optional(),
     createat: z.instanceof(Timestamp).optional(),

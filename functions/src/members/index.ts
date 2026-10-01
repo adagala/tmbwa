@@ -11,8 +11,17 @@ import {
   deleteCollection,
   getCurrentMonth,
 } from '../utils';
-import { MONTHLY_CONTRIBUTION, memberFormBaseSchema, parseDocument } from 'tmbwa-shared';
+import {
+  MONTHLY_CONTRIBUTION,
+  memberFormBaseSchema,
+  memberRoles,
+  parseDocument,
+  sameRoles,
+} from 'tmbwa-shared';
 import { memberData } from '../firestoreData';
+import { syncRoleClaims } from './claims';
+
+export { assignMemberRoles } from './roles';
 
 export const newMember = onDocumentCreated(
   {
@@ -38,12 +47,16 @@ export const newMember = onDocumentCreated(
 
     // created at timestamp
     const memberRef = admin.firestore().doc(`members/${uid}`);
+    // Client-created members always start as plain members (Firestore rules
+    // enforce it); privileged roles are granted only through assignMemberRoles.
+    const roles = memberRoles(snapshot.data());
     const memberUpdate: Partial<Member> = {
       createat: admin.firestore.Timestamp.now(),
       firstnameSearchableIndex,
       lastnameSearchableIndex,
       balance: 0,
       contributionBalance: 0,
+      roles,
     };
 
     batch.set(memberRef, memberUpdate, { merge: true });
@@ -77,8 +90,7 @@ export const newMember = onDocumentCreated(
       uid,
     });
 
-    // set role customClaim
-    await admin.auth().setCustomUserClaims(uid, { role: member.role });
+    await syncRoleClaims(uid);
     return null;
   },
 );
@@ -169,9 +181,18 @@ export const updateMember = onDocumentUpdated(
       await admin.auth().updateUser(uid, { email: memberAfter.email });
     }
 
-    // if role updated, update customClaims for role
-    if (memberBefore.role !== memberAfter.role) {
-      await admin.auth().setCustomUserClaims(uid, { role: memberAfter.role });
+    // Claims follow the member's effective roles. assignMemberRoles also
+    // syncs them; this repairs claims if that step failed. The sync reads the
+    // current record, so an event delivered late cannot restore older roles.
+    // Backfilling `roles` from the legacy field leaves effective roles
+    // unchanged, so it does not touch claims.
+    if (
+      !sameRoles(
+        memberRoles(snapshots.before.data()),
+        memberRoles(snapshots.after.data()),
+      )
+    ) {
+      await syncRoleClaims(uid);
     }
 
     return null;

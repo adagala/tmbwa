@@ -127,5 +127,15 @@ export const transitionMemberStatus = ({
   status: string;
 }) => call('transitionMemberStatus', { memberId, status });
 
+export const assignMemberRoles = ({
+  memberId,
+  roles,
+  reason,
+}: {
+  memberId: string;
+  roles: string[];
+  reason: string;
+}) => call('assignMemberRoles', { memberId, roles, reason });
+
 // Shared by other callable wrappers so every command gets a stable requestId.
 export { call as callWithRequestId };

@@ -31,8 +31,12 @@ import {
   MemberRole,
   MEMBER_STATUS,
   MonthlyStats,
+  Role,
+  memberRoles,
   monthlyStatsSchema,
+  normalizeRoles,
   parseDocument,
+  sameRoles,
 } from 'tmbwa-shared';
 import { User } from 'firebase/auth';
 
@@ -106,7 +110,7 @@ export const getMembers = (
 export const getMemberById = (
   memberId: string,
   cb: (data: Member | null) => void,
-  user?: { role: MemberRole; user: User },
+  user?: { role: MemberRole; roles?: Role[]; user: User },
 ) => {
   const memberRef = doc(db, 'members', memberId);
   const unsubscribe = onSnapshot(
@@ -119,7 +123,14 @@ export const getMemberById = (
           memberSnapshot.data(),
         );
         cb(memberData);
-        if (user && memberData.role !== user.role) {
+        // Refresh the token when the member's roles changed, so claims and
+        // the interface catch up with the server-owned record.
+        if (
+          user &&
+          (memberData.role !== user.role ||
+            (user.roles &&
+              !sameRoles(memberRoles(memberData), normalizeRoles(user.roles))))
+        ) {
           await user.user.getIdToken(true);
         }
       } else {

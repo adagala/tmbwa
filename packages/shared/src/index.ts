@@ -200,6 +200,8 @@ export const memberDocumentSchema = memberFormBaseSchema.extend({
   balance: z.number(),
   contributionBalance: z.number(),
   reservedKcbCredit: z.number().nonnegative().default(0),
+  // Server-owned; written only by assignMemberRoles and the roles backfill.
+  roles: z.array(z.string()).optional(),
   firstnameSearchableIndex: searchableIndexSchema.optional(),
   lastnameSearchableIndex: searchableIndexSchema.optional(),
   createat: z.unknown().optional(),
