@@ -102,9 +102,19 @@ npm run roles:readiness                   # lists officers and blockers; exits 1
 npm run roles:readiness -- --sync-claims  # if officers' claims lack their roles
 ```
 
-The readiness report is read-only by default. It lists every officer and blocks on: records without `roles`, officers without an Auth user, officers whose claims don't carry their roles, and no active super admin. `--sync-claims` writes the missing claims (in a form both releases accept) without signing anyone out. Synced officers pick them up when their token refreshes, so wait an hour or ask them to sign in again. Then run the report again.
+The readiness report is read-only by default. It lists every officer and blocks on: records without `roles`, officers without an Auth user, officers whose claims don't carry their roles, and no active super admin. `--sync-claims` writes the missing claims (in a form both releases accept) without signing anyone out. It writes them from each record as it is at that moment, retrying if a role changes meanwhile, then re-checks from fresh state. Synced officers pick the claims up when their token refreshes, so wait an hour or ask them to sign in again. Then run the report again.
 
-Deploy only when it reports `Ready: no blockers.` Rollback is redeploying the previous release; no data changes with the removal itself.
+Deploy only when it reports `Ready: no blockers.`
+
+**Rollback.** The previous release requires a `role` field on every member record and waits on the `role` claim to load its screens. Members created or reassigned under roles-only access have neither, so repair them before redeploying it:
+
+```bash
+cd functions
+npm run roles:restore-legacy             # dry run: lists records and claims to restore
+npm run roles:restore-legacy -- --apply  # restores both from each member's current roles
+```
+
+The repair sets `role` (`administrator` for super admins, otherwise `member`) and the matching claims, without changing anyone's roles or signing anyone out. It is safe to re-run. Pause role changes from the time you run it until the previous release is deployed, then redeploy it.
 
 ### Interface
 

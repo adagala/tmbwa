@@ -1,3 +1,7 @@
+import { UserRecord } from 'firebase-admin/auth';
+import { admin } from '../firebaseAdmin';
+import { arrayToChunks } from '../utils';
+import { syncRoleClaims, transitionalClaims } from './claims';
 import {
   MEMBER_STATUS,
   ROLE,
@@ -68,4 +72,42 @@ export const assessRolesReadiness = (members: ReadinessMember[]): Readiness => {
     readiness.notes.push(`There are ${activeSuperAdmins.length} active super admins; consider narrower roles for some of them.`);
   }
   return readiness;
+};
+
+// Reads every member record and their Auth claims as they are now.
+export const collectReadinessMembers = async (): Promise<ReadinessMember[]> => {
+  const snapshot = await admin.firestore().collection('members').get();
+  const users = new Map<string, UserRecord>();
+  for (const chunk of arrayToChunks(snapshot.docs, 100)) {
+    const result = await admin.auth().getUsers(chunk.map((doc) => ({ uid: doc.id })));
+    result.users.forEach((user) => users.set(user.uid, user));
+  }
+  return snapshot.docs.map((doc) => ({
+    id: doc.id,
+    data: doc.data(),
+    claims: users.has(doc.id) ? (users.get(doc.id)?.customClaims ?? null) : undefined,
+  }));
+};
+
+export type ReadinessRun = Readiness & { synced: string[] };
+
+// Assesses readiness and, with syncClaims, repairs officers' claims. Claims
+// are written through syncRoleClaims, which rereads each record and retries
+// until the roles it wrote are still current, so a reassignment made while
+// the report runs is never overwritten with the roles it first read. The
+// result is then reassessed from fresh state, and any claims still stale
+// become blockers.
+export const runRolesReadiness = async ({ syncClaims }: { syncClaims: boolean }): Promise<ReadinessRun> => {
+  let readiness = assessRolesReadiness(await collectReadinessMembers());
+  const synced: string[] = [];
+  if (syncClaims) {
+    for (const officer of readiness.staleClaims) {
+      await syncRoleClaims(officer.id, transitionalClaims);
+      synced.push(officer.id);
+    }
+    if (synced.length) readiness = assessRolesReadiness(await collectReadinessMembers());
+  }
+  readiness.staleClaims.forEach((officer) =>
+    readiness.blockers.push(`${describeOfficer(officer)}: claims do not carry these roles; run with --sync-claims.`));
+  return { ...readiness, synced };
 };
