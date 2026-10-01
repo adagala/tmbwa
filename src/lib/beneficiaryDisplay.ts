@@ -84,3 +84,33 @@ export const expectedRequestKind = (
   const year = Number(nairobiDateKey(now).slice(0, 4));
   return state.lastAnnualChangeYear === year ? 'reason_required' : 'annual';
 };
+
+// The current-beneficiary snapshot an administrator compares a request with.
+// Tagged with its member so a previous member's list is never reused.
+export type ComparisonLoad<Item> =
+  | { memberId: string; status: 'loading' }
+  | { memberId: string; status: 'error' }
+  | { memberId: string; status: 'loaded'; beneficiaries: Item[] };
+
+// Approval replaces the member's list, so it waits until the administrator
+// can see that list; a failed load must never pass for an empty one.
+export const reviewActions = <Item>({
+  requestStatus,
+  isOwnRequest,
+  memberId,
+  comparison,
+}: {
+  requestStatus: BeneficiaryChangeRequestStatus;
+  isOwnRequest: boolean;
+  memberId: string;
+  comparison: ComparisonLoad<Item>;
+}) => {
+  const canReview = requestStatus === 'pending' && !isOwnRequest;
+  return {
+    canReview,
+    canApprove:
+      canReview &&
+      comparison.memberId === memberId &&
+      comparison.status === 'loaded',
+  };
+};

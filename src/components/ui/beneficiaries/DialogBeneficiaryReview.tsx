@@ -16,11 +16,13 @@ import { Label } from '@/components/Label';
 import { toast } from '@/hooks/useToast';
 import useUser from '@/hooks/useUser';
 import {
+  ComparisonLoad,
   formatRequestTime,
   reasonLabel,
   requestStatusLabel,
   requestStatusVariant,
   requestTypeLabel,
+  reviewActions,
 } from '@/lib/beneficiaryDisplay';
 import {
   BeneficiaryRecord,
@@ -47,25 +49,41 @@ export function DialogBeneficiaryReview({
   onOpenChange: (open: boolean) => void;
 }) {
   const { user } = useUser();
-  const [current, setCurrent] = useState<BeneficiaryRecord[]>();
+  const [comparison, setComparison] = useState<
+    ComparisonLoad<BeneficiaryRecord>
+  >({ memberId: request.memberId, status: 'loading' });
   const [note, setNote] = useState('');
   const [noteError, setNoteError] = useState<string>();
   const [pendingAction, setPendingAction] = useState<'approve' | 'reject'>();
 
   useEffect(() => {
     if (!open) return;
+    const { memberId } = request;
     setNote('');
     setNoteError(undefined);
-    return subscribeBeneficiaries(request.memberId, setCurrent, () =>
-      setCurrent([]),
+    setComparison({ memberId, status: 'loading' });
+    return subscribeBeneficiaries(
+      memberId,
+      (beneficiaries) =>
+        setComparison({ memberId, status: 'loaded', beneficiaries }),
+      () => setComparison({ memberId, status: 'error' }),
     );
   }, [open, request.memberId]);
 
   const isOwnRequest = user?.uid === request.memberId;
-  const canReview = request.status === 'pending' && !isOwnRequest;
+  const { canReview, canApprove } = reviewActions({
+    requestStatus: request.status,
+    isOwnRequest,
+    memberId: request.memberId,
+    comparison,
+  });
+  // Ignore a snapshot that belongs to a previously reviewed member.
+  const current =
+    comparison.memberId === request.memberId ? comparison : undefined;
 
   const decide = async (action: 'approve' | 'reject') => {
     const trimmed = note.trim();
+    if (action === 'approve' && !canApprove) return;
     if (action === 'reject' && !trimmed) {
       setNoteError('Add a note explaining why the request is not approved.');
       return;
@@ -126,11 +144,16 @@ export function DialogBeneficiaryReview({
               Current beneficiaries
             </h3>
             <div className="mt-2">
-              {current ? (
+              {current?.status === 'loaded' ? (
                 <BeneficiaryTable
-                  beneficiaries={current}
+                  beneficiaries={current.beneficiaries}
                   emptyMessage="No approved beneficiaries yet."
                 />
+              ) : current?.status === 'error' ? (
+                <Callout title="Could not load" variant="error">
+                  The member&apos;s current beneficiaries could not be loaded,
+                  so this request cannot be approved. Close and try again.
+                </Callout>
               ) : (
                 <p className="text-sm text-gray-500 dark:text-gray-400">
                   Loading…
@@ -209,7 +232,7 @@ export function DialogBeneficiaryReview({
                 className="w-full sm:w-fit"
                 onClick={() => decide('approve')}
                 isLoading={pendingAction === 'approve'}
-                disabled={!!pendingAction}
+                disabled={!!pendingAction || !canApprove}
                 loadingText="Approving"
               >
                 Approve

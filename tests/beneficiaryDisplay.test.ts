@@ -5,6 +5,7 @@ import {
   formatDateOfBirth,
   reasonLabel,
   relationshipLabel,
+  reviewActions,
 } from '../src/lib/beneficiaryDisplay';
 
 const state = { version: 1, lastAnnualChangeYear: null, pendingRequestId: null };
@@ -39,5 +40,30 @@ describe('beneficiary display helpers', () => {
     expect(dateFromKey('')).toBeUndefined();
     expect(dateFromKey('14/06/2012')).toBeUndefined();
     expect(formatDateOfBirth('2012-06-14')).toContain('2012');
+  });
+});
+
+describe('beneficiary review actions', () => {
+  const base = { requestStatus: 'pending' as const, isOwnRequest: false, memberId: 'member-1' };
+  const loaded = { memberId: 'member-1', status: 'loaded' as const, beneficiaries: [] };
+
+  it('allows approval only once the current list has loaded for this member', () => {
+    expect(reviewActions({ ...base, comparison: loaded })).toEqual({ canReview: true, canApprove: true });
+    // Still loading (a delayed listener).
+    expect(reviewActions({ ...base, comparison: { memberId: 'member-1', status: 'loading' } }))
+      .toEqual({ canReview: true, canApprove: false });
+    // The listener reported an error.
+    expect(reviewActions({ ...base, comparison: { memberId: 'member-1', status: 'error' } }))
+      .toEqual({ canReview: true, canApprove: false });
+    // A list left over from the previously reviewed member.
+    expect(reviewActions({ ...base, comparison: { ...loaded, memberId: 'member-2' } }))
+      .toEqual({ canReview: true, canApprove: false });
+  });
+
+  it('allows no review of own or non-pending requests', () => {
+    expect(reviewActions({ ...base, isOwnRequest: true, comparison: loaded }))
+      .toEqual({ canReview: false, canApprove: false });
+    expect(reviewActions({ ...base, requestStatus: 'approved', comparison: loaded }))
+      .toEqual({ canReview: false, canApprove: false });
   });
 });
