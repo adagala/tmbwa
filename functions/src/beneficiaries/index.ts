@@ -341,6 +341,14 @@ const reviewBeneficiaryChange = async (
     if (!snapshot.exists) throw new HttpsError('not-found', 'Beneficiary change request not found.');
     const changeRequest = beneficiaryChangeRequestData(snapshot);
     const { memberId } = changeRequest;
+    // No one reviews their own beneficiaries; a member who is also an
+    // administrator cancels their own request instead of rejecting it.
+    if (memberId === actorId) {
+      throw new HttpsError(
+        'permission-denied',
+        'Administrators cannot review their own beneficiary change. Another administrator must review it.',
+      );
+    }
     if (changeRequest.status === decision) {
       return { requestId, memberId, status: decision, duplicate: true };
     }

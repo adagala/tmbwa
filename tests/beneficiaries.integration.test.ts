@@ -405,6 +405,17 @@ describe('approveBeneficiaryChange', () => {
     expect(await notificationEvents()).toEqual([]);
   });
 
+  it('stops administrators reviewing their own request', async () => {
+    const selfAdmin = { uid: MEMBER, token: { role: 'administrator' } };
+    await submit(REQUEST, {}, selfAdmin);
+    await expect(approve(REQUEST, {}, selfAdmin)).rejects.toMatchObject({ code: 'permission-denied' });
+    await expect(reject(REQUEST, undefined, selfAdmin)).rejects.toMatchObject({ code: 'permission-denied' });
+    expect(await requestDoc(REQUEST)).toMatchObject({ status: 'pending' });
+    expect(await approvedBeneficiaries()).toEqual([]);
+    // Another administrator can review it.
+    await expect(approve(REQUEST)).resolves.toMatchObject({ status: 'approved' });
+  });
+
   it('requires an administrator', async () => {
     await submit(REQUEST);
     await expect(approve(REQUEST, {}, memberAuth())).rejects.toMatchObject({ code: 'permission-denied' });
