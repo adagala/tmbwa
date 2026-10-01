@@ -1,33 +1,28 @@
 import { Card } from '@/components/Card';
-import { MonthlyStats, Payment } from '@/schemas/member';
+import { Payment } from 'tmbwa-shared/firebase';
+import { MonthlyStats } from 'tmbwa-shared';
 import { RiExchangeFundsLine, RiHome2Line } from '@remixicon/react';
-import { List, ListItem } from '@tremor/react';
+import { List, ListItem } from '@/components/List';
 import { AreaChart } from '@/components/AreaChart';
 import { useEffect, useState } from 'react';
 import { getMonthlyStats, getRecentPayments } from '@/lib/firebase/firestore';
 import { Avatar } from '@/components/Avatar';
+import { formatNairobiMonth, monthLabel } from '@/lib/financialReporting';
+import { getCurrentMonthNumber, getCurrentYear } from '@/lib/utils';
 
 export default function OverviewPage() {
   const [payments, setPayments] = useState<Payment[]>([]);
   const [monthlyStats, setMonthlyStats] = useState<MonthlyStats[]>([]);
-  const currentMonth = new Date().toLocaleDateString('en-US', {
-    month: 'long',
-  });
-  const currentMonthShort = new Date().toLocaleDateString('en-US', {
-    month: '2-digit',
-  });
-  const currentYear = new Date().toLocaleDateString('en-US', {
-    year: 'numeric',
-  });
+  const currentMonth = formatNairobiMonth(new Date());
+  const currentMonthShort = getCurrentMonthNumber();
+  const currentYear = getCurrentYear();
   const currentMonthStats = monthlyStats.find(
     (stat) => stat.month === `${currentYear}-${currentMonthShort}-01`,
   );
   const chartdata = monthlyStats.map((stats) => ({
-    date: new Intl.DateTimeFormat('en-US', {
-      month: 'short',
-      year: '2-digit',
-    }).format(new Date(stats.month)),
-    Contributions: stats.contribution,
+    date: monthLabel(stats.month),
+    Billed: stats.amount,
+    Collected: stats.contribution,
   }));
 
   useEffect(() => {
@@ -55,7 +50,7 @@ export default function OverviewPage() {
         <div className="flex-1 grid sm:grid-cols-1 gap-4">
           <Card className="mx-auto space-y-2 hover:bg-gray-50 dark:hover:bg-gray-900/60">
             <p className="text-tremor-default text-tremor-content dark:text-dark-tremor-content">
-              {currentMonth} amount
+              {currentMonth} collected
             </p>
             <p className="text-xl sm:text-2xl text-tremor-content-strong dark:text-dark-tremor-content-strong font-semibold">
               KES{' '}
@@ -123,10 +118,10 @@ export default function OverviewPage() {
           className="h-72"
           data={chartdata}
           index="date"
-          categories={['Contributions']}
+          categories={['Billed', 'Collected']}
           showLegend={true}
           xAxisLabel="Month of Year"
-          yAxisLabel="Contributions (KES)"
+          yAxisLabel="Amount (KES)"
         />
       </Card>
     </div>

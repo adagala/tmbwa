@@ -11,8 +11,8 @@ import {
   DialogTrigger,
 } from '@/components/Dialog';
 import { useToast } from '@/hooks/useToast';
-import { Contribution, Member } from '@/schemas/member';
-import { deleteContribution } from '@/lib/firebase/firestore';
+import { Contribution, Member } from 'tmbwa-shared/firebase';
+import { deleteContribution } from '@/lib/firebase/financial';
 
 export const DialogDeleteContribution = ({
   contribution,
@@ -31,10 +31,10 @@ export const DialogDeleteContribution = ({
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
             <Button
-              className="h-10 whitespace-nowrap w-full sm:w-auto gap-1"
-              variant="primary"
+              className="gap-1 whitespace-nowrap text-red-600 hover:text-red-700 dark:text-red-500 dark:hover:text-red-400"
+              variant="ghost"
             >
-              Delete
+              Delete contribution
             </Button>
           </DialogTrigger>
           <DialogContent className="sm:max-w-lg">
@@ -53,7 +53,8 @@ export const DialogDeleteContribution = ({
                 } catch (error: any) {
                   toast({
                     title: 'Error',
-                    description: error?.message || 'Error deleting contribution',
+                    description:
+                      error?.message || 'Error deleting contribution',
                     variant: 'error',
                     duration: 3000,
                   });

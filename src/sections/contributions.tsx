@@ -1,20 +1,44 @@
 import React from 'react';
-import { Contribution, Member, ContributionStatusEnum } from '@/schemas/member';
+import { Contribution, Member } from 'tmbwa-shared/firebase';
+import { ContributionStatusEnum } from 'tmbwa-shared';
 import { RiWalletLine, RiArrowRightSLine } from '@remixicon/react';
-import { List, ListItem } from '@tremor/react';
+import { Callout } from '@/components/Callout';
+import { List, ListItem } from '@/components/List';
 import { DialogContributionDetails } from '@/components/ui/contributions/DialogContributionDetails';
 import { Avatar } from '@/components/Avatar';
 import { DialogAddContribution } from '@/components/ui/contributions/DialogAddContribution';
+import {
+  MissingMonthsAdminNotice,
+  MissingMonthsMemberNotice,
+} from '@/components/ui/contributions/MissingMonthsNotice';
 import useUser from '@/hooks/useUser';
+import { monthLabel } from '@/lib/financialReporting';
 
 interface ContributionsProps extends React.ComponentPropsWithoutRef<'div'> {
   member: Member;
   contributions: Contribution[];
+  // Months from joining through the current month with no contribution.
+  // Undefined while contributions load or when the join date is unknown.
+  missingMonths?: string[];
+  joinedAt?: Date | null;
 }
 
 const Contributions = React.forwardRef<HTMLDivElement, ContributionsProps>(
-  ({ contributions, member, className, ...props }: ContributionsProps, ref) => {
-    const { role } = useUser();
+  (
+    {
+      contributions,
+      member,
+      missingMonths,
+      joinedAt,
+      className,
+      ...props
+    }: ContributionsProps,
+    ref,
+  ) => {
+    const { user, can } = useUser();
+    // No one adds contributions to their own account; the backend refuses it too.
+    const canManage =
+      can('contributions.manage') && user?.uid !== member.member_id;
     const [open, setOpen] = React.useState(false);
     const [contribution, setContribution] = React.useState<Contribution>();
     return (
@@ -24,10 +48,45 @@ const Contributions = React.forwardRef<HTMLDivElement, ContributionsProps>(
             <RiWalletLine className="size-5 shrink-0" aria-hidden="true" />
             Contribution History
           </div>
-          {role === 'administrator' && (
-            <DialogAddContribution member={member} />
+          {canManage && member.status === 'active' && (
+            <DialogAddContribution
+              member={member}
+              triggerVariant={
+                missingMonths && missingMonths.length > 0
+                  ? 'secondary'
+                  : 'primary'
+              }
+            />
           )}
         </div>
+        {missingMonths && missingMonths.length > 0 && joinedAt ? (
+          canManage ? (
+            <MissingMonthsAdminNotice
+              member={member}
+              missingMonths={missingMonths}
+            />
+          ) : (
+            <MissingMonthsMemberNotice
+              joinedAt={joinedAt}
+              missingMonths={missingMonths}
+            />
+          )
+        ) : null}
+        {!joinedAt && canManage ? (
+          <Callout
+            className="mb-4"
+            variant="neutral"
+            title="Missing months can't be checked"
+          >
+            This member has no join date, so months without a contribution can't
+            be worked out.
+          </Callout>
+        ) : null}
+        {contributions.length === 0 ? (
+          <p className="mt-4 rounded-md border border-dashed border-gray-200 px-4 py-8 text-center text-sm text-gray-500 dark:border-gray-800 dark:text-gray-400">
+            No contributions recorded yet.
+          </p>
+        ) : null}
         <List className="mt-4">
           {contributions.map((contribution) => (
             <ListItem
@@ -43,20 +102,10 @@ const Contributions = React.forwardRef<HTMLDivElement, ContributionsProps>(
               }}
             >
               <div className="flex min-w-0 gap-x-4">
-                <Avatar
-                  initial={new Date(contribution.month)
-                    .toLocaleDateString('en-US', {
-                      year: 'numeric',
-                      month: 'long',
-                    })
-                    .charAt(0)}
-                />
+                <Avatar initial={monthLabel(contribution.month).charAt(0)} />
                 <div className="min-w-0 flex flex-auto items-center">
                   <p className="text-sm font-semibold leading-6 text-gray-900 dark:text-gray-200">
-                    {new Date(contribution.month).toLocaleDateString('en-US', {
-                      year: 'numeric',
-                      month: 'short',
-                    })}
+                    {monthLabel(contribution.month)}
                   </p>
                 </div>
               </div>

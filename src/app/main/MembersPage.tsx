@@ -6,7 +6,15 @@ import {
   RiShieldCheckLine,
   RiUserForbidLine,
 } from '@remixicon/react';
-import { Member, Role, member_roles } from '@/schemas/member';
+import { Member } from 'tmbwa-shared/firebase';
+import {
+  member_status,
+  memberRoles,
+  MemberStatus,
+  Role,
+  roles,
+} from 'tmbwa-shared';
+import { describeRoles, roleLabels } from '@/lib/roleDisplay';
 import { Input } from '@/components/Input';
 import {
   Select,
@@ -26,9 +34,12 @@ import { Avatar } from '@/components/Avatar';
 import { Card } from '@/components/Card';
 
 export default function MembersPage() {
-  const { role } = useUser();
+  const { can } = useUser();
   const [selectedRole, setSelectedRole] = React.useState<Role | ''>('');
   const [selectedFeeStatus, setSelectedFeeStatus] = React.useState('');
+  const [selectedStatus, setSelectedStatus] = React.useState<MemberStatus | ''>(
+    '',
+  );
   const [searchValue, setSearchValue] = React.useState('');
   const [querySearch, setQuerySearch] = React.useState('');
   const [members, setMembers] = React.useState<Member[]>([]);
@@ -65,6 +76,7 @@ export default function MembersPage() {
     if (
       querySearch.length < 1 &&
       selectedRole === '' &&
+      selectedStatus === '' &&
       selectedFeeStatus === ''
     ) {
       setMembers(allMembers);
@@ -74,7 +86,12 @@ export default function MembersPage() {
         const isNameMatch =
           member.firstname.match(regex) || member.lastname.match(regex);
         const isEmailMatch = member.email.match(regex);
-        const isRoleMatch = !selectedRole ? true : member.role === selectedRole;
+        const isRoleMatch = !selectedRole
+          ? true
+          : memberRoles(member).includes(selectedRole);
+        const isStatusMatch = !selectedStatus
+          ? true
+          : member.status === selectedStatus;
         const isFeesPaid = selectedFeeStatus === 'paid';
         const isWinMatch =
           querySearch.length < 1 ? true : member.win === querySearch;
@@ -84,12 +101,19 @@ export default function MembersPage() {
         return (
           (isNameMatch || isEmailMatch || isWinMatch) &&
           isRoleMatch &&
+          isStatusMatch &&
           isFeeStatusMatch
         );
       });
       setMembers(filteredMembers);
     }
-  }, [querySearch, selectedRole, selectedFeeStatus]);
+  }, [
+    allMembers,
+    querySearch,
+    selectedRole,
+    selectedStatus,
+    selectedFeeStatus,
+  ]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -99,7 +123,7 @@ export default function MembersPage() {
           Members
         </div>
         <div className="">
-          {role === 'administrator' ? <DialogMemberForm /> : null}
+          {can('members.write') ? <DialogMemberForm /> : null}
         </div>
       </div>
       <div className="flex flex-col gap-3">
@@ -121,13 +145,37 @@ export default function MembersPage() {
               value={selectedRole as Role}
               onValueChange={(role: Role) => setSelectedRole(role)}
             >
-              <SelectTrigger id="role" name="role" className="capitalize">
+              <SelectTrigger id="role" name="role">
                 <SelectValue placeholder="Role" />
               </SelectTrigger>
               <SelectContent>
-                {member_roles.map((role) => (
-                  <SelectItem key={role} value={role} className="capitalize">
-                    {role}
+                {roles.map((role) => (
+                  <SelectItem key={role} value={role}>
+                    {roleLabels[role]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex-1 flex flex-col gap-2 sm:flex-row">
+            <Select
+              name="status"
+              value={selectedStatus}
+              onValueChange={(status: MemberStatus) =>
+                setSelectedStatus(status)
+              }
+            >
+              <SelectTrigger id="status" name="status" className="capitalize">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                {member_status.map((status) => (
+                  <SelectItem
+                    key={status}
+                    value={status}
+                    className="capitalize"
+                  >
+                    {status}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -169,6 +217,7 @@ export default function MembersPage() {
               setSearchValue('');
               setQuerySearch('');
               setSelectedFeeStatus('');
+              setSelectedStatus('');
             }}
           >
             Reset filter
@@ -192,7 +241,7 @@ export default function MembersPage() {
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 mt-2">
                   {members.map((member) => (
-                    <Link to={member.member_id}>
+                    <Link key={member.member_id} to={member.member_id}>
                       <Card
                         key={member.member_id}
                         className="flex gap-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-900/60 dark:border-gray-800"
@@ -216,10 +265,10 @@ export default function MembersPage() {
                               )}
                             </Tooltip>
                           </div>
-                          <div className="text-xs font-medium leading-6 text-gray-900 dark:text-gray-200 capitalize">
-                            {member.role}
+                          <div className="text-xs font-medium leading-6 text-gray-900 dark:text-gray-200">
+                            {describeRoles(memberRoles(member))}
                           </div>
-                          {role === 'administrator' ? (
+                          {can('members.read') ? (
                             <div className="truncate text-xs leading-5 text-gray-500 dark:text-gray-400">
                               {member.email}
                             </div>

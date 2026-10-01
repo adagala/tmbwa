@@ -5,7 +5,7 @@ import {
   RiSafe2Line,
   RiWalletLine,
 } from '@remixicon/react';
-import { List, ListItem } from '@tremor/react';
+import { List, ListItem } from '@/components/List';
 import { Input } from '@/components/Input';
 import {
   Select,
@@ -16,20 +16,26 @@ import {
 } from '@/components/Select';
 import { Button } from '@/components/Button';
 import { DialogContributionDetails } from '@/components/ui/contributions/DialogContributionDetails';
+import { Contribution } from 'tmbwa-shared/firebase';
 import {
-  Contribution,
-  PaymentStatus,
   ContributionStatusEnum,
   contribution_status,
-} from '@/schemas/member';
+  PaymentStatus,
+} from 'tmbwa-shared';
 import { getMonthlyMembersContributions } from '@/lib/firebase/firestore';
-import { getMonth, months, years } from '@/lib/utils';
+import {
+  getCurrentMonthNumber,
+  getCurrentYear,
+  getMonth,
+  months,
+  years,
+} from '@/lib/utils';
 import debounce from 'lodash.debounce';
 import { Avatar } from '@/components/Avatar';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
-const currentYear = new Date().getFullYear().toString();
-const currentMonth = String(new Date().getMonth() + 1).padStart(2, '0');
+const currentYear = getCurrentYear();
+const currentMonth = getCurrentMonthNumber();
 
 export default function ContributionsPage() {
   const navigate = useNavigate();

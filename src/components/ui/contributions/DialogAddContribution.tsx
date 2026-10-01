@@ -20,28 +20,34 @@ import {
   SelectValue,
 } from '@/components/Select';
 import { toast } from '@/hooks/useToast';
+import { Member } from 'tmbwa-shared/firebase';
 import {
-  Member,
-  ContributioForm,
+  ContributionForm,
   contributionFormSchema,
   Year,
   Month,
-} from '@/schemas/member';
+} from 'tmbwa-shared';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { InputErrorMessage } from '../InputErrorMessage';
-import { addContribution } from '@/lib/firebase/firestore';
+import { addContribution } from '@/lib/firebase/financial';
 import { months, years } from '@/lib/utils';
 import useUser from '@/hooks/useUser';
 
-export const DialogAddContribution = ({ member }: { member: Member }) => {
+export const DialogAddContribution = ({
+  member,
+  triggerVariant = 'primary',
+}: {
+  member: Member;
+  triggerVariant?: 'primary' | 'secondary';
+}) => {
   const { user } = useUser();
   const [open, setOpen] = React.useState(false);
   const [isLoading, setIsLoading] = React.useState(false);
   const [year, setYear] = React.useState<Year>();
   const [month, setMonth] = React.useState<Month>();
 
-  const values: ContributioForm | undefined = undefined;
+  const values: ContributionForm | undefined = undefined;
 
   const {
     register,
@@ -50,12 +56,12 @@ export const DialogAddContribution = ({ member }: { member: Member }) => {
     reset,
     setValue,
     trigger,
-  } = useForm<ContributioForm>({
+  } = useForm<ContributionForm>({
     resolver: zodResolver(contributionFormSchema),
     values,
   });
 
-  const onSubmit = async (data: ContributioForm) => {
+  const onSubmit = async (data: ContributionForm) => {
     setIsLoading(true);
 
     try {
@@ -105,7 +111,7 @@ export const DialogAddContribution = ({ member }: { member: Member }) => {
           <DialogTrigger asChild>
             <Button
               className="h-10 whitespace-nowrap w-full sm:w-auto gap-1"
-              variant="primary"
+              variant={triggerVariant}
             >
               <>
                 <RiAddLine className="size-4" />

@@ -2,8 +2,231 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // Mirrors ROLE_PERMISSIONS in packages/shared/src/authorization.ts for
+    // the permissions that govern reads; tests/firestore.rules.test.ts checks
+    // every role against that map.
+    function permissionRoles() {
+      return {
+        'members.read': ['super_admin', 'treasurer', 'registrar', 'welfare_officer', 'auditor'],
+        'members.write': ['super_admin', 'registrar'],
+        'beneficiaries.read': ['super_admin', 'welfare_officer'],
+        'payments.read': ['super_admin', 'treasurer', 'auditor'],
+        'kcb.reconcile': ['super_admin', 'treasurer'],
+        'audit.read': ['super_admin', 'treasurer', 'auditor'],
+        'reports.read': ['super_admin', 'treasurer', 'auditor'],
+        'rates.manage': ['super_admin'],
+        'notifications.retry': ['super_admin']
+      };
+    }
+
+    // Roles claimed by the token. The retired single `role` claim grants
+    // nothing.
+    function claimedRoles() {
+      return request.auth.token.get('roles', []);
+    }
+
+    // Roles held by the member record. The retired `role` field that older
+    // records still carry grants nothing.
+    function recordRoles(record) {
+      return record.get('roles', ['member']);
+    }
+
+    // A role counts only when both the token and an active member record
+    // grant it: a revoked or suspended officer's token stays valid until it
+    // expires, the record does not. Same rule as requirePermission.
+    function grantedRoles() {
+      let record = get(/databases/$(database)/documents/members/$(request.auth.uid)).data;
+      return record.get('status', '') == 'active'
+        ? claimedRoles().toSet().intersection(recordRoles(record).toSet())
+        : [].toSet();
+    }
+
+    function can(permission) {
+      return signedIn() && grantedRoles().hasAny(permissionRoles()[permission]);
+    }
+
+    function isOwner(memberId) {
+      return signedIn() && request.auth.uid == memberId;
+    }
+
+    function isActiveOwner(memberId) {
+      return isOwner(memberId) &&
+        get(/databases/$(database)/documents/members/$(memberId)).data.status == 'active';
+    }
+
+    function ownerProfileFieldsOnly() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+        'firstname',
+        'lastname',
+        'membernumber',
+        'win',
+        'phonenumber',
+        'gender'
+      ]);
+    }
+
+    // Roles are server-owned: they change only through assignMemberRoles.
+    function memberEditorFieldsOnly() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+        'firstname', 'lastname', 'email', 'membernumber', 'win',
+        'phonenumber', 'gender', 'isFeesPaid', 'datejoined'
+      ]);
+    }
+
+    // A new member is created with profile fields only. Lifecycle and every
+    // financial total start at fixed values, and roles are absent (plain
+    // member); Functions own them after.
+    function validNewMember() {
+      let member = request.resource.data;
+      return member.keys().hasOnly([
+          'firstname', 'lastname', 'membernumber', 'win', 'phonenumber',
+          'gender', 'email', 'isFeesPaid', 'datejoined', 'status',
+          'balance', 'contributionBalance', 'reservedKcbCredit'
+        ]) &&
+        member.status == 'active' &&
+        member.balance == 0 &&
+        member.contributionBalance == 0 &&
+        member.get('reservedKcbCredit', 0) == 0 &&
+        member.get('isFeesPaid', false) is bool;
+    }
+
+    function validDateJoinedValue() {
+      return request.resource.data.datejoined is timestamp &&
+        request.resource.data.datejoined <= request.time;
+    }
+
+    // Only validate when changed, so legacy values don't block other edits.
+    // Removing datejoined counts as a change and is rejected.
+    function validDateJoinedOnUpdate() {
+      return !request.resource.data.diff(resource.data).affectedKeys()
+        .hasAny(['datejoined']) || validDateJoinedValue();
+    }
+
+    match /members/{memberId} {
+      allow get: if can('members.read') || isActiveOwner(memberId);
+      allow list: if can('members.read');
+      allow create: if can('members.write') && validDateJoinedValue() && validNewMember();
+      allow delete: if false;
+      allow update: if (can('members.write') && memberEditorFieldsOnly() &&
+          validDateJoinedOnUpdate()) ||
+        (isActiveOwner(memberId) && ownerProfileFieldsOnly());
+
+      match /contributions/{contributionId} {
+        allow read: if can('payments.read') || isActiveOwner(memberId);
+        allow write: if false;
+      }
+
+      match /payments/{paymentId} {
+        allow read: if can('payments.read') || isActiveOwner(memberId);
+        allow write: if false;
+      }
+
+      match /notification_preferences/{preferenceId} {
+        allow read: if can('notifications.retry') || isActiveOwner(memberId);
+        allow create, update: if isActiveOwner(memberId) &&
+          request.resource.data.keys().hasOnly(['inAppEnabled', 'updatedAt']) &&
+          request.resource.data.inAppEnabled is bool;
+        allow delete: if false;
+      }
+
+      match /notifications/{notificationId} {
+        allow read: if can('notifications.retry') || isActiveOwner(memberId);
+        allow update: if isActiveOwner(memberId) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']) &&
+          request.resource.data.read is bool;
+        allow create, delete: if false;
+      }
+
+      // Beneficiary changes go through trusted Cloud Functions only.
+      // Beneficiaries hold third-party personal data: auditors and treasurers
+      // never read them.
+      match /beneficiaries/{beneficiaryId} {
+        allow read: if can('beneficiaries.read') || isActiveOwner(memberId);
+        allow write: if false;
+      }
+
+      match /beneficiary_state/{stateId} {
+        allow read: if can('beneficiaries.read') || isActiveOwner(memberId);
+        allow write: if false;
+      }
+    }
+
+    // Members must constrain list queries to their own memberId.
+    match /beneficiary_change_requests/{requestId} {
+      allow read: if can('beneficiaries.read') ||
+        (resource.data.memberId == request.auth.uid &&
+          isActiveOwner(request.auth.uid));
+      allow write: if false;
+    }
+
+    match /{path=**}/contributions/{contributionId} {
+      allow read: if can('payments.read');
+    }
+
+    match /{path=**}/payments/{paymentId} {
+      allow read: if can('payments.read');
+    }
+
+    match /monthly_stats/{statId} {
+      allow read: if can('reports.read');
+      allow write: if false;
+    }
+
+    // Maintained by Cloud Functions only.
+    match /stats/{statId} {
+      allow read: if can('reports.read');
+      allow write: if false;
+    }
+
+    match /financial_commands/{commandId} {
+      allow read, write: if false;
+    }
+
+    match /audit_events/{eventId} {
+      allow read: if can('audit.read');
+      allow write: if false;
+    }
+
+    match /kcb_payment_notifications/{notificationId} {
+      allow read: if can('payments.read');
+      allow write: if false;
+    }
+
+    match /kcb_notification_messages/{messageId} {
+      allow read, write: if false;
+    }
+
+    match /kcb_stk_requests/{requestId} {
+      allow read: if can('payments.read') || (signedIn() && resource.data.memberId == request.auth.uid);
+      allow write: if false;
+    }
+
+    match /notification_events/{eventId} {
+      allow read: if can('notifications.retry');
+      allow write: if false;
+    }
+
+    match /notification_deliveries/{deliveryId} {
+      allow read: if can('notifications.retry');
+      allow write: if false;
+    }
+
+    match /contribution_rates/{rateId} {
+      allow read: if can('payments.read');
+      allow create: if can('rates.manage') &&
+        request.resource.data.keys().hasOnly(['amount', 'effectiveFrom', 'updatedAt', 'updatedBy']) &&
+        request.resource.data.amount is number && request.resource.data.amount > 0 &&
+        request.resource.data.effectiveFrom is string &&
+        request.resource.data.effectiveFrom.matches('^\\d{4}-(0[1-9]|1[0-2])-01$');
+      allow update, delete: if false;
+    }
+
     match /{document=**} {
-      allow read, write: if request.auth.uid != null;
+      allow read, write: if false;
     }
   }
 }

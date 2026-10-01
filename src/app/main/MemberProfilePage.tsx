@@ -1,21 +1,35 @@
-import { Profile } from '@/sections/profile';
-import { Member } from '@/schemas/member';
-import { RiArrowLeftSLine, RiLoaderLine, RiUserLine } from '@remixicon/react';
+import { Member } from 'tmbwa-shared/firebase';
+import {
+  RiArrowLeftSLine,
+  RiDeleteBinLine,
+  RiLoaderLine,
+  RiMoreFill,
+} from '@remixicon/react';
 import { Button } from '@/components/Button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuIconWrapper,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/Dropdown';
 import { DialogDeleteMember } from '@/components/ui/members/DialogDeleteMember';
 import { DialogMemberForm } from '@/components/ui/members/DialogMemberForm';
+import { DialogMemberStatus } from '@/components/ui/members/DialogMemberStatus';
+import { DialogMemberRoles } from '@/components/ui/members/DialogMemberRoles';
 import { Suspense, useEffect, useState } from 'react';
 import { getMemberById } from '@/lib/firebase/firestore';
 import useUser from '@/hooks/useUser';
 import { Link, useParams } from 'react-router-dom';
-import { DialogUpdateMemberBalance } from '@/components/ui/members/DialogUpdateMemberBalance';
-import { ContributionsAndTransactions } from '@/sections/contributionsAndTansactions';
+import { MemberAccount } from '@/sections/memberAccount';
+import { MemberHeader } from '@/sections/memberHeader';
 
 export default function MemberProfilePage() {
-  const { role } = useUser();
+  const { can, user } = useUser();
   const { memberId } = useParams<{ memberId: string }>();
   const [member, setMember] = useState<Member | null>();
   const [isLoading, setIsLoading] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   useEffect(() => {
     if (memberId) {
@@ -29,6 +43,15 @@ export default function MemberProfilePage() {
     }
   }, [memberId]);
 
+  // Status, deletion and roles are never changed on one's own record; the
+  // backend refuses those too. Interface hints only.
+  const isSelf = !!member && member.member_id === user?.uid;
+  const canChangeStatus = can('members.status') && !isSelf;
+  const canEdit = can('members.write');
+  const canDelete = can('members.delete') && !isSelf;
+  const canManageRoles = can('roles.manage') && !isSelf;
+  const hasActions = canChangeStatus || canEdit || canDelete || canManageRoles;
+
   return (
     <Suspense fallback={<div>Loading...</div>}>
       {isLoading ? (
@@ -39,41 +62,79 @@ export default function MemberProfilePage() {
           </div>
         </div>
       ) : (
-        <div className="flex flex-col gap-8">
-          <div className="mt-6 text-xl font-medium flex items-center gap-1">
-            <RiUserLine className="size-6 shrink-0" aria-hidden="true" />
-            Member Profile
-          </div>
+        <div className="mt-6 flex flex-col gap-6">
+          <Button
+            className="group w-fit text-xs font-normal"
+            variant="ghost"
+            asChild
+          >
+            <Link to="/members">
+              <RiArrowLeftSLine className="size-4" aria-hidden="true" />
+              Back to members
+            </Link>
+          </Button>
 
-          <div className="">
-            <div className="px-4 sm:px-0 flex justify-between items-center">
-              <div className="max-w-2xl text-sm font-medium leading-6 text-gray-500 dark:text-gray-200">
-                Member details.
-              </div>
-              <Button
-                className="group text-xs font-normal"
-                variant="secondary"
-                asChild
-              >
-                <Link to="/members">
-                  <RiArrowLeftSLine className="size-4" aria-hidden="true" />
-                  Back to members
-                </Link>
-              </Button>
-            </div>
-            {member ? <Profile member={member} ownProile={false} /> : null}
-          </div>
+          {member ? (
+            <>
+              <MemberHeader
+                member={member}
+                actions={
+                  hasActions ? (
+                    <>
+                      {canChangeStatus ? (
+                        <DialogMemberStatus member={member} />
+                      ) : null}
+                      {canManageRoles ? (
+                        <DialogMemberRoles member={member} />
+                      ) : null}
+                      {canEdit ? (
+                        <DialogMemberForm
+                          member={member}
+                          triggerButton={
+                            <Button variant="secondary">Edit member</Button>
+                          }
+                        />
+                      ) : null}
+                      {canDelete ? (
+                        <>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" aria-label="More actions">
+                                <RiMoreFill
+                                  className="size-4"
+                                  aria-hidden="true"
+                                />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                className="text-red-600 dark:text-red-500"
+                                onSelect={() => setDeleteOpen(true)}
+                              >
+                                <span className="flex items-center gap-x-2">
+                                  <DropdownMenuIconWrapper>
+                                    <RiDeleteBinLine className="size-4 text-inherit" />
+                                  </DropdownMenuIconWrapper>
+                                  Delete member
+                                </span>
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                          <DialogDeleteMember
+                            member={member}
+                            open={deleteOpen}
+                            onOpenChange={setDeleteOpen}
+                          />
+                        </>
+                      ) : null}
+                    </>
+                  ) : null
+                }
+              />
 
-          <div className="flex flex-col sm:flex-row gap-1.5 sm:justify-end">
-            {member && role === 'administrator' ? (
-              <>
-                <DialogUpdateMemberBalance member={member} />
-                <DialogMemberForm member={member} />
-                <DialogDeleteMember member={member} />
-              </>
-            ) : null}
-          </div>
-          {member ? <ContributionsAndTransactions member={member} /> : null}
+              <MemberAccount member={member} />
+            </>
+          ) : null}
         </div>
       )}
     </Suspense>

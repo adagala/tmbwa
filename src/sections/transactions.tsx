@@ -1,13 +1,16 @@
 import React from 'react';
-import {
-  Payment,
-  Member,
-  PaymentTypeEnum,
-  FirebaseTimestamp,
-} from '@/schemas/member';
+import { Payment, Member } from 'tmbwa-shared/firebase';
+import { PaymentTypeEnum } from 'tmbwa-shared';
 import { RiWalletLine } from '@remixicon/react';
-import { List, ListItem } from '@tremor/react';
+import { List, ListItem } from '@/components/List';
 import { Badge } from '@/components/Badge';
+import { Button } from '@/components/Button';
+import {
+  paymentTypeLabel,
+  printReceipt,
+  receiptNumber,
+} from '@/lib/memberDocuments';
+import { formatNairobiDateTime, timestampDate } from '@/lib/financialReporting';
 
 interface TransactionsProps extends React.ComponentPropsWithoutRef<'div'> {
   member: Member;
@@ -24,6 +27,11 @@ const Transactions = React.forwardRef<HTMLDivElement, TransactionsProps>(
             Transactions History
           </div>
         </div>
+        {payments.length === 0 ? (
+          <p className="mt-4 rounded-md border border-dashed border-gray-200 px-4 py-8 text-center text-sm text-gray-500 dark:border-gray-800 dark:text-gray-400">
+            No transactions recorded yet.
+          </p>
+        ) : null}
         <List className="mt-4">
           {payments.map((payment) => {
             const type =
@@ -37,16 +45,11 @@ const Transactions = React.forwardRef<HTMLDivElement, TransactionsProps>(
                   <div className="min-w-0 flex flex-auto items-center">
                     <div className="text-sm font-semibold leading-6 text-gray-900 dark:text-gray-200 flex">
                       <div className="w-48">
-                        {new Date(
-                          (payment.paymentdate as FirebaseTimestamp).seconds *
-                            1000,
-                        ).toLocaleDateString('en-US', {
-                          year: 'numeric',
-                          month: 'short',
-                          day: '2-digit',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
+                        {timestampDate(payment.paymentdate)
+                          ? formatNairobiDateTime(
+                              timestampDate(payment.paymentdate)!,
+                            )
+                          : 'Pending'}
                       </div>
                       <div className="w-20">
                         <Badge
@@ -56,14 +59,19 @@ const Transactions = React.forwardRef<HTMLDivElement, TransactionsProps>(
                               : 'default'
                           }
                         >
-                          {type}
+                          {paymentTypeLabel(payment)}
                         </Badge>
                       </div>
                     </div>
                   </div>
-                  <div className="text-xs hidden sm:block">
-                    {payment.referencenumber}
-                  </div>
+                  <Button
+                    variant="ghost"
+                    type="button"
+                    className="hidden h-auto border-0 p-0 text-xs underline shadow-none sm:inline-flex"
+                    onClick={() => printReceipt(payment, member)}
+                  >
+                    {receiptNumber(payment)}
+                  </Button>
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="shrink-0 flex items-center gap-2">

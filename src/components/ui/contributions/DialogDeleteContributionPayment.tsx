@@ -11,8 +11,8 @@ import {
   DialogTrigger,
 } from '@/components/Dialog';
 import { useToast } from '@/hooks/useToast';
-import { deletePayment } from '@/lib/firebase/firestore';
-import { Contribution, Payment } from '@/schemas/member';
+import { deletePayment } from '@/lib/firebase/financial';
+import { Contribution, Payment } from 'tmbwa-shared/firebase';
 import { getMonth } from '@/lib/utils';
 
 export const DialogDeleteContributionPayment = ({
@@ -64,7 +64,7 @@ export const DialogDeleteContributionPayment = ({
         >
           <DialogTrigger asChild>
             <Button
-              className={`absolute top-0 right-0 ${isCurrentMonth ? 'text-red-500' : 'text-gray-500 hover:cursor-not-allowed'}`}
+              className={`-my-1 h-auto px-1.5 py-0.5 text-xs ${isCurrentMonth ? 'text-red-500' : 'text-gray-500 hover:cursor-not-allowed'}`}
               type="button"
               variant="ghost"
             >

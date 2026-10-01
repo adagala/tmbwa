@@ -1,0 +1,266 @@
+import { MAX_CONTRIBUTION_MONTHS_PER_REQUEST, PAYMENT_STATUS } from 'tmbwa-shared';
+
+export type PaymentAllocation = { contributionId: string; amount: number };
+
+export const availableUnreservedBalance = (balance: number, reservedCredit: number) => {
+  if (!Number.isFinite(balance) || !Number.isFinite(reservedCredit) || reservedCredit < 0) {
+    throw new Error('Invalid account balance.');
+  }
+  return Math.max(balance - reservedCredit, 0);
+};
+
+export const reservableLegacyKcbCredit = (
+  receiptCredit: number,
+  memberBalance: number,
+  outstandingContributions: number,
+  alreadyReserved: number,
+) => Math.min(
+  receiptCredit,
+  Math.max(memberBalance + outstandingContributions - alreadyReserved, 0),
+);
+
+export const recoverableOutstandingBalance = (
+  contributions: Array<{ balance?: unknown }>,
+) => contributions.reduce((sum, contribution) => {
+  const balance = Number(contribution.balance);
+  return sum + (Number.isFinite(balance) && balance > 0 ? balance : 0);
+}, 0);
+
+export const legacyContributionCorrection = (
+  contributionAmount: number,
+  currentBalance: number,
+  correctedPaidAmount: number,
+) => {
+  if (!Number.isFinite(contributionAmount) || contributionAmount <= 0) {
+    throw new Error('Contribution amount must be positive.');
+  }
+  if (
+    !Number.isFinite(currentBalance) || currentBalance < 0 ||
+    !Number.isFinite(correctedPaidAmount) || correctedPaidAmount < 0 ||
+    correctedPaidAmount > contributionAmount
+  ) {
+    throw new Error('Corrected paid amount must be between zero and the contribution amount.');
+  }
+  const currentPaidAmount = contributionAmount - currentBalance;
+  const correctedBalance = contributionAmount - correctedPaidAmount;
+  const delta = correctedPaidAmount - currentPaidAmount;
+  return {
+    currentPaidAmount,
+    correctedPaidAmount,
+    correctedBalance,
+    delta,
+    status: correctedBalance === 0
+      ? PAYMENT_STATUS.PAID
+      : correctedPaidAmount > 0 ? PAYMENT_STATUS.PARTIAL : PAYMENT_STATUS.UNPAID,
+  };
+};
+
+export const correctedPaidAmountValue = (value: unknown) => {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+    throw new Error('Corrected paid amount must be a finite number of zero or greater.');
+  }
+  return value;
+};
+
+export const canReverseLegacyCorrection = (
+  activeCorrectionId: unknown,
+  correctionId: string,
+  currentBalance: number,
+  expectedBalance: number,
+) => activeCorrectionId === correctionId &&
+  Number.isFinite(currentBalance) && currentBalance === expectedBalance;
+
+export const hasLegacyCorrectionHistory = (corrections: unknown) =>
+  Array.isArray(corrections) && corrections.length > 0;
+
+export const hasLinkedPaymentHistory = (payments: unknown) =>
+  Array.isArray(payments) && payments.length > 0;
+
+export const legacyInventoryCursor = (value: unknown) => {
+  if (value === undefined || value === null || value === '') return undefined;
+  if (
+    typeof value !== 'string' ||
+    !/^members\/[^/]+\/contributions\/[^/]+$/.test(value)
+  ) {
+    throw new Error('Invalid legacy inventory cursor.');
+  }
+  return value;
+};
+
+export const validatePaymentAllocations = (
+  receiptAmount: number,
+  allocations: PaymentAllocation[],
+  outstandingByContribution: Record<string, number>,
+) => {
+  if (!Number.isFinite(receiptAmount) || receiptAmount <= 0) {
+    throw new Error('Payment must be positive.');
+  }
+  const seen = new Set<string>();
+  let allocatedAmount = 0;
+  allocations.forEach(({ contributionId, amount }) => {
+    if (!contributionId || seen.has(contributionId)) {
+      throw new Error('Each contribution can be selected only once.');
+    }
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new Error('Allocation amounts must be positive.');
+    }
+    const outstanding = outstandingByContribution[contributionId];
+    if (!Number.isFinite(outstanding) || outstanding <= 0) {
+      throw new Error('A selected contribution is already paid or missing.');
+    }
+    if (amount > outstanding) {
+      throw new Error('An allocation exceeds the contribution balance.');
+    }
+    seen.add(contributionId);
+    allocatedAmount += amount;
+  });
+  if (allocatedAmount > receiptAmount) {
+    throw new Error('Allocations exceed the available receipt amount.');
+  }
+  return { allocatedAmount, unallocatedAmount: receiptAmount - allocatedAmount };
+};
+
+// Settles outstanding contributions oldest first from a member top-up and
+// leaves any remainder as unreserved account credit.
+export const allocateTopUpToArrears = (
+  amount: number,
+  contributions: Array<{ contributionId: string; month: string; balance: number }>,
+) => {
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw new Error('Top-up must be positive.');
+  }
+  let remaining = amount;
+  const allocations: PaymentAllocation[] = [];
+  [...contributions]
+    .filter((item) => Number.isFinite(item.balance) && item.balance > 0)
+    .sort((a, b) =>
+      a.month.localeCompare(b.month) ||
+      a.contributionId.localeCompare(b.contributionId))
+    .forEach(({ contributionId, balance }) => {
+      if (remaining <= 0) return;
+      const allocated = Math.min(remaining, balance);
+      allocations.push({ contributionId, amount: allocated });
+      remaining -= allocated;
+    });
+  return {
+    allocations,
+    allocatedAmount: amount - remaining,
+    unallocatedAmount: remaining,
+  };
+};
+
+// A top-up remainder can only be reversed while that much unreserved credit
+// is still unspent; otherwise it has already paid later contributions.
+export const canReverseTopUpCredit = (
+  balance: number,
+  reservedCredit: number,
+  unallocatedAmount: number,
+) => availableUnreservedBalance(balance, reservedCredit) >= unallocatedAmount;
+
+// Credit is pooled, so once any BALANCE B/F application happens after a
+// top-up we cannot prove it was funded by other credit. Refuse conservatively,
+// including when a timestamp is missing.
+export const creditAppliedSinceTopUp = (
+  topUpCreatedAtMillis: number | undefined,
+  creditApplicationMillis: Array<number | undefined>,
+) =>
+  topUpCreatedAtMillis === undefined ||
+  creditApplicationMillis.some(
+    (appliedAt) => appliedAt === undefined || appliedAt >= topUpCreatedAtMillis,
+  );
+
+export const paymentAllocations = (payment: {
+  allocations?: Array<{ contribution_id: string; amount: number }>;
+  contribution_id?: string;
+  contribution_amount?: number;
+}) => payment.allocations?.length
+  ? payment.allocations.map((item) => ({
+    contributionId: item.contribution_id,
+    amount: Number(item.amount),
+  }))
+  : payment.contribution_id && Number(payment.contribution_amount) > 0
+    ? [{
+        contributionId: payment.contribution_id,
+        amount: Number(payment.contribution_amount),
+      }]
+    : [];
+
+export const requiresReceiptReversalBeforeContributionRemoval = (payment: {
+  provider_transaction_id?: unknown;
+  allocations?: Array<{ contribution_id: string; amount: number }>;
+  contribution_id?: string;
+  contribution_amount?: number;
+}) =>
+  typeof payment.provider_transaction_id === 'string' ||
+  paymentAllocations(payment).length > 1;
+
+export const applyPayment = (amount: number, outstanding: number) => {
+  if (!Number.isFinite(amount) || amount <= 0) throw new Error('Payment must be positive.');
+  if (!Number.isFinite(outstanding) || outstanding <= 0) throw new Error('Contribution is paid.');
+  const contributionAmount = Math.min(amount, outstanding);
+  const remainingBalance = outstanding - contributionAmount;
+  return {
+    contributionAmount,
+    accountCredit: amount - contributionAmount,
+    remainingBalance,
+    status: remainingBalance === 0 ? PAYMENT_STATUS.PAID : PAYMENT_STATUS.PARTIAL,
+  };
+};
+
+export const reversePayment = (currentBalance: number, contributionAmount: number, contributionTotal: number) => {
+  const restoredBalance = currentBalance + contributionAmount;
+  return {
+    restoredBalance,
+    status: restoredBalance >= contributionTotal ? PAYMENT_STATUS.UNPAID : PAYMENT_STATUS.PARTIAL,
+  };
+};
+
+export const applyBalanceAdjustment = (currentBalance: number, amount: number, type: string) => {
+  if (!Number.isFinite(amount) || amount <= 0) throw new Error('Amount must be positive.');
+  if (type !== 'top_up' && type !== 'deduction') throw new Error('Invalid adjustment type.');
+  const nextBalance = currentBalance + (type === 'top_up' ? amount : -amount);
+  if (nextBalance < 0) throw new Error('Deduction exceeds account balance.');
+  return nextBalance;
+};
+
+// Accepts a Firestore Timestamp, a Date, or a serialized { seconds } value.
+export const timestampValueDate = (value: unknown) => {
+  if (value instanceof Date) return value;
+  if (value && typeof (value as { toDate?: unknown }).toDate === 'function') {
+    return (value as { toDate: () => Date }).toDate();
+  }
+  const seconds = (value as { seconds?: unknown } | undefined)?.seconds;
+  return typeof seconds === 'number' ? new Date(seconds * 1000) : undefined;
+};
+
+export const memberJoinedAt = (member: { datejoined?: unknown; createat?: unknown }) =>
+  timestampValueDate(member.datejoined) ?? timestampValueDate(member.createat);
+
+// Validates a bulk request against the server-computed missing months and
+// returns the months oldest first, so credit is applied to the oldest first.
+export const bulkContributionMonths = (requested: unknown, missingMonths: string[]) => {
+  if (!Array.isArray(requested) || requested.length === 0) {
+    throw new Error('Select at least one month.');
+  }
+  if (requested.length > MAX_CONTRIBUTION_MONTHS_PER_REQUEST) {
+    throw new Error(
+      `Add at most ${MAX_CONTRIBUTION_MONTHS_PER_REQUEST} months at a time.`,
+    );
+  }
+  const months = new Set<string>();
+  requested.forEach((month) => {
+    if (typeof month !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])-01$/.test(month)) {
+      throw new Error('Months must use YYYY-MM-01.');
+    }
+    if (months.has(month)) throw new Error('Each month can be selected only once.');
+    months.add(month);
+  });
+  const allowed = new Set(missingMonths);
+  const unavailable = [...months].filter((month) => !allowed.has(month)).sort();
+  if (unavailable.length) {
+    throw new Error(
+      `These months are already billed or outside the member's range: ${unavailable.join(', ')}.`,
+    );
+  }
+  return [...months].sort();
+};

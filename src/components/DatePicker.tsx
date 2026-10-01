@@ -502,7 +502,6 @@ const SingleDatePicker = ({
 
   const initialDate = React.useMemo(() => {
     return date;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   React.useEffect(() => {
@@ -519,7 +518,6 @@ const SingleDatePicker = ({
     if (!open) {
       setMonth(date);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   const onCancel = () => {
@@ -601,6 +599,8 @@ const SingleDatePicker = ({
   return (
     <PopoverPrimitives.Root open={open} onOpenChange={onOpenChange}>
       <Trigger
+        id={props.id}
+        type="button"
         placeholder={placeholder}
         disabled={disabled}
         className={className}
@@ -734,7 +734,6 @@ const RangeDatePicker = ({
 
   const initialRange = React.useMemo(() => {
     return range;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   React.useEffect(() => {
@@ -751,7 +750,6 @@ const RangeDatePicker = ({
     if (!open) {
       setMonth(range?.from);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   const onRangeChange = (range: DateRange | undefined) => {
@@ -899,6 +897,8 @@ const RangeDatePicker = ({
   return (
     <PopoverPrimitives.Root open={open} onOpenChange={onOpenChange}>
       <Trigger
+        id={props.id}
+        type="button"
         placeholder={placeholder}
         disabled={disabled}
         className={className}

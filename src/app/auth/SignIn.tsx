@@ -1,4 +1,6 @@
 import { Label } from '@/components/Label';
+import { rolesFromClaims } from 'tmbwa-shared';
+import { landingPath } from '@/lib/access';
 import { Input } from '@/components/Input';
 import { Button } from '@/components/Button';
 import { useState } from 'react';
@@ -6,14 +8,16 @@ import { RiLoginCircleLine } from '@remixicon/react';
 import { Card } from '@/components/Card';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { UserSchema, userSchema } from '@/schemas/user';
+import { UserSchema, userSchema } from 'tmbwa-shared';
 import { toast } from '@/hooks/useToast';
 import { InputErrorMessage } from '@/components/ui/InputErrorMessage';
 import { signInWithEmailAndPassword } from '@/lib/firebase/auth';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { getPostSignInPath } from '@/routes/authRedirect';
 
 export default function LogIn() {
   const navigate = useNavigate();
+  const location = useLocation();
 
   const {
     register,
@@ -27,8 +31,12 @@ export default function LogIn() {
     setIsLoggingIn(true);
 
     signInWithEmailAndPassword(data)
-      .then(() => {
-        navigate('/overview');
+      .then(async (credential) => {
+        const token = await credential.user.getIdTokenResult();
+        const requestedPath = getPostSignInPath(location.state);
+        navigate(requestedPath ?? landingPath(rolesFromClaims(token.claims)), {
+          replace: true,
+        });
       })
       .catch(() => {
         toast({

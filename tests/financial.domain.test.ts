@@ -1,0 +1,319 @@
+import { describe, expect, it } from 'vitest';
+import {
+  allocateTopUpToArrears,
+  applyBalanceAdjustment,
+  bulkContributionMonths,
+  memberJoinedAt,
+  canReverseTopUpCredit,
+  creditAppliedSinceTopUp,
+  availableUnreservedBalance,
+  applyPayment,
+  paymentAllocations,
+  legacyContributionCorrection,
+  correctedPaidAmountValue,
+  canReverseLegacyCorrection,
+  hasLegacyCorrectionHistory,
+  hasLinkedPaymentHistory,
+  legacyInventoryCursor,
+  recoverableOutstandingBalance,
+  requiresReceiptReversalBeforeContributionRemoval,
+  reservableLegacyKcbCredit,
+  reversePayment,
+  validatePaymentAllocations,
+} from '../functions/src/financial/domain';
+
+describe('financial invariants', () => {
+  it('applies a partial payment without creating credit', () => {
+    expect(applyPayment(200, 500)).toEqual({
+      contributionAmount: 200,
+      accountCredit: 0,
+      remainingBalance: 300,
+      status: 'partial',
+    });
+  });
+
+  it('caps the contribution portion and preserves overpayment as account credit', () => {
+    expect(applyPayment(700, 500)).toEqual({
+      contributionAmount: 500,
+      accountCredit: 200,
+      remainingBalance: 0,
+      status: 'paid',
+    });
+  });
+
+  it('rejects zero, negative, and already-paid contribution payments', () => {
+    expect(() => applyPayment(0, 500)).toThrow();
+    expect(() => applyPayment(-1, 500)).toThrow();
+    expect(() => applyPayment(100, 0)).toThrow();
+  });
+
+  it('restores unpaid and partial states on reversal', () => {
+    expect(reversePayment(0, 500, 500)).toEqual({
+      restoredBalance: 500,
+      status: 'unpaid',
+    });
+    expect(reversePayment(100, 200, 500)).toEqual({
+      restoredBalance: 300,
+      status: 'partial',
+    });
+  });
+
+  it('prevents account deductions below zero', () => {
+    expect(applyBalanceAdjustment(500, 200, 'deduction')).toBe(300);
+    expect(applyBalanceAdjustment(500, 200, 'top_up')).toBe(700);
+    expect(() => applyBalanceAdjustment(100, 200, 'deduction')).toThrow();
+  });
+
+  it('keeps reserved KCB credit unavailable to generic balance operations', () => {
+    expect(availableUnreservedBalance(100, 600)).toBe(0);
+    expect(availableUnreservedBalance(700, 600)).toBe(100);
+  });
+
+  it('caps legacy KCB credit at funds that have not already been consumed', () => {
+    expect(reservableLegacyKcbCredit(600, 100, 500, 0)).toBe(600);
+    expect(reservableLegacyKcbCredit(600, -400, 900, 0)).toBe(500);
+    expect(reservableLegacyKcbCredit(600, 100, 500, 200)).toBe(400);
+  });
+
+  it('ignores malformed unrelated balances when reconstructing legacy credit', () => {
+    expect(
+      recoverableOutstandingBalance([
+        { balance: 500 },
+        { balance: '400' },
+        { balance: 'invalid' },
+        {},
+        { balance: -100 },
+      ]),
+    ).toBe(900);
+  });
+
+  it('calculates an auditable legacy correction delta and status', () => {
+    expect(legacyContributionCorrection(500, 500, 400)).toEqual({
+      currentPaidAmount: 0,
+      correctedPaidAmount: 400,
+      correctedBalance: 100,
+      delta: 400,
+      status: 'partial',
+    });
+    expect(legacyContributionCorrection(500, 100, 500)).toMatchObject({
+      correctedBalance: 0,
+      delta: 100,
+      status: 'paid',
+    });
+    expect(legacyContributionCorrection(500, 0, 0)).toMatchObject({
+      correctedBalance: 500,
+      delta: -500,
+      status: 'unpaid',
+    });
+    expect(() => legacyContributionCorrection(500, 500, 501)).toThrow();
+  });
+
+  it('requires corrected paid amounts to be finite numbers without coercion', () => {
+    expect(correctedPaidAmountValue(0)).toBe(0);
+    expect(correctedPaidAmountValue(400)).toBe(400);
+    expect(() => correctedPaidAmountValue(null)).toThrow();
+    expect(() => correctedPaidAmountValue('400')).toThrow();
+    expect(() => correctedPaidAmountValue(Number.NaN)).toThrow();
+    expect(() => correctedPaidAmountValue(Number.POSITIVE_INFINITY)).toThrow();
+    expect(() => correctedPaidAmountValue(-1)).toThrow();
+  });
+
+  it('requires legacy corrections to be reversed in last-in-first-out order', () => {
+    // A later correction cycled the balance back to correction-1's numeric state.
+    expect(
+      canReverseLegacyCorrection('correction-3', 'correction-1', 400, 400),
+    ).toBe(false);
+    expect(
+      canReverseLegacyCorrection('correction-3', 'correction-3', 400, 400),
+    ).toBe(true);
+    // Once correction-3 restores correction-2 as active, correction-1 is still blocked.
+    expect(
+      canReverseLegacyCorrection('correction-2', 'correction-1', 300, 400),
+    ).toBe(false);
+  });
+
+  it('preserves corrected contributions and validates inventory cursors', () => {
+    expect(hasLegacyCorrectionHistory([])).toBe(false);
+    expect(hasLegacyCorrectionHistory([{ correctionId: 'correction-1' }])).toBe(
+      true,
+    );
+    expect(hasLinkedPaymentHistory([])).toBe(false);
+    expect(hasLinkedPaymentHistory([{ payment_id: 'payment-1' }])).toBe(true);
+    expect(legacyInventoryCursor(undefined)).toBeUndefined();
+    expect(
+      legacyInventoryCursor('members/member-1/contributions/2026-01-01'),
+    ).toBe('members/member-1/contributions/2026-01-01');
+    expect(() => legacyInventoryCursor('2026-01-01')).toThrow(
+      'Invalid legacy inventory cursor',
+    );
+  });
+
+  it('validates explicit multi-contribution allocations and credit', () => {
+    expect(
+      validatePaymentAllocations(
+        1000,
+        [
+          { contributionId: 'june', amount: 400 },
+          { contributionId: 'march', amount: 500 },
+        ],
+        { june: 400, march: 500 },
+      ),
+    ).toEqual({
+      allocatedAmount: 900,
+      unallocatedAmount: 100,
+    });
+    expect(validatePaymentAllocations(1000, [], {})).toEqual({
+      allocatedAmount: 0,
+      unallocatedAmount: 1000,
+    });
+  });
+
+  it('rejects duplicate, excessive, and over-balance allocations', () => {
+    expect(() =>
+      validatePaymentAllocations(
+        1000,
+        [
+          { contributionId: 'june', amount: 100 },
+          { contributionId: 'june', amount: 100 },
+        ],
+        { june: 400 },
+      ),
+    ).toThrow('only once');
+    expect(() =>
+      validatePaymentAllocations(
+        500,
+        [{ contributionId: 'june', amount: 501 }],
+        { june: 600 },
+      ),
+    ).toThrow('available receipt');
+    expect(() =>
+      validatePaymentAllocations(
+        1000,
+        [{ contributionId: 'june', amount: 401 }],
+        { june: 400 },
+      ),
+    ).toThrow('contribution balance');
+  });
+
+  it('derives legacy and explicit allocations for reversal', () => {
+    expect(
+      paymentAllocations({
+        contribution_id: 'june',
+        contribution_amount: 400,
+      }),
+    ).toEqual([{ contributionId: 'june', amount: 400 }]);
+    expect(
+      paymentAllocations({
+        allocations: [
+          { contribution_id: 'june', amount: 400 },
+          { contribution_id: 'march', amount: 500 },
+        ],
+      }),
+    ).toHaveLength(2);
+    expect(
+      paymentAllocations({ contribution_id: '', contribution_amount: 0 }),
+    ).toEqual([]);
+  });
+
+  it('requires receipt reversal before deleting shared or KCB contributions', () => {
+    expect(
+      requiresReceiptReversalBeforeContributionRemoval({
+        provider_transaction_id: 'KCB-1',
+        contribution_id: 'june',
+        contribution_amount: 400,
+      }),
+    ).toBe(true);
+    expect(
+      requiresReceiptReversalBeforeContributionRemoval({
+        allocations: [
+          { contribution_id: 'june', amount: 400 },
+          { contribution_id: 'march', amount: 500 },
+        ],
+      }),
+    ).toBe(true);
+    expect(
+      requiresReceiptReversalBeforeContributionRemoval({
+        contribution_id: 'june',
+        contribution_amount: 400,
+      }),
+    ).toBe(false);
+  });
+
+  it('settles top-up arrears oldest first and keeps the remainder as credit', () => {
+    expect(allocateTopUpToArrears(1000, [
+      { contributionId: '2026-04', month: '2026-04', balance: 500 },
+      { contributionId: '2026-03', month: '2026-03', balance: 400 },
+      { contributionId: '2026-02', month: '2026-02', balance: 0 },
+    ])).toEqual({
+      allocations: [
+        { contributionId: '2026-03', amount: 400 },
+        { contributionId: '2026-04', amount: 500 },
+      ],
+      allocatedAmount: 900,
+      unallocatedAmount: 100,
+    });
+  });
+
+  it('partially settles the oldest arrear and holds everything without arrears', () => {
+    expect(allocateTopUpToArrears(300, [
+      { contributionId: '2026-04', month: '2026-04', balance: 500 },
+      { contributionId: '2026-03', month: '2026-03', balance: 400 },
+    ])).toEqual({
+      allocations: [{ contributionId: '2026-03', amount: 300 }],
+      allocatedAmount: 300,
+      unallocatedAmount: 0,
+    });
+    expect(allocateTopUpToArrears(1500, [])).toEqual({
+      allocations: [], allocatedAmount: 0, unallocatedAmount: 1500,
+    });
+    expect(() => allocateTopUpToArrears(0, [])).toThrow();
+  });
+
+  it('only reverses top-up credit that is still unspent and unreserved', () => {
+    expect(canReverseTopUpCredit(500, 0, 500)).toBe(true);
+    expect(canReverseTopUpCredit(300, 0, 500)).toBe(false);
+    expect(canReverseTopUpCredit(700, 200, 500)).toBe(true);
+    expect(canReverseTopUpCredit(600, 200, 500)).toBe(false);
+    expect(canReverseTopUpCredit(-100, 0, 0)).toBe(true);
+  });
+
+  it('treats any credit application at or after a top-up as possibly spending it', () => {
+    expect(creditAppliedSinceTopUp(1000, [])).toBe(false);
+    expect(creditAppliedSinceTopUp(1000, [500, 999])).toBe(false);
+    expect(creditAppliedSinceTopUp(1000, [500, 1000])).toBe(true);
+    expect(creditAppliedSinceTopUp(1000, [2000])).toBe(true);
+    expect(creditAppliedSinceTopUp(1000, [undefined])).toBe(true);
+    expect(creditAppliedSinceTopUp(undefined, [])).toBe(true);
+  });
+
+  it('accepts only distinct missing months and returns them oldest first', () => {
+    const missing = ['2026-05-01', '2026-06-01', '2026-07-01'];
+    expect(bulkContributionMonths(['2026-07-01', '2026-05-01'], missing)).toEqual([
+      '2026-05-01',
+      '2026-07-01',
+    ]);
+    expect(() => bulkContributionMonths([], missing)).toThrow('at least one');
+    expect(() => bulkContributionMonths('2026-05-01', missing)).toThrow('at least one');
+    expect(() => bulkContributionMonths(['2026-05'], missing)).toThrow('YYYY-MM-01');
+    expect(() => bulkContributionMonths(['2026-13-01'], missing)).toThrow('YYYY-MM-01');
+    expect(() => bulkContributionMonths([501], missing)).toThrow('YYYY-MM-01');
+    expect(() =>
+      bulkContributionMonths(['2026-05-01', '2026-05-01'], missing),
+    ).toThrow('only once');
+    expect(() =>
+      bulkContributionMonths(['2026-05-01', '2026-08-01', '2026-04-01'], missing),
+    ).toThrow('2026-04-01, 2026-08-01');
+    const tooMany = Array.from({ length: 61 }, (_, index) =>
+      `${2020 + Math.floor(index / 12)}-${String((index % 12) + 1).padStart(2, '0')}-01`);
+    expect(() => bulkContributionMonths(tooMany, tooMany)).toThrow('at most 60');
+  });
+
+  it('derives the join date from datejoined, falling back to createat', () => {
+    const joined = new Date('2025-02-10T00:00:00Z');
+    const created = new Date('2025-03-10T00:00:00Z');
+    expect(memberJoinedAt({ datejoined: { toDate: () => joined }, createat: created })).toBe(joined);
+    expect(memberJoinedAt({ createat: { seconds: created.getTime() / 1000 } })).toEqual(created);
+    expect(memberJoinedAt({ datejoined: 'yesterday' })).toBeUndefined();
+    expect(memberJoinedAt({})).toBeUndefined();
+  });
+});

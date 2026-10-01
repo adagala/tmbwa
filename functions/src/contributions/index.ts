@@ -1,128 +1,122 @@
-import * as admin from 'firebase-admin';
+import { admin } from '../firebaseAdmin';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
+import { MemberWithId } from '../types';
 import {
-  Member,
-  Contribution,
-  MemberWithId,
-  MonthlyStats,
-  Payment,
+  MONTHLY_CONTRIBUTION,
   PAYMENT_STATUS,
-} from '../types';
-import { getCurrentMonth, MONTHLY_CONTRIBUTION } from '../utils';
+  contributionDocumentSchema,
+  paymentDocumentSchema,
+} from 'tmbwa-shared';
+import { arrayToChunks, getCurrentMonth } from '../utils';
+import {
+  contributionData,
+  memberWithIdData,
+  validateDocumentWrite,
+} from '../firestoreData';
+import { availableUnreservedBalance } from '../financial/domain';
 
-// Runs at  midnight at the start of every month
-export const setMonthlyContributions = onSchedule(
-  {
-    schedule: '0 0 1 * *',
-    timeZone: 'Africa/Nairobi',
-  },
-  async () => {
-    // get all members
-    const membersRef = admin.firestore().collection('members');
-    const membersSnapshot = await membersRef.get();
-    const members = membersSnapshot.docs.map((member) => {
-      const _member = {
-        ...member.data(),
-        member_id: member.id,
-      } as MemberWithId;
-      return _member;
-    });
+const db = () => admin.firestore();
 
-    const contributions: Partial<Contribution>[] = [];
-
-    const month = getCurrentMonth();
-
-    // create a document for each member for that month
-    const batch = admin.firestore().batch();
-
-    let totalContribution = 0;
-    let paymentsCount = 0;
-    members.forEach((member) => {
-      const memberContributionRef = admin
-        .firestore()
-        .doc(`members/${member.member_id}/contributions/${month}`);
-      const memberBalance = (member.balance as number) || 0;
-      const newMemberBalance = memberBalance - MONTHLY_CONTRIBUTION;
-      const contributionAmount =
-        memberBalance > MONTHLY_CONTRIBUTION
-          ? MONTHLY_CONTRIBUTION
-          : memberBalance <= 0
-            ? 0
-            : memberBalance;
-      const contributionBalance = MONTHLY_CONTRIBUTION - contributionAmount;
-      totalContribution = totalContribution + contributionAmount;
-
-      let payment: Payment | undefined = undefined;
-
-      if (contributionAmount > 0) {
-        paymentsCount = paymentsCount + 1;
-
-        const paymentsRef = admin
-          .firestore()
-          .collection(`members/${member.member_id}/payments`);
-        const paymentId = paymentsRef.doc().id;
-        const paymentRef = admin
-          .firestore()
-          .doc(`members/${member.member_id}/payments/${paymentId}`);
-
-        const memberPayment: Payment = {
-          amount: contributionAmount,
-          contribution_amount: contributionAmount,
-          paymentdate: admin.firestore.Timestamp.now(),
-          referencenumber: 'BALANCE B/F',
-          contribution_id: month,
-          firstname: member.firstname,
-          lastname: member.lastname,
-          member_id: member.member_id,
-          payment_id: paymentId,
-        };
-        payment = memberPayment;
-        batch.set(paymentRef, payment, { merge: true });
-      }
-
-      const contribution: Partial<Contribution> = {
-        ...member,
-        amount: MONTHLY_CONTRIBUTION,
-        balance: contributionBalance,
-        paid:
-          contributionBalance === 0
-            ? PAYMENT_STATUS.PAID
-            : contributionBalance === MONTHLY_CONTRIBUTION
-              ? PAYMENT_STATUS.UNPAID
-              : PAYMENT_STATUS.PARTIAL,
-        ...(payment?.payment_id && {
-          payments: admin.firestore.FieldValue.arrayUnion(payment),
-        }),
-        createdat: admin.firestore.Timestamp.now(),
-        month,
+const createForMember = async (member: MemberWithId, month: string, amount: number) =>
+  db().runTransaction(async (transaction) => {
+    const contributionRef = db().doc(`members/${member.member_id}/contributions/${month}`);
+    if ((await transaction.get(contributionRef)).exists) return { created: false, applied: 0, payment: false };
+    const memberRef = db().doc(`members/${member.member_id}`);
+    const freshMemberSnapshot = await transaction.get(memberRef);
+    const freshMember = memberWithIdData(freshMemberSnapshot);
+    if (freshMember.status !== 'active') return { created: false, applied: 0, payment: false };
+    const accountBalance = Number(freshMember.balance ?? 0);
+    const applied = Math.min(
+      availableUnreservedBalance(
+        accountBalance, Number(freshMember.reservedKcbCredit ?? 0),
+      ),
+      amount,
+    );
+    const remaining = amount - applied;
+    const payments: Record<string, unknown>[] = [];
+    if (applied > 0) {
+      const paymentId = db().collection(`members/${member.member_id}/payments`).doc().id;
+      const createdAt = admin.firestore.Timestamp.now();
+      const payment = {
+        payment_id: paymentId,
+        amount: applied,
+        contribution_amount: applied,
+        paymentdate: createdAt,
+        created_at: createdAt,
+        referencenumber: 'BALANCE B/F',
+        contribution_id: month,
+        firstname: freshMember.firstname,
+        lastname: freshMember.lastname,
+        member_id: member.member_id,
+        payment_type: 'contribution',
+        action_by: 'system',
+        request_id: `monthly:${month}:${member.member_id}`,
+        receipt_number: `TMBWA-${paymentId.toUpperCase()}`,
       };
-      contributions.push(contribution);
-      batch.set(memberContributionRef, contribution, {
-        merge: true,
-      });
-
-      const memberRef = admin.firestore().doc(`members/${member.member_id}`);
-      const memberData: Partial<Member> = {
-        balance: newMemberBalance,
-        contributionBalance:
-          admin.firestore.FieldValue.increment(contributionAmount),
-      };
-      batch.set(memberRef, memberData, { merge: true });
-    });
-
-    const statsRef = admin.firestore().doc(`monthly_stats/${month}`);
-    const stats: MonthlyStats = {
-      amount: members.length * MONTHLY_CONTRIBUTION,
-      contribution: totalContribution,
-      totalMembers: members.length,
+      const paymentPath = `members/${member.member_id}/payments/${paymentId}`;
+      const validatedPayment = validateDocumentWrite(paymentDocumentSchema, payment, paymentPath);
+      payments.push(validatedPayment);
+      transaction.create(db().doc(paymentPath), validatedPayment);
+    }
+    transaction.create(contributionRef, validateDocumentWrite(contributionDocumentSchema, {
+      ...freshMember,
+      member_id: member.member_id,
+      amount,
+      balance: remaining,
+      paid: remaining === 0 ? PAYMENT_STATUS.PAID : applied > 0 ? PAYMENT_STATUS.PARTIAL : PAYMENT_STATUS.UNPAID,
+      payments,
+      createdat: admin.firestore.FieldValue.serverTimestamp(),
       month,
-      paymentsCount,
+      action_by: 'system',
+      contribution_id: month,
+    }, contributionRef.path));
+    transaction.update(memberRef, {
+      balance: admin.firestore.FieldValue.increment(-amount),
+      contributionBalance: admin.firestore.FieldValue.increment(applied),
+    });
+    return { created: true, applied, payment: applied > 0 };
+  });
+
+export const generateMonthlyContributions = async (month = getCurrentMonth()) => {
+  const amount = MONTHLY_CONTRIBUTION;
+  const membersSnapshot = await db().collection('members').where('status', '==', 'active').get();
+  const members = membersSnapshot.docs.map(memberWithIdData) as MemberWithId[];
+  let created = 0;
+  for (const chunk of arrayToChunks(members, 50)) {
+    const results = await Promise.all(chunk.map((member) => createForMember(member, month, amount)));
+    for (const result of results) {
+      if (result.created) created += 1;
+    }
+  }
+  const totals = await db().runTransaction(async (transaction) => {
+    const contributionsQuery = db().collectionGroup('contributions').where('month', '==', month);
+    const contributionsSnapshot = await transaction.get(contributionsQuery);
+    const summary = contributionsSnapshot.docs.reduce((current, item) => {
+      const contribution = contributionData(item);
+      current.billed += contribution.amount;
+      current.collected += contribution.amount - contribution.balance;
+      current.payments += contribution.payments.length;
+      return current;
+    }, { billed: 0, collected: 0, payments: 0 });
+    transaction.set(db().doc(`monthly_stats/${month}`), {
+      amount: summary.billed,
+      contribution: summary.collected,
+      totalMembers: contributionsSnapshot.size,
+      month,
+      paymentsCount: summary.payments,
       newMembers: 0,
-    };
-    batch.set(statsRef, stats, { merge: true });
+      generationStatus: 'complete',
+      generatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+    return { ...summary, members: contributionsSnapshot.size };
+  });
+  return { month, amount, created, ...totals };
+};
 
-    await batch.commit();
-
-    return;
-  },
-);
+export const setMonthlyContributions = onSchedule({
+  schedule: '0 0 1 * *',
+  timeZone: 'Africa/Nairobi',
+  retryCount: 3,
+}, async () => {
+  await generateMonthlyContributions();
+});

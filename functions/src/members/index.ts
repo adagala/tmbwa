@@ -1,4 +1,4 @@
-import * as admin from 'firebase-admin';
+import { admin } from '../firebaseAdmin';
 import {
   onDocumentCreated,
   onDocumentDeleted,
@@ -7,19 +7,38 @@ import {
 import { Member, MonthlyStats, Stats } from '../types';
 import {
   createIndex,
+  createBootstrapPassword,
   deleteCollection,
   getCurrentMonth,
-  MONTHLY_CONTRIBUTION,
 } from '../utils';
+import {
+  MONTHLY_CONTRIBUTION,
+  memberFormBaseSchema,
+  memberRoles,
+  parseDocument,
+  sameRoles,
+} from 'tmbwa-shared';
+import { memberData } from '../firestoreData';
+import { syncRoleClaims } from './claims';
+
+export { assignMemberRoles } from './roles';
 
 export const newMember = onDocumentCreated(
-  'members/{memberId}',
+  {
+    document: 'members/{memberId}',
+    region: 'asia-south1',
+  },
   async (event) => {
-    const uid = event.data?.id;
+    const snapshot = event.data;
+    const uid = snapshot?.id;
 
-    if (!uid) return null;
+    if (!snapshot || !uid) return null;
 
-    const member = event.data?.data() as Member;
+    const member = parseDocument(
+      memberFormBaseSchema,
+      snapshot.data(),
+      snapshot.ref.path,
+    );
     const batch = admin.firestore().batch();
 
     // searcheable index
@@ -28,12 +47,16 @@ export const newMember = onDocumentCreated(
 
     // created at timestamp
     const memberRef = admin.firestore().doc(`members/${uid}`);
+    // Client-created members always start as plain members (Firestore rules
+    // enforce it); privileged roles are granted only through assignMemberRoles.
+    const roles = memberRoles(snapshot.data());
     const memberUpdate: Partial<Member> = {
       createat: admin.firestore.Timestamp.now(),
       firstnameSearchableIndex,
       lastnameSearchableIndex,
       balance: 0,
       contributionBalance: 0,
+      roles,
     };
 
     batch.set(memberRef, memberUpdate, { merge: true });
@@ -57,23 +80,26 @@ export const newMember = onDocumentCreated(
 
     await batch.commit();
 
-    // create account with default password as phone number
+    // The bootstrap credential is deliberately random and never disclosed.
+    // Members establish their own password through Firebase's reset flow.
     await admin.auth().createUser({
       email: member.email,
-      password: member.phonenumber,
+      password: createBootstrapPassword(),
       displayName: `${member.firstname} ${member.lastname}`,
       phoneNumber: member.phonenumber,
       uid,
     });
 
-    // set role customClaim
-    await admin.auth().setCustomUserClaims(uid, { role: member.role });
+    await syncRoleClaims(uid);
     return null;
   },
 );
 
 export const deleteMember = onDocumentDeleted(
-  'members/{memberId}',
+  {
+    document: 'members/{memberId}',
+    region: 'asia-south1',
+  },
   async (event) => {
     const uid = event.data?.id;
 
@@ -107,14 +133,18 @@ export const deleteMember = onDocumentDeleted(
 );
 
 export const updateMember = onDocumentUpdated(
-  'members/{memberId}',
+  {
+    document: 'members/{memberId}',
+    region: 'asia-south1',
+  },
   async (event) => {
-    const uid = event.data?.after.id;
+    const snapshots = event.data;
+    const uid = snapshots?.after.id;
 
-    if (!uid) return null;
+    if (!snapshots || !uid) return null;
 
-    const memberBefore = event.data?.before.data() as Member;
-    const memberAfter = event.data?.after.data() as Member;
+    const memberBefore = memberData(snapshots.before);
+    const memberAfter = memberData(snapshots.after);
 
     console.log(memberBefore.firstname, memberBefore.lastname);
 
@@ -151,9 +181,18 @@ export const updateMember = onDocumentUpdated(
       await admin.auth().updateUser(uid, { email: memberAfter.email });
     }
 
-    // if role updated, update customClaims for role
-    if (memberBefore.role !== memberAfter.role) {
-      await admin.auth().setCustomUserClaims(uid, { role: memberAfter.role });
+    // Claims follow the member's effective roles. assignMemberRoles also
+    // syncs them; this repairs claims if that step failed. The sync reads the
+    // current record, so an event delivered late cannot restore older roles.
+    // Backfilling `roles` from the legacy field leaves effective roles
+    // unchanged, so it does not touch claims.
+    if (
+      !sameRoles(
+        memberRoles(snapshots.before.data()),
+        memberRoles(snapshots.after.data()),
+      )
+    ) {
+      await syncRoleClaims(uid);
     }
 
     return null;

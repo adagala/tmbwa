@@ -6,7 +6,7 @@ import { RiLock2Line } from '@remixicon/react';
 import { Card } from '@/components/Card';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { ResetPasswordSchema, resetPasswordSchema } from '@/schemas/user';
+import { ResetPasswordSchema, resetPasswordSchema } from 'tmbwa-shared';
 import { toast } from '@/hooks/useToast';
 import { InputErrorMessage } from '@/components/ui/InputErrorMessage';
 import { resetPassword } from '@/lib/firebase/auth';
@@ -26,23 +26,19 @@ export default function ResetPassword() {
   const onSubmit = (data: ResetPasswordSchema) => {
     setIsResetting(true);
 
+    const showGenericConfirmation = () => {
+      toast({
+        title: 'Request received',
+        description:
+          'If an account exists for that email, a password reset link will be sent.',
+        variant: 'success',
+        duration: 3000,
+      });
+    };
+
     resetPassword(data)
-      .then(() => {
-        toast({
-          title: 'Success',
-          description: 'Password reset link has been sent to your email',
-          variant: 'success',
-          duration: 3000,
-        });
-      })
-      .catch(() => {
-        toast({
-          title: 'Error',
-          description: 'Invalid email or password',
-          variant: 'error',
-          duration: 3000,
-        });
-      })
+      .then(showGenericConfirmation)
+      .catch(showGenericConfirmation)
       .finally(() => {
         setIsResetting(false);
       });

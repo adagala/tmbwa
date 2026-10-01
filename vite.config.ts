@@ -7,6 +7,11 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, 'src'),
+      'tmbwa-shared/firebase': path.resolve(
+        __dirname,
+        'packages/shared/src/firebase.ts',
+      ),
+      'tmbwa-shared': path.resolve(__dirname, 'packages/shared/src/index.ts'),
     },
   },
   plugins: [react()],

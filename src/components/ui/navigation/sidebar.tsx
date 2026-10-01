@@ -6,10 +6,13 @@ import {
   WorkspacesDropdownMobile,
 } from './SidebarWorkspaceDropdown';
 import { UserProfileDesktop, UserProfileMobile } from './UserProfile';
+import { PendingBeneficiaryRequestCount } from './PendingBeneficiaryRequestCount';
 import { Link, useLocation } from 'react-router-dom';
+import useUser from '@/hooks/useUser';
 
 export function Sidebar() {
   const { pathname } = useLocation();
+  const { can } = useUser();
   const isActive = (itemHref: string) => {
     if (itemHref === siteConfig.baseLinks.settings) {
       return pathname.startsWith('/settings');
@@ -27,23 +30,33 @@ export function Sidebar() {
             className="flex flex-1 flex-col space-y-10"
           >
             <ul role="list" className="space-y-0.5">
-              {navigation.map((item) => (
-                <li key={item.name}>
-                  <Link
-                    to={item.href}
-                    className={cx(
-                      isActive(item.href)
-                        ? 'text-guardsman-red-500 dark:text-guardsman-red-400'
-                        : 'text-gray-700 hover:text-gray-900 dark:text-gray-400 hover:dark:text-gray-50',
-                      'flex items-center gap-x-2.5 rounded-md px-2 py-1.5 text-sm font-medium transition hover:bg-gray-100 hover:dark:bg-gray-900',
-                      focusRing,
-                    )}
-                  >
-                    <item.icon className="size-4 shrink-0" aria-hidden="true" />
-                    {item.name}
-                  </Link>
-                </li>
-              ))}
+              {navigation
+                .filter(
+                  (item) => !('permission' in item) || can(item.permission),
+                )
+                .map((item) => (
+                  <li key={item.name}>
+                    <Link
+                      to={item.href}
+                      className={cx(
+                        isActive(item.href)
+                          ? 'text-guardsman-red-500 dark:text-guardsman-red-400'
+                          : 'text-gray-700 hover:text-gray-900 dark:text-gray-400 hover:dark:text-gray-50',
+                        'flex items-center gap-x-2.5 rounded-md px-2 py-1.5 text-sm font-medium transition hover:bg-gray-100 hover:dark:bg-gray-900',
+                        focusRing,
+                      )}
+                    >
+                      <item.icon
+                        className="size-4 shrink-0"
+                        aria-hidden="true"
+                      />
+                      {item.name}
+                      {'showPendingBeneficiaryCount' in item ? (
+                        <PendingBeneficiaryRequestCount />
+                      ) : null}
+                    </Link>
+                  </li>
+                ))}
             </ul>
           </nav>
           <div className="mt-auto">

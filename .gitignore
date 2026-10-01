@@ -9,9 +9,13 @@ lerna-debug.log*
 
 node_modules
 dist
+*.tsbuildinfo
 dist-ssr
+functions/lib-scripts
 *.local
 .firebase/
+*-debug.log
+design-explorations/
 
 # Editor directories and files
 !.vscode/extensions.json
@@ -24,3 +28,4 @@ dist-ssr
 *.sw?
 
 .env
+.env*

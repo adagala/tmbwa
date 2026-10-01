@@ -1,15 +1,18 @@
-import * as admin from 'firebase-admin';
-import * as serviceAccount from '../../../serviceAccount.json';
-import { GENDER, Member, MonthlyStats, ROLE, Stats, STATUS } from '../../types';
+import { admin } from '../../firebaseAdmin';
+import { Member, MonthlyStats, Stats } from '../../types';
+import {
+  GENDER,
+  MEMBER_STATUS,
+  MONTHLY_CONTRIBUTION,
+  ROLE,
+} from 'tmbwa-shared';
 import {
   createIndex,
+  createBootstrapPassword,
   getCurrentMonth,
-  MONTHLY_CONTRIBUTION,
 } from '../../utils';
 
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount as admin.ServiceAccount),
-});
+admin.initializeApp({ credential: admin.credential.applicationDefault() });
 
 const firstname = '';
 const lastname = '';
@@ -17,6 +20,7 @@ const member: Member = {
   balance: 0,
   contributionBalance: 0,
   createat: admin.firestore.Timestamp.now(),
+  datejoined: admin.firestore.Timestamp.now(),
   email: '',
   gender: GENDER.MALE,
   firstname,
@@ -25,13 +29,13 @@ const member: Member = {
   lastnameSearchableIndex: createIndex(lastname),
   membernumber: '00000/00',
   phonenumber: '+254720123456',
-  role: ROLE.ADMINISTRATOR,
-  status: STATUS.ACTIVE,
+  roles: [ROLE.MEMBER, ROLE.SUPER_ADMIN],
+  status: MEMBER_STATUS.ACTIVE,
   isFeesPaid: false,
   win: '0',
 };
 
-// in functions directory use like:  ~ npm run build && node lib/src/scripts/members/addAdminMember.js
+// in functions directory use like:  ~ npm run build:scripts && node lib-scripts/scripts/members/addAdminMember.js
 const addAdminMember = async () => {
   console.log('Start addAdminMember ...!');
 
@@ -62,14 +66,13 @@ const addAdminMember = async () => {
 
   await admin.auth().createUser({
     email: member.email,
-    password: member.phonenumber,
+    password: createBootstrapPassword(),
     displayName: `${member.firstname} ${member.lastname}`,
     phoneNumber: member.phonenumber,
     uid: memberId,
   });
 
-  // set role customClaim
-  await admin.auth().setCustomUserClaims(memberId, { role: member.role });
+  await admin.auth().setCustomUserClaims(memberId, { roles: member.roles });
 
   console.log('End of operation addAdminMember ...!');
 };

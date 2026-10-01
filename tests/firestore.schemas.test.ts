@@ -1,0 +1,310 @@
+import { describe, expect, it } from 'vitest';
+import {
+  MEMBER_STATUS,
+  contributionDocumentSchema,
+  contributionReadDocumentSchema,
+  kcbPaymentNotificationDocumentSchema,
+  kcbStkRequestDocumentSchema,
+  memberDocumentSchema,
+  monthlyStatsSchema,
+  notificationDeliveryDocumentSchema,
+  parseDocument,
+  paymentDocumentSchema,
+  unallocatedPaymentAmount,
+} from 'tmbwa-shared';
+import {
+  memberFormSchema,
+  parseContributionDocument,
+  parseMemberDocument,
+  parsePaymentDocument,
+} from 'tmbwa-shared/firebase';
+
+const member = {
+  firstname: 'Amina',
+  lastname: 'Adagala',
+  membernumber: '00001/24',
+  win: 'WIN-1',
+  phonenumber: '+254700000000',
+  gender: 'female',
+  email: 'amina@example.com',
+  roles: ['member'],
+  isFeesPaid: true,
+  status: MEMBER_STATUS.ACTIVE,
+  balance: 0,
+  contributionBalance: 0,
+};
+
+const payment = {
+  payment_id: 'payment-1',
+  referencenumber: 'REF1',
+  amount: 500,
+  paymentdate: { seconds: 1, nanoseconds: 0 },
+  member_id: 'member-1',
+  contribution_id: '2026-08-01',
+  firstname: 'Amina',
+  lastname: 'Adagala',
+  contribution_amount: 500,
+  payment_type: 'contribution',
+};
+
+describe('Firestore document schemas', () => {
+  it('derives legacy credit unless an explicit amount is stored', () => {
+    expect(unallocatedPaymentAmount(1000, 400)).toBe(600);
+    expect(unallocatedPaymentAmount(1000, 400, 100)).toBe(100);
+  });
+  it('accepts valid member, payment, and contribution records', () => {
+    expect(memberDocumentSchema.parse(member).status).toBe('active');
+    expect(paymentDocumentSchema.parse(payment).amount).toBe(500);
+    expect(
+      paymentDocumentSchema.parse({
+        ...payment,
+        amount: 1000,
+        contribution_amount: 900,
+        allocations: [
+          { contribution_id: '2026-08-01', amount: 400 },
+          { contribution_id: '2026-07-01', amount: 500 },
+        ],
+        unallocated_amount: 100,
+      }).allocations,
+    ).toHaveLength(2);
+    expect(
+      contributionDocumentSchema.parse({
+        ...member,
+        contribution_id: '2026-08-01',
+        paid: 'paid',
+        amount: 500,
+        balance: 0,
+        payments: [payment],
+        month: '2026-08-01',
+      }).payments,
+    ).toHaveLength(1);
+  });
+
+  it('rejects records missing fields that application code accesses', () => {
+    expect(() =>
+      parseDocument(
+        memberDocumentSchema,
+        {
+          ...member,
+          firstname: undefined,
+        },
+        'members/member-1',
+      ),
+    ).toThrow(/members\/member-1/);
+  });
+
+  it('defaults legacy member documents without a status to active on read', () => {
+    const legacyMember = { ...member, status: undefined };
+
+    expect(parseMemberDocument('member-1', legacyMember).status).toBe('active');
+    expect(memberDocumentSchema.safeParse(legacyMember).success).toBe(false);
+  });
+
+  it('accepts three- to eight-digit admission numbers', () => {
+    expect(
+      parseMemberDocument('member-1', {
+        ...member,
+        membernumber: '5436/04',
+      }).membernumber,
+    ).toBe('5436/04');
+    expect(memberDocumentSchema.safeParse(member).success).toBe(true);
+    for (const membernumber of [
+      '123/24',
+      '5436/04',
+      '00001/24',
+      '12345678/24',
+    ]) {
+      expect(
+        memberDocumentSchema.safeParse({ ...member, membernumber }).success,
+      ).toBe(true);
+    }
+    for (const membernumber of [
+      '12/24',
+      '123456789/24',
+      '5436/4',
+      '5436/004',
+      '5436-04',
+    ]) {
+      expect(
+        memberDocumentSchema.safeParse({ ...member, membernumber }).success,
+      ).toBe(false);
+    }
+  });
+
+  it('requires a past date joined on the administrator member form', () => {
+    const { status: _status, balance: _balance, contributionBalance: _cb, ...form } = member;
+    expect(memberFormSchema.safeParse(form).success).toBe(false);
+    expect(memberFormSchema.safeParse({ ...form, datejoined: new Date('2020-03-15') }).success).toBe(true);
+    const future = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    expect(memberFormSchema.safeParse({ ...form, datejoined: future }).success).toBe(false);
+  });
+
+  it('rejects invalid notification delivery counters', () => {
+    expect(
+      notificationDeliveryDocumentSchema.safeParse({
+        eventId: 'event-1',
+        memberId: 'member-1',
+        channel: 'in_app',
+        status: 'pending',
+        attempts: -1,
+      }).success,
+    ).toBe(false);
+  });
+
+  it('normalizes legacy contribution and payment records on read', () => {
+    const legacyPayment = {
+      ...payment,
+      payment_type: undefined,
+      action_by: undefined,
+      created_at: undefined,
+    };
+    const parsedPayment = parsePaymentDocument('payment-1', legacyPayment);
+    const parsedContribution = parseContributionDocument('2026-08-01', {
+      ...member,
+      member_id: 'member-1',
+      membernumber: '123/24',
+      phonenumber: '',
+      paid: 'paid',
+      amount: 500,
+      balance: 0,
+      payments: [legacyPayment],
+      month: '2026-08-01',
+    });
+
+    expect(parsedPayment.payment_type).toBe('contribution');
+    expect(parsedPayment.action_by).toBe('');
+    expect(parsedPayment.created_at).toEqual(legacyPayment.paymentdate);
+    expect(parsedContribution.action_by).toBe('');
+    expect(parsedContribution.membernumber).toBe('123/24');
+    expect(parsedContribution.phonenumber).toBe('');
+    expect(parsedContribution.status).toBe('active');
+    expect(parsedContribution.payments[0].payment_type).toBe('contribution');
+  });
+
+  it('reads contributions whose member copy predates current member rules', () => {
+    const legacyContribution = {
+      member_id: 'member-1',
+      firstname: 'Amina',
+      lastname: 'Adagala',
+      membernumber: '12/24',
+      phonenumber: '0700000000',
+      email: null,
+      gender: 'unknown',
+      contribution_id: '2024-07-01',
+      paid: 'unpaid',
+      amount: 500,
+      balance: 500,
+      month: '2024-07-01',
+    };
+
+    expect(contributionDocumentSchema.safeParse(legacyContribution).success).toBe(
+      false,
+    );
+    const parsed = contributionReadDocumentSchema.parse(legacyContribution);
+    expect(parsed.membernumber).toBe('12/24');
+    expect(parsed.email).toBe('');
+    expect(parsed.win).toBe('');
+    expect(parsed.payments).toEqual([]);
+    expect(parsed.legacy_corrections).toEqual([]);
+
+    const parsedOnClient = parseContributionDocument(
+      '2024-07-01',
+      legacyContribution,
+    );
+    expect(parsedOnClient.membernumber).toBe('12/24');
+    expect(parsedOnClient.email).toBe('');
+  });
+
+  it('still rejects contributions with invalid financial fields on read', () => {
+    const contribution = {
+      member_id: 'member-1',
+      contribution_id: '2024-07-01',
+      paid: 'unpaid',
+      amount: 500,
+      balance: 500,
+      month: '2024-07-01',
+    };
+
+    expect(contributionReadDocumentSchema.safeParse(contribution).success).toBe(
+      true,
+    );
+    for (const invalid of [
+      { balance: '500' },
+      { amount: undefined },
+      { paid: 'settled' },
+      { month: undefined },
+      { payments: [{ payment_id: 'payment-1' }] },
+    ]) {
+      expect(
+        contributionReadDocumentSchema.safeParse({
+          ...contribution,
+          ...invalid,
+        }).success,
+      ).toBe(false);
+    }
+  });
+
+  it('defaults missing monthly statistics counters', () => {
+    expect(
+      monthlyStatsSchema.parse({
+        amount: 500,
+        contribution: 250,
+        paymentsCount: 1,
+        month: '2026-08-01',
+      }),
+    ).toMatchObject({ newMembers: 0, totalMembers: 0 });
+  });
+
+  it('accepts only explicit KCB STK request status values', () => {
+    const baseRequest = {
+      requestId: 'req-1',
+      memberId: 'member-1',
+      contributionId: '2026-08-01',
+      amount: 500,
+      phone: '+254700000000',
+      invoiceNumber: 'TMBABC123',
+      messageId: 'msg-1',
+    };
+    expect(
+      kcbStkRequestDocumentSchema.safeParse({
+        ...baseRequest,
+        status: 'pending',
+      }).success,
+    ).toBe(true);
+    expect(
+      kcbStkRequestDocumentSchema.safeParse({
+        ...baseRequest,
+        status: 'outcome_unknown',
+      }).success,
+    ).toBe(true);
+    expect(
+      kcbStkRequestDocumentSchema.safeParse({
+        ...baseRequest,
+        status: 'dispatching',
+      }).success,
+    ).toBe(true);
+    expect(
+      kcbStkRequestDocumentSchema.safeParse({
+        ...baseRequest,
+        status: 'unknown_status',
+      }).success,
+    ).toBe(false);
+  });
+
+  it('accepts KCB notifications linked to a contribution and member', () => {
+    expect(
+      kcbPaymentNotificationDocumentSchema.safeParse({
+        payerPhone: '+254700000000',
+        payerName: 'Amina Adagala',
+        amount: 500,
+        currency: 'KES',
+        billReference: '7969138',
+        transactionDate: '20260813121212',
+        status: 'unresolved',
+        matchReason: 'authenticated_stk_request',
+        memberId: 'member-1',
+        contributionId: '2026-08-01',
+      }).success,
+    ).toBe(true);
+  });
+});

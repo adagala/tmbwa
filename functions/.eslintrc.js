@@ -20,7 +20,9 @@ module.exports = {
   },
   ignorePatterns: [
     '/lib/**/*', // Ignore built files.
+    '/lib-scripts/**/*', // Ignore compiled maintenance scripts.
     '/generated/**/*', // Ignore generated files.
+    '/src/scripts/**/*', // Local one-off scripts require private credentials.
   ],
   plugins: ['@typescript-eslint', 'import'],
   rules: {

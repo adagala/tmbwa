@@ -10,7 +10,7 @@ import {
 } from 'firebase/auth';
 
 import { auth } from '@/lib/firebase/clientApp';
-import { ResetPasswordSchema, UserSchema } from '@/schemas/user';
+import { ResetPasswordSchema, UserSchema } from 'tmbwa-shared';
 
 export const onAuthStateChanged = (cb: NextOrObserver<User>) =>
   _onAuthStateChanged(auth, cb);

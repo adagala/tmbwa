@@ -1,31 +1,23 @@
-import * as admin from 'firebase-admin';
-import * as serviceAccount from '../../../serviceAccount.json';
+import { admin } from '../../firebaseAdmin';
 import {
   Contribution,
   Member,
   MemberWithId,
   MonthlyStats,
   Payment,
-  PAYMENT_STATUS,
 } from '../../types';
-import { getCurrentMonth, MONTHLY_CONTRIBUTION } from '../../utils';
+import { MONTHLY_CONTRIBUTION, PAYMENT_STATUS } from 'tmbwa-shared';
+import { getCurrentMonth } from '../../utils';
+import { memberWithIdData } from '../../firestoreData';
 
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount as admin.ServiceAccount),
-});
+admin.initializeApp({ credential: admin.credential.applicationDefault() });
 
-// in functions directory use like:  ~ npm run build && node lib/src/scripts/contributions/setMonthlyContributions.js
+// in functions directory use like:  ~ npm run build:scripts && node lib-scripts/scripts/contributions/setMonthlyContributions.js
 const setMonthlyContributions = async () => {
   // get all members
   const membersRef = admin.firestore().collection('members');
   const membersSnapshot = await membersRef.get();
-  const members = membersSnapshot.docs.map((member) => {
-    const _member = {
-      ...member.data(),
-      member_id: member.id,
-    } as MemberWithId;
-    return _member;
-  });
+  const members = membersSnapshot.docs.map(memberWithIdData) as MemberWithId[];
 
   const contributions: Partial<Contribution>[] = [];
 

@@ -9,20 +9,20 @@ import { UpdatePassword } from '@/components/ui/settings/UpdatePassword';
 import { UpdatePersonalDetails } from '@/components/ui/settings/UpdatePersonalDetails';
 import useUser from '@/hooks/useUser';
 import { getMemberById } from '@/lib/firebase/firestore';
-import { Member } from '@/schemas/member';
+import { Member } from 'tmbwa-shared/firebase';
 
 export default function SettingsPage() {
-  const { user, role } = useUser();
+  const { user, roles } = useUser();
   const [member, setMember] = React.useState<Member | null>();
 
   React.useEffect(() => {
-    if (user?.uid && role) {
+    if (user?.uid) {
       const unsubscribe = getMemberById(
         user?.uid,
         (fetchedMember) => {
           setMember(fetchedMember);
         },
-        { role, user },
+        { roles, user },
       );
 
       return () => unsubscribe();

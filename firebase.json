@@ -12,8 +12,31 @@
   },
   "functions": [
     {
-      "source": "functions",
+      "source": ".",
       "codebase": "default",
+      "ignore": [
+        "node_modules",
+        ".git",
+        "firebase-debug.log",
+        "firebase-debug.*.log",
+        "*.local",
+        ".env",
+        ".env.*",
+        "serviceAccount*",
+        "functions-dev",
+        "tests",
+        "docs",
+        "public",
+        ".vite"
+      ],
+      "predeploy": [
+        "npm --prefix functions run lint",
+        "npm --prefix functions run build"
+      ]
+    },
+    {
+      "source": "functions-dev",
+      "codebase": "development-tools",
       "ignore": [
         "node_modules",
         ".git",
@@ -22,13 +45,22 @@
         "*.local"
       ],
       "predeploy": [
-        "npm --prefix \"$RESOURCE_DIR\" run lint",
-        "npm --prefix \"$RESOURCE_DIR\" run build"
+        "npm --prefix functions-dev run lint",
+        "npm --prefix functions-dev run build"
       ]
     }
   ],
   "firestore": {
     "rules": "firestore.rules",
     "indexes": "firestore.indexes.json"
+  },
+  "emulators": {
+    "firestore": {
+      "port": 8080
+    },
+    "ui": {
+      "enabled": false
+    },
+    "singleProjectMode": true
   }
 }

@@ -11,33 +11,49 @@ import {
   DialogTrigger,
 } from '@/components/Dialog';
 import { useToast } from '@/hooks/useToast';
-import { deleteMember } from '@/lib/firebase/firestore';
-import { Member } from '@/schemas/member';
+import { deleteMemberSafely } from '@/lib/firebase/financial';
+import { Member } from 'tmbwa-shared/firebase';
 import { useNavigate } from 'react-router-dom';
 
-export const DialogDeleteMember = ({ member }: { member: Member }) => {
+export const DialogDeleteMember = ({
+  member,
+  open: controlledOpen,
+  onOpenChange,
+}: {
+  member: Member;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+}) => {
   const { toast } = useToast();
   const navigate = useNavigate();
-  const [open, setOpen] = React.useState(false);
+  const [uncontrolledOpen, setUncontrolledOpen] = React.useState(false);
+  const isControlled = controlledOpen !== undefined;
+  const open = isControlled ? controlledOpen : uncontrolledOpen;
+  const setOpen = isControlled
+    ? (next: boolean) => onOpenChange?.(next)
+    : setUncontrolledOpen;
   const [isLoading, setIsLoading] = React.useState(false);
 
   return (
     <>
       <div className="flex justify-center">
         <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild>
-            <Button
-              className="h-10 whitespace-nowrap w-full sm:w-auto gap-1"
-              variant="destructive"
-            >
-              Delete
-            </Button>
-          </DialogTrigger>
+          {isControlled ? null : (
+            <DialogTrigger asChild>
+              <Button
+                className="h-10 whitespace-nowrap w-full sm:w-auto gap-1"
+                variant="destructive"
+              >
+                Delete
+              </Button>
+            </DialogTrigger>
+          )}
           <DialogContent className="sm:max-w-lg">
             <form
-              onSubmit={() => {
+              onSubmit={(event) => {
+                event.preventDefault();
                 setIsLoading(true);
-                deleteMember(member.member_id)
+                deleteMemberSafely(member.member_id)
                   .then(() => {
                     toast({
                       title: 'Success',

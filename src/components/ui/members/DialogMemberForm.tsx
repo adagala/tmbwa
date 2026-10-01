@@ -21,15 +21,8 @@ import {
   SelectValue,
 } from '@/components/Select';
 import { toast } from '@/hooks/useToast';
-import {
-  Member,
-  genders,
-  memberFormSchema,
-  member_roles,
-  Gender,
-  Role,
-  MemberForm,
-} from '@/schemas/member';
+import { Member, memberFormSchema, MemberForm } from 'tmbwa-shared/firebase';
+import { genders, Gender } from 'tmbwa-shared';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { InputErrorMessage } from '../InputErrorMessage';
@@ -39,17 +32,29 @@ import {
   updateMember,
 } from '@/lib/firebase/firestore';
 import { Checkbox } from '@/components/Checkbox';
+import { DatePicker } from '@/components/DatePicker';
+import { timestampDate } from '@/lib/financialReporting';
 
-export const DialogMemberForm = ({ member }: { member?: Member }) => {
+// Existing members may lack a join date; the schema requires one on submit.
+type MemberFormValues = Omit<MemberForm, 'datejoined'> & {
+  datejoined?: Date;
+};
+
+export const DialogMemberForm = ({
+  member,
+  triggerButton,
+}: {
+  member?: Member;
+  triggerButton?: React.ReactNode;
+}) => {
   const [open, setOpen] = React.useState(false);
   const [isLoading, setIsLoading] = React.useState(false);
-  const [role, setRole] = React.useState<Role>();
   const [gender, setGender] = React.useState<Gender>();
   const [isFeesPaid, setIsFeesPaid] = React.useState(
     member?.isFeesPaid || false,
   );
 
-  const values: MemberForm | undefined = member
+  const values: MemberFormValues | undefined = member
     ? {
         email: member.email,
         firstname: member.firstname,
@@ -58,8 +63,10 @@ export const DialogMemberForm = ({ member }: { member?: Member }) => {
         membernumber: member.membernumber,
         win: member.win,
         phonenumber: member.phonenumber,
-        role: member.role,
         isFeesPaid: member.isFeesPaid,
+        datejoined: member.datejoined
+          ? (timestampDate(member.datejoined) ?? undefined)
+          : undefined,
       }
     : undefined;
 
@@ -70,7 +77,8 @@ export const DialogMemberForm = ({ member }: { member?: Member }) => {
     reset,
     setValue,
     trigger,
-  } = useForm<MemberForm>({
+    watch,
+  } = useForm<MemberFormValues, unknown, MemberForm>({
     resolver: zodResolver(memberFormSchema),
     values,
   });
@@ -101,9 +109,9 @@ export const DialogMemberForm = ({ member }: { member?: Member }) => {
       reset();
       toast({
         title: 'Success',
-        description: `Member has been successfully ${
-          member ? 'updated' : 'added'
-        }.`,
+        description: member
+          ? 'Member has been successfully updated.'
+          : 'Member added. Ask them to use Reset password on the sign-in page to securely create their password.',
         variant: 'success',
         duration: 3000,
       });
@@ -124,19 +132,21 @@ export const DialogMemberForm = ({ member }: { member?: Member }) => {
       <div className="flex justify-center">
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
-            <Button
-              className="h-10 whitespace-nowrap w-full sm:w-auto gap-1"
-              variant="primary"
-            >
-              {member ? (
-                'Update'
-              ) : (
-                <>
-                  <RiAddLine className="size-4" />
-                  Add <span className="hidden sm:flex">member</span>
-                </>
-              )}
-            </Button>
+            {triggerButton ?? (
+              <Button
+                className="h-10 whitespace-nowrap w-full sm:w-auto gap-1"
+                variant="primary"
+              >
+                {member ? (
+                  'Update'
+                ) : (
+                  <>
+                    <RiAddLine className="size-4" />
+                    Add <span className="hidden sm:flex">member</span>
+                  </>
+                )}
+              </Button>
+            )}
           </DialogTrigger>
           <DialogContent className="sm:max-w-lg">
             <form onSubmit={handleSubmit(onSubmit)}>
@@ -214,36 +224,25 @@ export const DialogMemberForm = ({ member }: { member?: Member }) => {
                       />
                       <InputErrorMessage message={errors.win?.message} />
                     </div>
+                    <div className="mx-auto space-y-1">
+                      <Label htmlFor="datejoined">Date joined</Label>
+                      <DatePicker
+                        id="datejoined"
+                        placeholder="Select date joined"
+                        required
+                        enableYearNavigation
+                        toDate={new Date()}
+                        value={watch('datejoined')}
+                        onChange={(date) => {
+                          setValue('datejoined', date, {
+                            shouldValidate: true,
+                          });
+                        }}
+                        hasError={!!errors.datejoined}
+                      />
+                      <InputErrorMessage message={errors.datejoined?.message} />
+                    </div>
                     <div className="flex gap-1">
-                      <div className="flex-1 mx-auto space-y-1">
-                        <Label htmlFor="role">Role</Label>
-                        <Select
-                          {...register('role')}
-                          onValueChange={(role: Role) => {
-                            setRole(role);
-                            setValue('role', role);
-                            trigger('role');
-                          }}
-                          value={role}
-                          defaultValue={member?.role}
-                        >
-                          <SelectTrigger id="role" className="capitalize">
-                            <SelectValue placeholder="Role" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {member_roles.map((role) => (
-                              <SelectItem
-                                key={role}
-                                value={role}
-                                className="capitalize"
-                              >
-                                {role}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <InputErrorMessage message={errors.role?.message} />
-                      </div>
                       <div className="flex-1 mx-auto space-y-1">
                         <Label htmlFor="gender">Gender</Label>
                         <Select

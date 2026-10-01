@@ -2,12 +2,19 @@
   "name": "functions",
   "scripts": {
     "lint": "eslint --ext .js,.ts .",
+    "prebuild": "cd ../packages/shared && npm run build",
     "build": "tsc",
+    "build:scripts": "tsc -p tsconfig.scripts.json",
+    "migrate:stk-locks": "npm run build:scripts && node lib-scripts/scripts/kcb/backfillActiveStkLocks.js",
+    "validate:members": "npm run build:scripts && node lib-scripts/scripts/members/validateMembers.js",
+    "backfill:member-roles": "npm run build:scripts && node lib-scripts/scripts/members/backfillMemberRoles.js",
+    "roles:readiness": "npm run build:scripts && node lib-scripts/scripts/members/rolesReadiness.js",
+    "roles:restore-legacy": "npm run build:scripts && node lib-scripts/scripts/members/restoreLegacyRoleFields.js",
     "build:watch": "tsc --watch",
     "serve": "npm run build && firebase emulators:start --only functions",
     "shell": "npm run build && firebase functions:shell",
     "start": "npm run shell",
-    "deploy": "firebase deploy --only functions",
+    "deploy": "firebase deploy --only functions:default",
     "logs": "firebase functions:log"
   },
   "engines": {
@@ -15,8 +22,9 @@
   },
   "main": "lib/src/index.js",
   "dependencies": {
-    "firebase-admin": "^12.1.0",
-    "firebase-functions": "^6.0.1"
+    "firebase-admin": "^14.4.0",
+    "firebase-functions": "^7.4.0",
+    "tmbwa-shared": "*"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^5.12.0",

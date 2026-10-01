@@ -3,12 +3,28 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "main": "functions/lib/src/index.js",
+  "workspaces": [
+    "packages/*",
+    "functions"
+  ],
+  "engines": {
+    "node": "22"
+  },
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
-    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "dev": "npm run build:shared && vite",
+    "build:shared": "npm run build --workspace=packages/shared",
+    "build": "npm run build:shared && tsc -b && vite build",
+    "lint": "eslint src --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "lint:ui-components": "node scripts/check-ui-components.mjs",
+    "format": "prettier --write src index.html vite.config.ts tailwind.config.js postcss.config.js tsconfig.json tsconfig.app.json tsconfig.node.json",
+    "format:check": "prettier --check src index.html vite.config.ts tailwind.config.js postcss.config.js tsconfig.json tsconfig.app.json tsconfig.node.json",
+    "test:rules": "firebase emulators:exec --config firebase.rules-test.json --only firestore --project demo-tmbwa \"vitest run tests/firestore.rules.test.ts\"",
+    "test:unit": "vitest run tests/rolesReadiness.test.ts tests/access.test.ts tests/authRedirect.test.ts tests/authorization.test.ts tests/beneficiaries.domain.test.ts tests/beneficiaries.schemas.test.ts tests/beneficiaryDisplay.test.ts tests/contributionMonths.test.ts tests/financial.domain.test.ts tests/financialReporting.test.ts tests/firestore.schemas.test.ts tests/kcb.domain.test.ts tests/kcbReconciliation.test.ts tests/kenyanPhone.test.ts tests/missingMonths.test.ts tests/notifications.domain.test.ts",
+    "test:integration": "firebase emulators:exec --config firebase.rules-test.json --only firestore --project demo-tmbwa \"vitest run --no-file-parallelism tests/accountTopUp.integration.test.ts tests/authorization.integration.test.ts tests/beneficiaries.integration.test.ts tests/bulkContributions.integration.test.ts tests/roles.integration.test.ts tests/rolesMigration.integration.test.ts\"",
+    "test": "npm run test:unit && npm run test:rules && npm run test:integration",
     "preview": "vite preview",
-    "deploy": "tsc -b && vite build && firebase deploy --only hosting"
+    "deploy": "npm run build && firebase deploy --only hosting"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.7.0",
@@ -45,10 +61,12 @@
     "recharts": "^2.12.7",
     "tailwind-merge": "^2.3.0",
     "tailwind-variants": "^0.2.1",
+    "tmbwa-shared": "*",
     "validator": "^13.12.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "^3.0.4",
     "@tailwindcss/forms": "^0.5.7",
     "@types/lodash.debounce": "^4.0.9",
     "@types/node": "^20.14.9",
@@ -62,10 +80,12 @@
     "eslint": "^8.57.0",
     "eslint-plugin-react-hooks": "^4.6.2",
     "eslint-plugin-react-refresh": "^0.4.7",
+    "firebase-tools": "^13.35.1",
     "postcss": "^8.4.39",
     "prettier": "^3.3.2",
     "tailwindcss": "^3.4.4",
     "typescript": "^5.2.2",
-    "vite": "^5.3.1"
+    "vite": "^5.3.1",
+    "vitest": "^2.1.9"
   }
 }
