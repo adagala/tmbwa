@@ -109,6 +109,7 @@ describe('beneficiary schemas', () => {
       baseVersion: 2,
       status: 'pending',
       submittedBy: 'member-1',
+      origin: 'member',
     };
     expect(beneficiaryChangeRequestDocumentSchema.safeParse(request).success).toBe(false);
     expect(beneficiaryChangeRequestDocumentSchema.safeParse({
@@ -117,6 +118,10 @@ describe('beneficiary schemas', () => {
     expect(beneficiaryChangeRequestDocumentSchema.safeParse({ ...request, type: 'annual' }).success).toBe(true);
     expect(beneficiaryChangeRequestDocumentSchema.safeParse({ ...request, type: 'annual', status: 'done' }).success)
       .toBe(false);
+    const { origin: _origin, ...withoutOrigin } = request;
+    expect(beneficiaryChangeRequestDocumentSchema.safeParse({
+      ...withoutOrigin, type: 'annual',
+    }).success).toBe(false);
   });
 
   it('defaults beneficiary state bookkeeping', () => {

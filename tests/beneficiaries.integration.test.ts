@@ -87,7 +87,7 @@ describe('submitBeneficiaryChange', () => {
     });
     const request = await requestDoc(REQUEST);
     expect(request).toMatchObject({
-      memberId: MEMBER, type: 'initial', status: 'pending', baseVersion: 0, submittedBy: MEMBER,
+      memberId: MEMBER, type: 'initial', status: 'pending', baseVersion: 0, submittedBy: MEMBER, origin: 'member',
     });
     // Blank optional fields are not stored.
     expect(request?.proposedBeneficiaries[0]).not.toHaveProperty('idnumber');
@@ -168,6 +168,18 @@ describe('submitBeneficiaryChange', () => {
     expect((await stateDoc())?.pendingRequestId).toBe(pending.docs[0].id);
   });
 
+  it('does not return a retried request to a member who is no longer active', async () => {
+    await submit(REQUEST);
+    await seedMember(MEMBER, 'suspended');
+    await expect(submit(REQUEST)).rejects.toMatchObject({ code: 'permission-denied' });
+  });
+
+  it('refuses to reuse an administrator initial-entry ID for a member submission', async () => {
+    await setInitial(REQUEST);
+    await expect(submit(REQUEST)).rejects.toMatchObject({ code: 'already-exists' });
+    expect(await requestDoc(REQUEST)).toMatchObject({ origin: 'administrator', status: 'approved' });
+  });
+
   it('rejects inactive and signed-out callers', async () => {
     await seedMember(MEMBER, 'inactive');
     await expect(submit(REQUEST)).rejects.toMatchObject({ code: 'permission-denied' });
@@ -204,6 +216,13 @@ describe('cancelBeneficiaryChange', () => {
     expect(await requestDoc(REQUEST)).toMatchObject({ status: 'pending' });
   });
 
+  it('does not return a retried cancellation to a member who is no longer active', async () => {
+    await submit(REQUEST);
+    await cancel(REQUEST);
+    await seedMember(MEMBER, 'inactive');
+    await expect(cancel(REQUEST)).rejects.toMatchObject({ code: 'permission-denied' });
+  });
+
   it('rejects cancellation by an inactive member', async () => {
     await submit(REQUEST);
     await seedMember(MEMBER, 'suspended');
@@ -231,6 +250,26 @@ describe('setInitialBeneficiaries', () => {
     await setInitial(REQUEST);
     await expect(setInitial(REQUEST)).resolves.toMatchObject({ duplicate: true });
     expect(await approvedBeneficiaries()).toHaveLength(2);
+  });
+
+  it('refuses to treat a member submission as an initial-entry retry', async () => {
+    await submit(REQUEST);
+    await expect(setInitial(REQUEST)).rejects.toMatchObject({ code: 'already-exists' });
+    expect(await requestDoc(REQUEST)).toMatchObject({ origin: 'member', status: 'pending' });
+    expect(await approvedBeneficiaries()).toEqual([]);
+
+    // A cancelled or annual member request is not mistaken for one either.
+    await cancel(REQUEST);
+    await expect(setInitial(REQUEST)).rejects.toMatchObject({ code: 'already-exists' });
+    await seedState({ version: 1, lastAnnualChangeYear: 2025 });
+    await submit('request-annual-1');
+    await expect(setInitial('request-annual-1')).rejects.toMatchObject({ code: 'already-exists' });
+  });
+
+  it('treats initial-entry ID reuse by another administrator as a conflict', async () => {
+    await setInitial(REQUEST);
+    await expect(setInitial(REQUEST, {}, { uid: 'admin-2', token: { role: 'administrator' } }))
+      .rejects.toMatchObject({ code: 'already-exists' });
   });
 
   it('refuses when the member already has beneficiaries or a pending request', async () => {

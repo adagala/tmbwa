@@ -129,13 +129,19 @@ const writeState = (
   }, ref.path));
 };
 
+// A request ID is a retry only when the same command, caller and member
+// created it; any other reuse is refused rather than reported as success.
 const existingRequestResult = (
   snapshot: FirebaseFirestore.DocumentSnapshot,
-  memberId: string,
+  expected: { origin: 'member' | 'administrator'; memberId: string; submittedBy: string },
   requestId: string,
 ) => {
   const existing = beneficiaryChangeRequestData(snapshot);
-  if (existing.memberId !== memberId) {
+  if (
+    existing.origin !== expected.origin ||
+    existing.memberId !== expected.memberId ||
+    existing.submittedBy !== expected.submittedBy
+  ) {
     throw new HttpsError('already-exists', 'This requestId is already in use.');
   }
   return { requestId, type: existing.type, status: existing.status, duplicate: true };
@@ -151,8 +157,11 @@ export const submitBeneficiaryChange = onCall(async (request) => {
 
   return db().runTransaction(async (transaction) => {
     const existingRequest = await transaction.get(requestRef(requestId));
-    if (existingRequest.exists) return existingRequestResult(existingRequest, memberId, requestId);
+    // Check status first so a retry cannot reveal a request to an inactive member.
     await requireActiveMember(transaction, memberId);
+    if (existingRequest.exists) {
+      return existingRequestResult(existingRequest, { origin: 'member', memberId, submittedBy: memberId }, requestId);
+    }
     const state = beneficiaryStateData(await transaction.get(stateRef(memberId)));
 
     const classification = classifyBeneficiaryRequest(state, currentYear, Boolean(reason));
@@ -174,6 +183,7 @@ export const submitBeneficiaryChange = onCall(async (request) => {
       baseVersion: state.version,
       status: 'pending',
       submittedBy: memberId,
+      origin: 'member',
       submittedAt: admin.firestore.FieldValue.serverTimestamp(),
     }, ref.path));
     writeState(transaction, memberId, {
@@ -201,6 +211,7 @@ export const cancelBeneficiaryChange = onCall(async (request) => {
     if (!snapshot.exists || snapshot.get('memberId') !== memberId) {
       throw new HttpsError('not-found', 'Beneficiary change request not found.');
     }
+    await requireActiveMember(transaction, memberId);
     const changeRequest = beneficiaryChangeRequestData(snapshot);
     if (changeRequest.status === 'cancelled') {
       return { requestId, type: changeRequest.type, status: 'cancelled', duplicate: true };
@@ -208,7 +219,6 @@ export const cancelBeneficiaryChange = onCall(async (request) => {
     if (changeRequest.status !== 'pending') {
       throw new HttpsError('failed-precondition', 'Only pending requests can be cancelled.');
     }
-    await requireActiveMember(transaction, memberId);
     const state = beneficiaryStateData(await transaction.get(stateRef(memberId)));
 
     transaction.update(snapshot.ref, {
@@ -239,7 +249,13 @@ export const setInitialBeneficiaries = onCall(async (request) => {
 
   return db().runTransaction(async (transaction) => {
     const existingRequest = await transaction.get(requestRef(requestId));
-    if (existingRequest.exists) return existingRequestResult(existingRequest, memberId, requestId);
+    if (existingRequest.exists) {
+      return existingRequestResult(
+        existingRequest,
+        { origin: 'administrator', memberId, submittedBy: actorId },
+        requestId,
+      );
+    }
     memberStatus(await transaction.get(db().doc(`members/${memberId}`)));
     const state = beneficiaryStateData(await transaction.get(stateRef(memberId)));
     const existing = await transaction.get(beneficiariesRef(memberId));
@@ -258,6 +274,7 @@ export const setInitialBeneficiaries = onCall(async (request) => {
       baseVersion: 0,
       status: 'approved',
       submittedBy: actorId,
+      origin: 'administrator',
       submittedAt: admin.firestore.FieldValue.serverTimestamp(),
       reviewedBy: actorId,
       reviewedAt: admin.firestore.FieldValue.serverTimestamp(),

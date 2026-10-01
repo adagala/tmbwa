@@ -31,7 +31,7 @@ All writes go through trusted Cloud Functions; see [authorization](authorization
 
 ## Commands
 
-All commands are callable Cloud Functions and take a client-generated `requestId` (8 to 128 letters, digits, `-` or `_`), which becomes the change request's document ID. Retrying with the same `requestId` returns the original result with `duplicate: true` and writes nothing.
+All commands are callable Cloud Functions and take a client-generated `requestId` (8 to 128 letters, digits, `-` or `_`), which becomes the change request's document ID. Retrying with the same `requestId` returns the original result with `duplicate: true` and writes nothing. A retry counts only when the same command, caller and member created the request (each request records its `origin`: `member` or `administrator`); any other reuse of a `requestId` is refused with `already-exists`. Member commands check that the member is active before returning anything, including retries.
 
 | Command | Caller | Effect |
 | --- | --- | --- |
