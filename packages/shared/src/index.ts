@@ -594,12 +594,15 @@ export const beneficiarySchema = z
       });
     }
   })
-  .transform(({ relationshipOther, ...beneficiary }) =>
-    withoutUndefined(
-      beneficiary.relationship === 'other'
-        ? { ...beneficiary, relationshipOther }
-        : beneficiary,
-    ),
+  .transform(
+    ({ relationshipOther, ...beneficiary }): typeof beneficiary & {
+      relationshipOther?: string;
+    } =>
+      withoutUndefined(
+        beneficiary.relationship === 'other'
+          ? { ...beneficiary, relationshipOther }
+          : beneficiary,
+      ),
   );
 
 export const beneficiaryListSchema = z

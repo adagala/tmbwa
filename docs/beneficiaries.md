@@ -57,4 +57,11 @@ After step 4, approve or reject a request for a test member and confirm a docume
 
 ## Status
 
-The data model, validation and access rules (#65), the member and initial-entry commands (#66) and the review commands (#67) are in place. The screens (#68) follow.
+All parts are in place: the data model, validation and access rules (#65), the member and initial-entry commands (#66), the review commands (#67), and the screens (#68).
+
+## Screens
+
+- **Members:** **Profile → Beneficiaries** shows the approved list, any pending request (with **Cancel request**) and the change history with administrator notes. The request form shows whether the change is a first entry, the yearly change or needs a reason; the server makes the final decision.
+- **Administrators:** **Beneficiary requests** lists requests by status, with a live count of pending requests in the navigation. **Review** compares the current and proposed lists and offers **Approve** and **Reject**. A member's profile has a **Beneficiaries** tab, with **Set initial beneficiaries** while the member has none.
+
+The screens query requests by a single field (`memberId` or `status`) and sort in the browser, so no composite Firestore indexes are needed.

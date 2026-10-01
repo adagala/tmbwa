@@ -17,6 +17,7 @@ import AuditPage from '../app/main/AuditPage';
 import KcbReconciliationPage from '../app/main/KcbReconciliationPage';
 import NotificationsPage from '../app/main/NotificationsPage';
 import UserGuidePage from '../app/main/UserGuidePage';
+import BeneficiaryRequestsPage from '../app/main/BeneficiaryRequestsPage';
 import AdministratorRoute from './AdministratorRoute';
 import RouteErrorPage from './RouteErrorPage';
 
@@ -84,6 +85,10 @@ export const router = createBrowserRouter([
       {
         path: 'kcb-reconciliation',
         element: <AdministratorRoute element={<KcbReconciliationPage />} />,
+      },
+      {
+        path: 'beneficiary-requests',
+        element: <AdministratorRoute element={<BeneficiaryRequestsPage />} />,
       },
       {
         path: 'notifications',

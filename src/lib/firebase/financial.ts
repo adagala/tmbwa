@@ -4,9 +4,15 @@ import { Contribution, Member, Payment } from 'tmbwa-shared/firebase';
 
 const pendingRequests = new Map<string, string>();
 
-const call = async (name: string, data: Record<string, unknown>) => {
-  const operation = `${name}:${JSON.stringify(data)}`;
-  const requestId = pendingRequests.get(operation) ?? crypto.randomUUID();
+// Commands that act on an existing record pass its ID as the requestId.
+const call = async (
+  name: string,
+  data: Record<string, unknown>,
+  explicitRequestId?: string,
+) => {
+  const operation = `${name}:${JSON.stringify(data)}:${explicitRequestId ?? ''}`;
+  const requestId =
+    explicitRequestId ?? pendingRequests.get(operation) ?? crypto.randomUUID();
   pendingRequests.set(operation, requestId);
   try {
     const result = await httpsCallable(functions, name)({ requestId, ...data });
@@ -120,3 +126,6 @@ export const transitionMemberStatus = ({
   memberId: string;
   status: string;
 }) => call('transitionMemberStatus', { memberId, status });
+
+// Shared by other callable wrappers so every command gets a stable requestId.
+export { call as callWithRequestId };

@@ -7,6 +7,7 @@ import {
 import {
   RiAccountBoxLine,
   RiFileList3Line,
+  RiHeartsLine,
   RiPrinterLine,
   RiUserLine,
 } from '@remixicon/react';
@@ -24,6 +25,7 @@ import {
 } from '@/lib/firebase/firestore';
 import { formatNairobiMonth, timestampDate } from '@/lib/financialReporting';
 import { getMonth } from '@/lib/utils';
+import { Beneficiaries } from './beneficiaries';
 import { Contributions } from './contributions';
 import { Profile } from './profile';
 import { StatementPrint } from './statementPrint';
@@ -34,6 +36,7 @@ const memberProfileTabs = [
   'contributions',
   'transactions',
   'statement',
+  'beneficiaries',
 ] as const;
 type MemberProfileTab = (typeof memberProfileTabs)[number];
 
@@ -228,6 +231,10 @@ export function MemberAccount({
             <RiPrinterLine className="-ml-1 size-4" aria-hidden="true" />
             Statement
           </TabsTrigger>
+          <TabsTrigger value="beneficiaries" className="inline-flex gap-2">
+            <RiHeartsLine className="-ml-1 size-4" aria-hidden="true" />
+            Beneficiaries
+          </TabsTrigger>
         </TabsList>
         <TabsContent value="details">
           <Profile
@@ -253,6 +260,9 @@ export function MemberAccount({
             contributions={contributions}
             payments={payments}
           />
+        </TabsContent>
+        <TabsContent value="beneficiaries">
+          <Beneficiaries member={member} ownProfile={ownProfile} />
         </TabsContent>
       </Tabs>
     </div>

@@ -123,6 +123,20 @@ Each month is billed at KES 500. Any unreserved account credit pays the oldest s
 
 Months can only be added for active members. To add a month before the member's join date, use **Add contribution**. If the member has no join date, missing months can't be worked out and the page says so.
 
+## Review beneficiary requests
+
+Members change their beneficiaries through requests that an administrator must approve. **Beneficiary requests** in the navigation shows how many are waiting.
+
+1. Select **Beneficiary requests**. The **Pending** tab lists requests waiting for review; the other tabs show approved, not approved, cancelled or all requests.
+2. Select **Review** to compare the member's current beneficiaries with the proposed ones. The request shows whether it is the member's first entry, their yearly change, or an extra change with a reason.
+3. Optionally add a note, then select **Approve**; or add a note explaining why and select **Reject**. A note is required to reject.
+
+The member is notified either way. Approval replaces the member's beneficiaries. Approval is refused if the member's beneficiaries changed after they sent the request, or if the member no longer exists; reject the request instead and, if needed, ask the member to send a new one.
+
+You cannot approve or reject your own request; another administrator must review it.
+
+To record a member's first beneficiaries yourself, open the member, select the **Beneficiaries** tab and select **Set initial beneficiaries**. This is available only while the member has no beneficiaries and no pending request, and not for your own record. Later changes must come from the member.
+
 ## View notifications and monitor delivery
 
 1. Select **Notifications**.

@@ -6,6 +6,7 @@ import {
   WorkspacesDropdownMobile,
 } from './SidebarWorkspaceDropdown';
 import { UserProfileDesktop, UserProfileMobile } from './UserProfile';
+import { PendingBeneficiaryRequestCount } from './PendingBeneficiaryRequestCount';
 import { Link, useLocation } from 'react-router-dom';
 import useUser from '@/hooks/useUser';
 
@@ -51,6 +52,9 @@ export function Sidebar() {
                         aria-hidden="true"
                       />
                       {item.name}
+                      {'showPendingBeneficiaryCount' in item ? (
+                        <PendingBeneficiaryRequestCount />
+                      ) : null}
                     </Link>
                   </li>
                 ))}

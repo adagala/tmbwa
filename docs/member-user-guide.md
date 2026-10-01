@@ -85,6 +85,18 @@ If selecting a receipt does nothing, allow pop-ups for the TMBWA site and try ag
 
 Leaving either date blank includes all available records on that side of the period. The statement shows charges, payments, references, your account balance, and outstanding contributions.
 
+## Manage your beneficiaries
+
+You can record up to three beneficiaries. For each one, give their first and last name, relationship and date of birth. Email, phone number and ID number (national ID, passport or birth certificate) are optional.
+
+1. Select **Profile**, then the **Beneficiaries** tab.
+2. Select **Add beneficiaries** (first time) or **Request change**.
+3. Add, edit or remove beneficiaries, then select **Send for approval**.
+
+An administrator reviews every change before it takes effect. While a request is waiting, it appears under **Change waiting for approval** and you can select **Cancel request**. You will get a notification when it is approved or not approved; any note from the administrator appears under **Change history**.
+
+You can make one change each calendar year (1 January to 31 December). Your first beneficiaries do not count as that change, and neither do cancelled or rejected requests. If you have already used this year's change, the form asks for a reason (for example a death, marriage, divorce or separation, birth or adoption, or correcting an error).
+
 ## View notifications
 
 1. Select **Notifications** from the navigation menu.
