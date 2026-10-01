@@ -1,5 +1,7 @@
 import { HttpsError } from 'firebase-functions/v2/https';
 import {
+  beneficiaryChangeRequestDocumentSchema,
+  beneficiaryStateDocumentSchema,
   contributionReadDocumentSchema,
   kcbPaymentNotificationDocumentSchema,
   kcbStkRequestDocumentSchema,
@@ -94,3 +96,12 @@ export const notificationDeliveryData = (snapshot: FirebaseFirestore.DocumentSna
 
 export const notificationPreferenceData = (snapshot: FirebaseFirestore.DocumentSnapshot) =>
   parseSnapshot(snapshot, notificationPreferenceDocumentSchema, 'Notification preference');
+
+export const beneficiaryChangeRequestData = (snapshot: FirebaseFirestore.DocumentSnapshot) =>
+  parseSnapshot(snapshot, beneficiaryChangeRequestDocumentSchema, 'Beneficiary change request');
+
+// A member with no state document has never had beneficiaries approved.
+export const beneficiaryStateData = (snapshot: FirebaseFirestore.DocumentSnapshot) =>
+  snapshot.exists
+    ? parseSnapshot(snapshot, beneficiaryStateDocumentSchema, 'Beneficiary state')
+    : beneficiaryStateDocumentSchema.parse({ version: 0 });

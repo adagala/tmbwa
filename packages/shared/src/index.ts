@@ -685,6 +685,8 @@ export const beneficiaryChangeRequestDocumentSchema = z
     baseVersion: z.number().int().nonnegative(),
     status: BeneficiaryChangeRequestStatusEnum,
     submittedBy: z.string().min(1),
+    // Command that created the request; retries must come from the same one.
+    origin: z.enum(['member', 'administrator']),
     submittedAt: z.unknown().optional(),
     reviewedBy: z.string().optional(),
     reviewedAt: z.unknown().optional(),

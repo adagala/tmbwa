@@ -7,3 +7,15 @@ Events contain the actor UID, action, affected member and target, safe financial
 Current actions are `payment.recorded`, `payment.reversed`, `contribution.created`, `contribution.removed`, and `balance.adjusted`.
 
 Adding several missing months at once (`createContributions`) is one command but writes one `contribution.created` event per month, at `audit_events/{requestId}-{YYYY-MM-01}`. Each event's `changes` include the amount, the credit applied to that month, `batchRequestId` (the command's request ID) and `batchSize`.
+
+## Beneficiary events
+
+Beneficiary commands write audit events in the same transaction as the change. Their IDs are namespaced by action, for example `audit_events/beneficiary-change-requested-{requestId}`, because a beneficiary request ID may also be used by financial commands. `targetId` is the beneficiary change request ID.
+
+| Action | Actor | `changes` |
+| --- | --- | --- |
+| `beneficiary.change_requested` | Member | `type`, `beneficiaryCount`, `baseVersion`, `reasonCategory` (when a reason is given) |
+| `beneficiary.change_cancelled` | Member | `type` |
+| `beneficiary.initial_set` | Administrator | `beneficiaryCount`, `version` |
+
+Beneficiary events record IDs and counts only. They never contain beneficiary names, dates of birth, contact details or ID numbers.
