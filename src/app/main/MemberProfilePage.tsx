@@ -25,7 +25,7 @@ import { MemberAccount } from '@/sections/memberAccount';
 import { MemberHeader } from '@/sections/memberHeader';
 
 export default function MemberProfilePage() {
-  const { role, can, user } = useUser();
+  const { can, user } = useUser();
   const { memberId } = useParams<{ memberId: string }>();
   const [member, setMember] = useState<Member | null>();
   const [isLoading, setIsLoading] = useState(false);
@@ -43,10 +43,14 @@ export default function MemberProfilePage() {
     }
   }, [memberId]);
 
-  const isAdministrator = role === 'administrator';
-  // No one manages their own roles; the backend refuses it too.
-  const canManageRoles =
-    can('roles.manage') && !!member && member.member_id !== user?.uid;
+  // Status, deletion and roles are never changed on one's own record; the
+  // backend refuses those too. Interface hints only.
+  const isSelf = !!member && member.member_id === user?.uid;
+  const canChangeStatus = can('members.status') && !isSelf;
+  const canEdit = can('members.write');
+  const canDelete = can('members.delete') && !isSelf;
+  const canManageRoles = can('roles.manage') && !isSelf;
+  const hasActions = canChangeStatus || canEdit || canDelete || canManageRoles;
 
   return (
     <Suspense fallback={<div>Loading...</div>}>
@@ -75,43 +79,54 @@ export default function MemberProfilePage() {
               <MemberHeader
                 member={member}
                 actions={
-                  isAdministrator ? (
+                  hasActions ? (
                     <>
-                      <DialogMemberStatus member={member} />
+                      {canChangeStatus ? (
+                        <DialogMemberStatus member={member} />
+                      ) : null}
                       {canManageRoles ? (
                         <DialogMemberRoles member={member} />
                       ) : null}
-                      <DialogMemberForm
-                        member={member}
-                        triggerButton={
-                          <Button variant="secondary">Edit member</Button>
-                        }
-                      />
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" aria-label="More actions">
-                            <RiMoreFill className="size-4" aria-hidden="true" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem
-                            className="text-red-600 dark:text-red-500"
-                            onSelect={() => setDeleteOpen(true)}
-                          >
-                            <span className="flex items-center gap-x-2">
-                              <DropdownMenuIconWrapper>
-                                <RiDeleteBinLine className="size-4 text-inherit" />
-                              </DropdownMenuIconWrapper>
-                              Delete member
-                            </span>
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                      <DialogDeleteMember
-                        member={member}
-                        open={deleteOpen}
-                        onOpenChange={setDeleteOpen}
-                      />
+                      {canEdit ? (
+                        <DialogMemberForm
+                          member={member}
+                          triggerButton={
+                            <Button variant="secondary">Edit member</Button>
+                          }
+                        />
+                      ) : null}
+                      {canDelete ? (
+                        <>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" aria-label="More actions">
+                                <RiMoreFill
+                                  className="size-4"
+                                  aria-hidden="true"
+                                />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                className="text-red-600 dark:text-red-500"
+                                onSelect={() => setDeleteOpen(true)}
+                              >
+                                <span className="flex items-center gap-x-2">
+                                  <DropdownMenuIconWrapper>
+                                    <RiDeleteBinLine className="size-4 text-inherit" />
+                                  </DropdownMenuIconWrapper>
+                                  Delete member
+                                </span>
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                          <DialogDeleteMember
+                            member={member}
+                            open={deleteOpen}
+                            onOpenChange={setDeleteOpen}
+                          />
+                        </>
+                      ) : null}
                     </>
                   ) : null
                 }

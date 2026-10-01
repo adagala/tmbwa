@@ -143,7 +143,8 @@ const AllocationEditor = ({
 };
 
 export default function KcbReconciliationPage() {
-  const { role } = useUser();
+  const { role, can } = useUser();
+  const allowed = can('kcb.reconcile');
   const [payments, setPayments] = useState<KcbPaymentNotification[]>([]);
   const [creditPayments, setCreditPayments] = useState<
     KcbPaymentNotification[]
@@ -252,7 +253,7 @@ export default function KcbReconciliationPage() {
   }, []);
 
   useEffect(() => {
-    if (role !== 'administrator') return;
+    if (!allowed) return;
     const unsubscribe = subscribeToUnresolvedKcbPayments(setPayments);
     const unsubscribeCredit =
       subscribeToKcbPaymentsWithCredit(setCreditPayments);
@@ -272,7 +273,7 @@ export default function KcbReconciliationPage() {
       unsubscribeCredit();
       unsubscribeAmbiguous();
     };
-  }, [role]);
+  }, [allowed]);
 
   useEffect(() => {
     const suggestions = payments.flatMap((payment) =>
@@ -569,8 +570,7 @@ export default function KcbReconciliationPage() {
     }
   };
 
-  if (role && role !== 'administrator')
-    return <Navigate to="/profile" replace />;
+  if (role && !allowed) return <Navigate to="/profile" replace />;
 
   return (
     <div className="flex flex-col gap-6">

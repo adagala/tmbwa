@@ -2,21 +2,30 @@
 
 Firestore Security Rules are the authorization boundary. Interface visibility is not authorization.
 
-| Resource | Administrator | Member | Unauthenticated |
-| --- | --- | --- | --- |
-| Member documents | Read, list, create, update, delete | Read own; update approved own profile fields | None |
-| Contributions | Read; write through trusted Functions | Read own | None |
-| Payments | Read; write through trusted Functions | Read own | None |
-| Monthly/global statistics | Read; write through trusted Functions | None | None |
-| Beneficiaries and beneficiary state | Read all members; write through trusted Functions | Read own while active | None |
-| Beneficiary change requests | Read and list all; write through trusted Functions | Read own while active (queries must filter by `memberId`) | None |
-| Unknown collections | None unless explicitly added | None | None |
+Client reads and writes are granted per role. An officer's role counts only when both their token and their active member record grant it (see [where roles live](#where-roles-live)).
+
+| Resource | super_admin | treasurer | registrar | welfare_officer | auditor | Member (own records) |
+| --- | :-: | :-: | :-: | :-: | :-: | :-: |
+| Member documents: read, list | ✓ | ✓ | ✓ | ✓ | ✓ | Read own |
+| Member documents: create, edit profile fields | ✓ | | ✓ | | | Edit approved own fields |
+| Contributions and payments (including collection-group queries) | Read | Read | | | Read | Read own |
+| KCB payment notifications and STK requests | Read | Read | | | Read | Read own STK requests |
+| Monthly and global statistics | Read | Read | | | Read | |
+| Audit events | Read | Read | | | Read | |
+| Beneficiaries, beneficiary state, change requests | Read | | | Read | | Read own while active |
+| Member notifications and preferences, notification events and deliveries | Read | | | | | Own notifications and preferences |
+| Contribution rates | Read, create | Read | | | Read | |
+| Unknown collections | | | | | | |
+
+No client can write financial records, statistics, beneficiaries, change requests, audit events, roles or KCB records; those change only through trusted Functions. A new member document may contain only profile fields, and must start as `role: member`, `status: active` with `balance`, `contributionBalance` and `reservedKcbCredit` at 0. Inactive or suspended officers lose officer access immediately, even while their token is still valid.
 
 Members may update only their own first name, last name, admission number, welfare identification number, phone number, and gender. They cannot change email, role, status, balances, fees, identifiers, search indexes, timestamps, or financial records.
 
 Beneficiaries hold third-party personal data. Neither members nor administrators can write them, their change requests, or the beneficiary bookkeeping in `members/{id}/beneficiary_state` through the client SDK; every change goes through trusted Functions so that approvals and the yearly allowance are enforced. Inactive members cannot read their beneficiaries. See [beneficiaries](beneficiaries.md).
 
-Backend operations using the Admin SDK bypass Firestore Security Rules and must perform their own authorization and input validation. Firestore rules still grant administrator access through the legacy `role: administrator`, which now requires both the custom claim and an active member record with `role: administrator`. Moving the rules to per-role checks is tracked separately.
+Backend operations using the Admin SDK bypass Firestore Security Rules and must perform their own authorization and input validation.
+
+The rules mirror the read permissions in `packages/shared/src/authorization.ts` in `permissionRoles()`. `tests/firestore.rules.test.ts` checks every role against every resource using the shared map, so the two cannot drift apart unnoticed.
 
 ## Roles and permissions
 
@@ -84,7 +93,11 @@ Those Auth steps happen after the commit and can fail. Session revocation is rec
 
 ### Transitional legacy role
 
-Until every administrator has been assigned specific roles, the legacy `role: administrator` is treated as `super_admin`. The legacy `role` is `administrator` only for super admins. Members given narrower roles keep `role: member`, so they have no administrator access in Firestore rules or the administrator screens until those move to per-role checks; their roles already apply to trusted commands. Per-role Firestore rules and removal of this fallback follow in later changes.
+Until every administrator has been assigned specific roles, the legacy `role: administrator` (claim and record) is treated as `super_admin` by trusted commands, Firestore rules and the interface. The legacy `role` is `administrator` only for super admins; other officers keep `role: member` and get their access from `roles`. Removing this fallback is the last step of the migration.
+
+### Interface
+
+Screens and actions follow the same permissions (`src/lib/access.ts`, `useUser().can`). Navigation shows only the pages an officer can open, officers land on the first useful page for their roles, and a member profile shows only the tabs and actions the viewer may use: financial tabs need `payments.read`, the beneficiaries tab needs `beneficiaries.read`, and status, deletion and role changes are hidden on one's own record. This is a convenience; the rules and trusted commands are what enforce access.
 
 ### Backfilling roles
 

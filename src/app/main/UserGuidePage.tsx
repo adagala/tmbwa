@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { isOfficer } from '@/lib/access';
 import { RiBookOpenLine, RiSearchLine } from '@remixicon/react';
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
@@ -11,8 +12,9 @@ import administratorGuide from '../../../docs/administrator-user-guide.md?raw';
 import memberGuide from '../../../docs/member-user-guide.md?raw';
 
 export default function UserGuidePage() {
-  const { role } = useUser();
-  const isAdministrator = role === 'administrator';
+  const { roles } = useUser();
+  // Every officer role gets the administrator guide.
+  const isAdministrator = isOfficer(roles);
   const [query, setQuery] = useState('');
 
   const memberSections = useMemo(() => parseGuideSections(memberGuide), []);

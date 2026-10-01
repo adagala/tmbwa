@@ -8,11 +8,13 @@ import {
 } from '@remixicon/react';
 import { Member } from 'tmbwa-shared/firebase';
 import {
-  member_roles,
   member_status,
-  MemberRole,
+  memberRoles,
   MemberStatus,
+  Role,
+  roles,
 } from 'tmbwa-shared';
+import { describeRoles, roleLabels } from '@/lib/roleDisplay';
 import { Input } from '@/components/Input';
 import {
   Select,
@@ -32,8 +34,8 @@ import { Avatar } from '@/components/Avatar';
 import { Card } from '@/components/Card';
 
 export default function MembersPage() {
-  const { role } = useUser();
-  const [selectedRole, setSelectedRole] = React.useState<MemberRole | ''>('');
+  const { can } = useUser();
+  const [selectedRole, setSelectedRole] = React.useState<Role | ''>('');
   const [selectedFeeStatus, setSelectedFeeStatus] = React.useState('');
   const [selectedStatus, setSelectedStatus] = React.useState<MemberStatus | ''>(
     '',
@@ -84,7 +86,9 @@ export default function MembersPage() {
         const isNameMatch =
           member.firstname.match(regex) || member.lastname.match(regex);
         const isEmailMatch = member.email.match(regex);
-        const isRoleMatch = !selectedRole ? true : member.role === selectedRole;
+        const isRoleMatch = !selectedRole
+          ? true
+          : memberRoles(member).includes(selectedRole);
         const isStatusMatch = !selectedStatus
           ? true
           : member.status === selectedStatus;
@@ -119,7 +123,7 @@ export default function MembersPage() {
           Members
         </div>
         <div className="">
-          {role === 'administrator' ? <DialogMemberForm /> : null}
+          {can('members.write') ? <DialogMemberForm /> : null}
         </div>
       </div>
       <div className="flex flex-col gap-3">
@@ -138,16 +142,16 @@ export default function MembersPage() {
           <div className="flex-1 flex flex-col gap-2 sm:flex-row">
             <Select
               name="role"
-              value={selectedRole as MemberRole}
-              onValueChange={(role: MemberRole) => setSelectedRole(role)}
+              value={selectedRole as Role}
+              onValueChange={(role: Role) => setSelectedRole(role)}
             >
-              <SelectTrigger id="role" name="role" className="capitalize">
+              <SelectTrigger id="role" name="role">
                 <SelectValue placeholder="Role" />
               </SelectTrigger>
               <SelectContent>
-                {member_roles.map((role) => (
-                  <SelectItem key={role} value={role} className="capitalize">
-                    {role}
+                {roles.map((role) => (
+                  <SelectItem key={role} value={role}>
+                    {roleLabels[role]}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -261,10 +265,10 @@ export default function MembersPage() {
                               )}
                             </Tooltip>
                           </div>
-                          <div className="text-xs font-medium leading-6 text-gray-900 dark:text-gray-200 capitalize">
-                            {member.role}
+                          <div className="text-xs font-medium leading-6 text-gray-900 dark:text-gray-200">
+                            {describeRoles(memberRoles(member))}
                           </div>
-                          {role === 'administrator' ? (
+                          {can('members.read') ? (
                             <div className="truncate text-xs leading-5 text-gray-500 dark:text-gray-400">
                               {member.email}
                             </div>

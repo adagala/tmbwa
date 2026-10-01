@@ -170,7 +170,7 @@ export function Beneficiaries({
   member: Member;
   ownProfile: boolean;
 }) {
-  const { user, role } = useUser();
+  const { user, can } = useUser();
   const [beneficiaries, setBeneficiaries] = useState<BeneficiaryRecord[]>();
   const [state, setState] = useState<BeneficiaryState>();
   const [requests, setRequests] = useState<BeneficiaryRequestRecord[]>([]);
@@ -207,13 +207,12 @@ export function Beneficiaries({
   }
 
   const isSelf = ownProfile || user?.uid === member.member_id;
-  const isAdministrator = role === 'administrator';
+  const canReview = can('beneficiaries.review');
   const kind = expectedRequestKind(state);
   const pending = requests.find((request) => request.status === 'pending');
   // The backend enforces all of these rules; the UI only hides what would fail.
   const canRequest = isSelf && member.status === 'active' && !pending;
-  const canSetInitial =
-    isAdministrator && !isSelf && state.version === 0 && !pending;
+  const canSetInitial = canReview && !isSelf && state.version === 0 && !pending;
 
   return (
     <div className="mt-6 flex flex-col gap-4">
@@ -279,7 +278,7 @@ export function Beneficiaries({
         <PendingRequest
           request={pending}
           canCancel={isSelf}
-          reviewLink={isAdministrator && !isSelf}
+          reviewLink={canReview && !isSelf}
         />
       ) : null}
 

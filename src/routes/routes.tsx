@@ -18,7 +18,8 @@ import KcbReconciliationPage from '../app/main/KcbReconciliationPage';
 import NotificationsPage from '../app/main/NotificationsPage';
 import UserGuidePage from '../app/main/UserGuidePage';
 import BeneficiaryRequestsPage from '../app/main/BeneficiaryRequestsPage';
-import AdministratorRoute from './AdministratorRoute';
+import PermissionRoute from './PermissionRoute';
+import { pagePermissions } from '@/lib/access';
 import RouteErrorPage from './RouteErrorPage';
 
 export const router = createBrowserRouter([
@@ -52,19 +53,39 @@ export const router = createBrowserRouter([
       },
       {
         path: 'overview',
-        element: <AdministratorRoute element={<OverviewPage />} />,
+        element: (
+          <PermissionRoute
+            permission={pagePermissions.overview}
+            element={<OverviewPage />}
+          />
+        ),
       },
       {
         path: 'members',
-        element: <AdministratorRoute element={<MembersPage />} />,
+        element: (
+          <PermissionRoute
+            permission={pagePermissions.members}
+            element={<MembersPage />}
+          />
+        ),
       },
       {
         path: 'members/:memberId',
-        element: <AdministratorRoute element={<MemberProfilePage />} />,
+        element: (
+          <PermissionRoute
+            permission={pagePermissions.members}
+            element={<MemberProfilePage />}
+          />
+        ),
       },
       {
         path: 'contributions',
-        element: <AdministratorRoute element={<ContributionsPage />} />,
+        element: (
+          <PermissionRoute
+            permission={pagePermissions.contributions}
+            element={<ContributionsPage />}
+          />
+        ),
       },
       {
         path: 'profile',
@@ -76,19 +97,39 @@ export const router = createBrowserRouter([
       },
       {
         path: 'report',
-        element: <AdministratorRoute element={<ReportPage />} />,
+        element: (
+          <PermissionRoute
+            permission={pagePermissions.report}
+            element={<ReportPage />}
+          />
+        ),
       },
       {
         path: 'audit',
-        element: <AdministratorRoute element={<AuditPage />} />,
+        element: (
+          <PermissionRoute
+            permission={pagePermissions.audit}
+            element={<AuditPage />}
+          />
+        ),
       },
       {
         path: 'kcb-reconciliation',
-        element: <AdministratorRoute element={<KcbReconciliationPage />} />,
+        element: (
+          <PermissionRoute
+            permission={pagePermissions.kcbReconciliation}
+            element={<KcbReconciliationPage />}
+          />
+        ),
       },
       {
         path: 'beneficiary-requests',
-        element: <AdministratorRoute element={<BeneficiaryRequestsPage />} />,
+        element: (
+          <PermissionRoute
+            permission={pagePermissions.beneficiaryRequests}
+            element={<BeneficiaryRequestsPage />}
+          />
+        ),
       },
       {
         path: 'notifications',

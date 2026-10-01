@@ -3,7 +3,8 @@ import { Badge } from '@/components/Badge';
 import { subscribePendingBeneficiaryRequestCount } from '@/lib/firebase/beneficiaries';
 
 // Live count of beneficiary change requests awaiting review. Rendered only in
-// administrator navigation; the rules deny the query to everyone else.
+// navigation for officers with beneficiaries.review; the rules deny the query
+// to everyone without beneficiaries.read.
 export function PendingBeneficiaryRequestCount() {
   const [count, setCount] = useState(0);
   useEffect(() => subscribePendingBeneficiaryRequestCount(setCount), []);
