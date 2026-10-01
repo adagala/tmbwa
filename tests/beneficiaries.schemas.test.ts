@@ -30,9 +30,10 @@ describe('beneficiary schemas', () => {
     const parsed = beneficiarySchema.parse({
       ...beneficiary, email: ' ', phonenumber: '', idnumber: '',
     });
-    expect(parsed.email).toBeUndefined();
-    expect(parsed.phonenumber).toBeUndefined();
-    expect(parsed.idnumber).toBeUndefined();
+    // Keys are dropped, not set to undefined, because Firestore rejects undefined.
+    expect(Object.keys(parsed).sort()).toEqual(['dateOfBirth', 'firstname', 'lastname', 'relationship']);
+    expect(Object.keys(beneficiaryChangeReasonSchema.parse({ category: 'marriage', text: ' ' })))
+      .toEqual(['category']);
   });
 
   it('validates optional contact and ID fields when given', () => {

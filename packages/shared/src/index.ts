@@ -526,6 +526,12 @@ const isCalendarDate = (value: string) => {
   );
 };
 
+// Firestore rejects `undefined` values, so absent optional fields are dropped.
+const withoutUndefined = <Value extends Record<string, unknown>>(value: Value) =>
+  Object.fromEntries(
+    Object.entries(value).filter(([, entry]) => entry !== undefined),
+  ) as Value;
+
 // Form inputs submit '' for untouched optional fields; store them as absent.
 const optionalText = <Schema extends z.ZodTypeAny>(schema: Schema) =>
   z.preprocess((value) => {
@@ -592,9 +598,11 @@ export const beneficiarySchema = z
     }
   })
   .transform(({ relationshipOther, ...beneficiary }) =>
-    beneficiary.relationship === 'other'
-      ? { ...beneficiary, relationshipOther }
-      : beneficiary,
+    withoutUndefined(
+      beneficiary.relationship === 'other'
+        ? { ...beneficiary, relationshipOther }
+        : beneficiary,
+    ),
   );
 
 export const beneficiaryListSchema = z
@@ -635,7 +643,8 @@ export const beneficiaryChangeReasonSchema = z
         message: 'Explain the reason for this change',
       });
     }
-  });
+  })
+  .transform(withoutUndefined);
 
 // members/{memberId}/beneficiaries/{beneficiaryId}: approved beneficiaries.
 // Written only by trusted Cloud Functions.
