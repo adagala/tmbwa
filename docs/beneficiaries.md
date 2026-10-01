@@ -5,7 +5,7 @@ Members record up to three beneficiaries. Every change a member makes is a reque
 ## Rules
 
 - At most 3 beneficiaries per member. No percentage shares.
-- First name, last name, relationship and date of birth are required. Email, phone number and ID number are optional. The ID number may also be a passport or birth certificate number.
+- First name, last name, relationship and date of birth are required. Email, phone number and ID number are optional. The ID number is free text (up to 100 characters) and may be a national ID, passport or birth certificate number.
 - A member may make one change per calendar year (1 January to 31 December, Africa/Nairobi). A further change in the same year needs a reason: death of a beneficiary, marriage, divorce or separation, birth or adoption, correcting an error, or other. Free text is optional, and required for "other".
 - The first beneficiaries a member records do not use the yearly change, whether the member submits them or an administrator enters them directly.
 - Only an approved yearly change uses the allowance. Rejected and cancelled requests do not, and neither do approved changes made with a reason.

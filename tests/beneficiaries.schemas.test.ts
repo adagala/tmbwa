@@ -44,9 +44,16 @@ describe('beneficiary schemas', () => {
       idnumber: 'BC 123/456-7',
     }).idnumber).toBe('BC 123/456-7');
     const result = beneficiarySchema.safeParse({
-      ...beneficiary, email: 'not-an-email', phonenumber: '12345', idnumber: 'ID<script>',
+      ...beneficiary, email: 'not-an-email', phonenumber: '12345',
     });
-    expect(issuePaths(result)).toEqual(expect.arrayContaining(['email', 'phonenumber', 'idnumber']));
+    expect(issuePaths(result)).toEqual(expect.arrayContaining(['email', 'phonenumber']));
+  });
+
+  it('accepts the ID number as free text', () => {
+    for (const idnumber of ['BC:123456', 'No. 12.345.678', 'A1234567 (passport)']) {
+      expect(beneficiarySchema.parse({ ...beneficiary, idnumber }).idnumber).toBe(idnumber);
+    }
+    expect(beneficiarySchema.safeParse({ ...beneficiary, idnumber: 'x'.repeat(101) }).success).toBe(false);
   });
 
   it('requires names, a known relationship and a date of birth', () => {

@@ -577,15 +577,10 @@ export const beneficiarySchema = z
           'Provide a valid phone number',
         ),
     ),
-    // National ID, passport or birth certificate number.
+    // Free text: national ID, passport or birth certificate number in any
+    // format. The length cap only bounds storage, like the name fields.
     idnumber: optionalText(
-      z
-        .string()
-        .max(30, 'ID number must be at most 30 characters')
-        .regex(
-          /^[A-Za-z0-9/ -]+$/,
-          'ID number may contain only letters, digits, spaces, "/" and "-"',
-        ),
+      z.string().max(100, 'ID number must be at most 100 characters'),
     ),
   })
   .superRefine((beneficiary, context) => {
