@@ -264,6 +264,68 @@ describe('assignMemberRoles', () => {
   });
 });
 
+describe('assignMemberRoles Auth side effects', () => {
+  const assignment = async (requestId: string) =>
+    (await db().doc(`role_assignments/${requestId}`).get()).data()!;
+  const data = { requestId: 'role-request-partial', roles: ['treasurer'] };
+
+  it('finishes claims and session revocation on retry after claims fail', async () => {
+    authCalls.setCustomUserClaims.mockRejectedValueOnce(new Error('auth unavailable'));
+    await expect(assign(data)).rejects.toThrow('auth unavailable');
+    // The assignment committed, but nothing in Auth happened yet.
+    expect((await memberDoc()).roles).toEqual(['member', 'treasurer']);
+    expect(authCalls.revokeRefreshTokens).not.toHaveBeenCalled();
+    expect((await assignment(data.requestId)).sessionsRevokedAt).toBeUndefined();
+
+    await expect(assign(data)).resolves.toMatchObject({ duplicate: true });
+    expect(authCalls.setCustomUserClaims).toHaveBeenLastCalledWith(TARGET, {
+      role: 'member',
+      roles: ['member', 'treasurer'],
+    });
+    expect(authCalls.revokeRefreshTokens).toHaveBeenCalledTimes(1);
+    expect((await assignment(data.requestId)).sessionsRevokedAt).toBeDefined();
+    expect(await auditEvents()).toHaveLength(1);
+  });
+
+  it('retries session revocation until it succeeds, then stops', async () => {
+    authCalls.revokeRefreshTokens.mockRejectedValueOnce(new Error('auth unavailable'));
+    await expect(assign(data)).rejects.toThrow('auth unavailable');
+    expect((await assignment(data.requestId)).sessionsRevokedAt).toBeUndefined();
+
+    await assign(data);
+    expect(authCalls.revokeRefreshTokens).toHaveBeenCalledTimes(2);
+    expect((await assignment(data.requestId)).sessionsRevokedAt).toBeDefined();
+
+    await assign(data);
+    expect(authCalls.revokeRefreshTokens).toHaveBeenCalledTimes(2);
+  });
+
+  it('never leaves claims at an assignment that a newer one replaced', async () => {
+    // While the first command writes claims, a second assignment commits.
+    authCalls.setCustomUserClaims.mockImplementationOnce(async () => {
+      await db().doc(`members/${TARGET}`).update({ roles: ['member', 'auditor'], role: 'member' });
+    });
+    await assign({ roles: ['treasurer'] });
+    expect(authCalls.setCustomUserClaims).toHaveBeenLastCalledWith(TARGET, {
+      role: 'member',
+      roles: ['member', 'auditor'],
+    });
+  });
+
+  it('leaves claims matching the record after concurrent assignments', async () => {
+    await Promise.allSettled([
+      assign({ roles: ['treasurer'] }),
+      assign({ roles: ['auditor'] }),
+      assign({ roles: ['registrar'] }),
+    ]);
+    const finalRoles = (await memberDoc()).roles;
+    expect(authCalls.setCustomUserClaims).toHaveBeenLastCalledWith(TARGET, {
+      role: 'member',
+      roles: finalRoles,
+    });
+  });
+});
+
 describe('member role triggers', () => {
   type Trigger = { run: (event: never) => Promise<unknown> };
   const runUpdate = async (fields: Record<string, unknown>, id = TARGET) => {
@@ -282,6 +344,24 @@ describe('member role triggers', () => {
     await db().doc(`members/${OTHER_SUPER}`).set(memberFields({ role: 'administrator', email: 'super@example.test' }));
     await runUpdate({ roles: ['member', 'super_admin'] }, OTHER_SUPER);
     expect(authCalls.setCustomUserClaims).not.toHaveBeenCalled();
+  });
+
+  it('applies the latest roles even when events arrive out of order', async () => {
+    const ref = db().doc(`members/${TARGET}`);
+    await ref.update({ roles: ['member', 'auditor'] });
+    const auditor = await ref.get();
+    await ref.update({ roles: ['member', 'treasurer'] });
+    const treasurer = await ref.get();
+    await ref.update({ roles: ['member', 'auditor'] });
+    const auditorAgain = await ref.get();
+    const trigger = members.updateMember as unknown as Trigger;
+    // The later change's event runs first, then the earlier one.
+    await trigger.run({ data: { before: treasurer, after: auditorAgain }, params: { memberId: TARGET } } as never);
+    await trigger.run({ data: { before: auditor, after: treasurer }, params: { memberId: TARGET } } as never);
+    expect(authCalls.setCustomUserClaims).toHaveBeenLastCalledWith(TARGET, {
+      role: 'member',
+      roles: ['member', 'auditor'],
+    });
   });
 
   it('repairs claims when the effective roles change', async () => {

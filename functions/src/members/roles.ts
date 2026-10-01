@@ -11,8 +11,9 @@ import {
   roles as knownRoles,
   sameRoles,
 } from 'tmbwa-shared';
-import { assertActorActive, requirePermission } from '../authorization';
+import { reauthorizeActor, requirePermission } from '../authorization';
 import { validateDocumentWrite } from '../firestoreData';
+import { syncRoleClaims } from './claims';
 
 type CommandData = Record<string, unknown>;
 
@@ -102,7 +103,7 @@ export const assignMemberRoles = onCall(async (request) => {
   }
 
   const result = await db().runTransaction(async (transaction) => {
-    await assertActorActive(transaction, actorId, 'roles.manage');
+    await reauthorizeActor(transaction, actor);
     const commandRef = db().doc(`role_assignments/${requestId}`);
     const memberRef = db().doc(`members/${memberId}`);
     const [command, member] = await Promise.all([
@@ -116,13 +117,14 @@ export const assignMemberRoles = onCall(async (request) => {
           'This requestId was already used for another member.',
         );
       }
-      // The member may have been deleted since; there are no claims to repair.
-      if (!member.exists) return { requestId, memberId, roles: [], duplicate: true };
       return {
         requestId,
         memberId,
         roles: memberRoles(member.data()),
         duplicate: true,
+        // The member may have been deleted since; then there is nothing to finish.
+        memberExists: member.exists,
+        sessionsRevoked: command.get('sessionsRevokedAt') !== undefined,
       };
     }
     if (!member.exists) throw new HttpsError('not-found', 'Member not found.');
@@ -178,16 +180,30 @@ export const assignMemberRoles = onCall(async (request) => {
         auditPath,
       ),
     );
-    return { requestId, memberId, previousRoles, roles, duplicate: false };
+    return {
+      requestId,
+      memberId,
+      previousRoles,
+      roles,
+      duplicate: false,
+      memberExists: true,
+      sessionsRevoked: false,
+    };
   });
 
-  // Claims mirror the record, so a retry also repairs claims left stale by a
-  // failure after the transaction committed.
-  if (!result.roles.length) return result;
-  await admin.auth().setCustomUserClaims(memberId, {
-    role: legacyRoleFor(result.roles),
-    roles: result.roles,
-  });
-  if (!result.duplicate) await admin.auth().revokeRefreshTokens(memberId);
-  return result;
+  // The Auth side effects run after the commit and can fail. They are tracked
+  // apart from the assignment, so retrying the same requestId finishes them:
+  // claims are re-synced from the record, and sessions are revoked until the
+  // assignment records that they were.
+  const { memberExists, sessionsRevoked, ...response } = result;
+  if (memberExists) {
+    await syncRoleClaims(memberId);
+    if (!sessionsRevoked) {
+      await admin.auth().revokeRefreshTokens(memberId);
+      await db().doc(`role_assignments/${requestId}`).update({
+        sessionsRevokedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    }
+  }
+  return response;
 });

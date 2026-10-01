@@ -13,13 +13,13 @@ import {
 } from '../utils';
 import {
   MONTHLY_CONTRIBUTION,
-  legacyRoleFor,
   memberFormBaseSchema,
   memberRoles,
   parseDocument,
   sameRoles,
 } from 'tmbwa-shared';
 import { memberData } from '../firestoreData';
+import { syncRoleClaims } from './claims';
 
 export { assignMemberRoles } from './roles';
 
@@ -90,10 +90,7 @@ export const newMember = onDocumentCreated(
       uid,
     });
 
-    await admin.auth().setCustomUserClaims(uid, {
-      role: legacyRoleFor(roles),
-      roles,
-    });
+    await syncRoleClaims(uid);
     return null;
   },
 );
@@ -184,17 +181,18 @@ export const updateMember = onDocumentUpdated(
       await admin.auth().updateUser(uid, { email: memberAfter.email });
     }
 
-    // Claims mirror the member's effective roles. assignMemberRoles also sets
-    // them directly; this repairs claims if that step failed. Backfilling
-    // `roles` from the legacy field leaves effective roles unchanged, so it
-    // does not touch claims.
-    const rolesBefore = memberRoles(snapshots.before.data());
-    const rolesAfter = memberRoles(snapshots.after.data());
-    if (!sameRoles(rolesBefore, rolesAfter)) {
-      await admin.auth().setCustomUserClaims(uid, {
-        role: legacyRoleFor(rolesAfter),
-        roles: rolesAfter,
-      });
+    // Claims follow the member's effective roles. assignMemberRoles also
+    // syncs them; this repairs claims if that step failed. The sync reads the
+    // current record, so an event delivered late cannot restore older roles.
+    // Backfilling `roles` from the legacy field leaves effective roles
+    // unchanged, so it does not touch claims.
+    if (
+      !sameRoles(
+        memberRoles(snapshots.before.data()),
+        memberRoles(snapshots.after.data()),
+      )
+    ) {
+      await syncRoleClaims(uid);
     }
 
     return null;

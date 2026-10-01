@@ -467,16 +467,16 @@ describe('audit events record the actor\'s roles', () => {
   });
 });
 
-describe('suspension between authorization and commit', () => {
-  // Suspends the actor after requirePermission has passed but before the
-  // command's transaction runs, as a concurrent status change would.
-  const suspendBeforeTransaction = () => {
+describe('changes between authorization and commit', () => {
+  // Changes the actor's member record after requirePermission has passed but
+  // before the command's transaction runs, as a concurrent change would.
+  const changeActorBeforeTransaction = (fields: Record<string, unknown>) => {
     const firestore = db();
     const runTransaction = firestore.runTransaction.bind(firestore);
     vi.spyOn(firestore, 'runTransaction').mockImplementation((async (
       ...args: Parameters<typeof runTransaction>
     ) => {
-      await firestore.doc(`members/${ACTOR}`).update({ status: 'suspended' });
+      await firestore.doc(`members/${ACTOR}`).update(fields);
       return runTransaction(...args);
     }) as typeof runTransaction);
   };
@@ -485,7 +485,14 @@ describe('suspension between authorization and commit', () => {
     vi.restoreAllMocks();
   });
 
+  const suspended = { status: 'suspended' };
+  // The officer stays active but loses every officer role.
+  const revoked = { roles: ['member'] };
   const notActive = { code: 'permission-denied', message: 'Your account is not active.' };
+  const noPermission = {
+    code: 'permission-denied',
+    message: 'You do not have permission to perform this action.',
+  };
   const readOnlyOrRetired = [
     'recordContributionPayment',
     'adjustMemberBalance',
@@ -493,14 +500,33 @@ describe('suspension between authorization and commit', () => {
   ];
   const mutations = cases.filter(({ name }) => !readOnlyOrRetired.includes(name));
 
-  it.each(mutations)('$name re-checks the actor inside its transaction', async ({ fn, allowed, data }) => {
-    suspendBeforeTransaction();
+  it.each(mutations)('$name re-checks the actor\'s status inside its transaction', async ({ fn, allowed, data }) => {
+    changeActorBeforeTransaction(suspended);
     await expect(call(fn, withRoles([allowed]), data(TARGET))).rejects.toMatchObject(notActive);
+  });
+
+  it.each(mutations)('$name re-checks the actor\'s roles inside its transaction', async ({ fn, allowed, data }) => {
+    changeActorBeforeTransaction(revoked);
+    await expect(call(fn, withRoles([allowed]), data(TARGET))).rejects.toMatchObject(noPermission);
+  });
+
+  it('refuses a financial mutation once the treasurer role is revoked, writing nothing', async () => {
+    await seedTarget();
+    changeActorBeforeTransaction(revoked);
+    await expect(
+      call(financial.createContribution, withRoles(['treasurer']), {
+        requestId,
+        memberId: TARGET,
+        month: '2026-09-01',
+      }),
+    ).rejects.toMatchObject(noPermission);
+    expect((await db().doc(`members/${TARGET}/contributions/2026-09-01`).get()).exists).toBe(false);
+    expect((await db().doc(`audit_events/${requestId}`).get()).exists).toBe(false);
   });
 
   it('refuses a mutation that would otherwise commit, writing nothing', async () => {
     await seedTarget();
-    suspendBeforeTransaction();
+    changeActorBeforeTransaction(suspended);
     await expect(
       call(financial.createContribution, withRoles(['treasurer']), {
         requestId,
@@ -515,7 +541,7 @@ describe('suspension between authorization and commit', () => {
   });
 
   it('re-checks an officer prompting an STK payment for another member', async () => {
-    suspendBeforeTransaction();
+    changeActorBeforeTransaction(suspended);
     await expect(
       call(kcb.requestKcbStkPush, withRoles(['treasurer']), {
         requestId,
@@ -524,6 +550,19 @@ describe('suspension between authorization and commit', () => {
         amount: 500,
       }),
     ).rejects.toMatchObject(notActive);
+    expect((await db().collection('kcb_stk_requests').get()).empty).toBe(true);
+  });
+
+  it('re-checks the role of an officer prompting an STK payment for another member', async () => {
+    changeActorBeforeTransaction(revoked);
+    await expect(
+      call(kcb.requestKcbStkPush, withRoles(['treasurer']), {
+        requestId,
+        memberId: TARGET,
+        contributionId: '2026-09-01',
+        amount: 500,
+      }),
+    ).rejects.toMatchObject(noPermission);
     expect((await db().collection('kcb_stk_requests').get()).empty).toBe(true);
   });
 });

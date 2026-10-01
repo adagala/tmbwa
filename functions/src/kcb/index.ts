@@ -64,7 +64,7 @@ import {
   stkTopUpLockRef,
 } from './topUp';
 import {
-  assertActorActive,
+  reauthorizeActor,
   assertNotOwnRecord,
   requirePermission,
 } from '../authorization';
@@ -299,7 +299,8 @@ export const kcbTillNotification = onRequest(
 );
 
 export const reconcileKcbPayment = onCall(async (request) => {
-  const { actorId, actorRoles } = await requirePermission(request.auth, 'kcb.reconcile');
+  const actor = await requirePermission(request.auth, 'kcb.reconcile');
+  const { actorId, actorRoles } = actor;
   const data = request.data as Data;
   const requestId = requiredString(data, 'requestId');
   const providerTransactionId = requiredString(data, 'providerTransactionId');
@@ -308,7 +309,7 @@ export const reconcileKcbPayment = onCall(async (request) => {
   const allocations = requiredAllocations(data.allocations);
 
   return db().runTransaction(async (transaction) => {
-    await assertActorActive(transaction, actorId);
+    await reauthorizeActor(transaction, actor);
     const commandRef = db().doc(`financial_commands/${requestId}`);
     const notificationRef = db().doc(
       `kcb_payment_notifications/${providerTransactionId}`,
@@ -637,7 +638,8 @@ export const reconcileKcbPayment = onCall(async (request) => {
 });
 
 export const allocateKcbPaymentCredit = onCall(async (request) => {
-  const { actorId, actorRoles } = await requirePermission(request.auth, 'kcb.reconcile');
+  const actor = await requirePermission(request.auth, 'kcb.reconcile');
+  const { actorId, actorRoles } = actor;
   const data = request.data as Data;
   const requestId = requiredString(data, 'requestId');
   const providerTransactionId = requiredString(data, 'providerTransactionId');
@@ -646,7 +648,7 @@ export const allocateKcbPaymentCredit = onCall(async (request) => {
     throw new HttpsError('invalid-argument', 'Add at least one allocation.');
   }
   return db().runTransaction(async (transaction) => {
-    await assertActorActive(transaction, actorId);
+    await reauthorizeActor(transaction, actor);
     const commandRef = db().doc(`financial_commands/${requestId}`);
     const notificationRef = db().doc(`kcb_payment_notifications/${providerTransactionId}`);
     const [command, notificationSnapshot] = await Promise.all([
@@ -797,13 +799,14 @@ export const allocateKcbPaymentCredit = onCall(async (request) => {
 });
 
 export const rejectKcbPayment = onCall(async (request) => {
-  const { actorId, actorRoles } = await requirePermission(request.auth, 'kcb.reconcile');
+  const actor = await requirePermission(request.auth, 'kcb.reconcile');
+  const { actorId, actorRoles } = actor;
   const data = request.data as Data;
   const requestId = requiredString(data, 'requestId');
   const providerTransactionId = requiredString(data, 'providerTransactionId');
   const reason = requiredString(data, 'reason');
   return db().runTransaction(async (transaction) => {
-    await assertActorActive(transaction, actorId);
+    await reauthorizeActor(transaction, actor);
     const commandRef = db().doc(`financial_commands/${requestId}`);
     const notificationRef = db().doc(
       `kcb_payment_notifications/${providerTransactionId}`,
@@ -909,13 +912,14 @@ export const rejectKcbPayment = onCall(async (request) => {
 });
 
 export const resolveKcbStkUnknownOutcome = onCall(async (request) => {
-  const { actorId, actorRoles } = await requirePermission(request.auth, 'kcb.reconcile');
+  const actor = await requirePermission(request.auth, 'kcb.reconcile');
+  const { actorId, actorRoles } = actor;
   const data = request.data as Data;
   const commandId = requiredString(data, 'requestId');
   const stkRequestId = requiredString(data, 'stkRequestId');
   const reason = requiredString(data, 'reason');
   return db().runTransaction(async (transaction) => {
-    await assertActorActive(transaction, actorId);
+    await reauthorizeActor(transaction, actor);
     const commandRef = db().doc(`financial_commands/${commandId}`);
     const stkRequestRef = db().doc(`kcb_stk_requests/${stkRequestId}`);
     const [command, stkRequestSnapshot] = await Promise.all([
@@ -1046,9 +1050,10 @@ export const requestKcbStkPush = onCall(
     // Top-ups pay into the account rather than a specific contribution.
     const contributionId = isTopUp ? '' : requiredString(data, 'contributionId');
     // Members request their own payments; officers may prompt on a member's behalf.
-    if (requesterId !== memberId) {
-      await requirePermission(request.auth, 'kcb.reconcile');
-    }
+    const officer =
+      requesterId !== memberId
+        ? await requirePermission(request.auth, 'kcb.reconcile')
+        : undefined;
     const amount = Number(data.amount);
     if (!Number.isInteger(amount) || amount <= 0) {
       throw new HttpsError(
@@ -1095,9 +1100,7 @@ export const requestKcbStkPush = onCall(
         .where('memberId', '==', memberId)
         .where('contributionId', '==', contributionId);
     const preparation = await db().runTransaction(async (transaction) => {
-      if (requesterId !== memberId) {
-        await assertActorActive(transaction, requesterId);
-      }
+      if (officer) await reauthorizeActor(transaction, officer);
       const [existing, member, contribution, lock, contributionStkRequests] =
         await Promise.all([
           transaction.get(requestRef),

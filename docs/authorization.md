@@ -56,7 +56,7 @@ Every privileged command goes through `requirePermission` (`functions/src/author
 - rejects callers whose roles lack the permission;
 - rejects callers whose member record is not `active`, even when their token still carries privileged claims.
 
-Every privileged command that writes data also calls `assertActorActive` first inside its Firestore transaction. Because the actor's member record is then part of the transaction, suspending an officer while their command is in flight makes the transaction retry, and the retry is refused.
+Every privileged command that writes data also calls `reauthorizeActor` first inside its Firestore transaction. It repeats the same check (active record, and a role granted by both token and record) against the member record read through the transaction. Suspending an officer or revoking their role while their command is in flight makes the transaction retry, and the retry is refused.
 
 No one may perform a privileged financial, KCB or member-lifecycle action on their own member record, whatever their roles. This includes super admins. Beneficiary review already enforced the same rule.
 
@@ -78,9 +78,9 @@ Super admins change roles with the `assignMemberRoles` command (**Manage roles**
 - grants roles only to active members, but can always remove them;
 - is idempotent on `requestId`, recorded in `role_assignments/{requestId}`;
 - writes the member's `roles`, the matching legacy `role`, and one audit event in a single transaction;
-- then updates the member's custom claims and revokes their refresh tokens, which signs them out of existing sessions.
+- then syncs the member's custom claims and revokes their refresh tokens, which signs them out of existing sessions.
 
-The member triggers keep claims in step with the record if that last step fails, and give new members `roles: [member]`.
+Those Auth steps happen after the commit and can fail. Session revocation is recorded as `sessionsRevokedAt` on the assignment, so retrying the same `requestId` finishes whatever is left. Claims are always set by `syncRoleClaims`, which reads the member record as it is now and repeats until the roles it wrote are still current. A late event or a slow command therefore cannot leave claims at an older assignment. The member triggers call the same sync when effective roles change, and give new members `roles: [member]`.
 
 ### Transitional legacy role
 
