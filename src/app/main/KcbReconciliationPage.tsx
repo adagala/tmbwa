@@ -15,9 +15,21 @@ import {
 } from '@/components/Select';
 import useUser from '@/hooks/useUser';
 import { db } from '@/lib/firebase/clientApp';
+import { Badge } from '@/components/Badge';
+import { Callout } from '@/components/Callout';
+import { Combobox, ComboboxOption } from '@/components/Combobox';
 import {
   ContributionOption,
   contributionOptionsFromDocuments,
+  formatEatDate,
+  formatEatTime,
+  formatReceiptDelay,
+  kcbMatchHint,
+  kcbMpesaCode,
+  kcbReceiptSource,
+  matchesMemberSearch,
+  memberSearchText,
+  parseKcbPaymentTime,
 } from '@/lib/kcbReconciliation';
 import {
   allocateKcbPaymentCredit,
@@ -38,7 +50,116 @@ const devSimulatorEnabled =
   import.meta.env.VITE_APP_ENV === 'development' &&
   import.meta.env.VITE_KCB_DEV_MOCK_ENABLED === 'true';
 
+const memberFilter = (option: ComboboxOption, query: string) =>
+  matchesMemberSearch(
+    option.keywords?.[0] ?? option.label.toLowerCase(),
+    query,
+  );
+
 type AllocationDraft = { id: string; contributionId: string; amount: string };
+
+const sectionHeadingClass =
+  'text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400';
+
+const CopyableCode = ({ value }: { value: string }) => {
+  const [copied, setCopied] = useState(false);
+  return (
+    <span className="inline-flex flex-wrap items-baseline gap-x-2">
+      <span className="font-mono font-bold tracking-wide">{value}</span>
+      <Button
+        variant="ghost"
+        type="button"
+        className="h-auto border-0 p-0 text-xs font-semibold sm:text-xs text-guardsman-red-600 shadow-none dark:text-guardsman-red-400"
+        onClick={() =>
+          void navigator.clipboard
+            .writeText(value)
+            .then(() => setCopied(true))
+            .catch(() => setCopied(false))
+        }
+      >
+        {copied ? 'Copied' : 'Copy'}
+      </Button>
+    </span>
+  );
+};
+
+const ReceiptEvidence = ({ payment }: { payment: KcbPaymentNotification }) => {
+  const source = kcbReceiptSource(payment);
+  const mpesaCode = kcbMpesaCode(payment);
+  const paidAt = parseKcbPaymentTime(payment.transactionDate);
+  const receivedAt = payment.receivedAt?.toDate();
+  const delay =
+    paidAt && receivedAt ? formatReceiptDelay(paidAt, receivedAt) : undefined;
+  return (
+    <div className="border-b border-gray-200 bg-gray-50 p-5 lg:border-b-0 lg:border-r dark:border-gray-900 dark:bg-gray-950/60">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <h2 className={sectionHeadingClass}>What KCB reported</h2>
+        <Badge
+          variant="neutral"
+          className={
+            source === 'stk'
+              ? 'bg-gold-drop-50/40 text-gold-drop-700 ring-gold-drop-500/30 dark:bg-gold-drop-400/10 dark:text-gold-drop-300 dark:ring-gold-drop-400/30'
+              : undefined
+          }
+        >
+          {source === 'stk' ? 'STK push' : 'Paybill'}
+        </Badge>
+      </div>
+      <p className="mb-4 text-2xl font-bold tracking-tight text-gray-900 dark:text-gray-50">
+        {payment.currency} {payment.amount.toLocaleString('en-KE')}
+      </p>
+      <dl className="grid grid-cols-[6rem_1fr] gap-x-2.5 gap-y-2 text-sm">
+        {mpesaCode ? (
+          <>
+            <dt className="text-gray-500">M-Pesa code</dt>
+            <dd>
+              <CopyableCode value={mpesaCode} />
+            </dd>
+          </>
+        ) : (
+          <>
+            <dt className="text-gray-500">KCB ref</dt>
+            <dd>
+              <CopyableCode value={payment.providerTransactionId} />
+            </dd>
+          </>
+        )}
+        <dt className="text-gray-500">Time paid</dt>
+        <dd className="font-medium">
+          {paidAt ? (
+            <>
+              {formatEatDate(paidAt)}
+              <br />
+              {formatEatTime(paidAt)}
+            </>
+          ) : (
+            <span className="break-words">{payment.transactionDate}</span>
+          )}
+        </dd>
+        {receivedAt ? (
+          <>
+            <dt className="text-gray-500">Received</dt>
+            <dd className="text-gray-500">
+              {formatEatTime(receivedAt)}
+              {delay ? ` (${delay})` : ''}
+            </dd>
+          </>
+        ) : null}
+        <dt className="text-gray-500">Phone</dt>
+        <dd className="font-medium">{payment.payerPhone}</dd>
+        <dt className="text-gray-500">Name</dt>
+        <dd className={payment.payerName ? 'font-medium' : 'text-gray-500'}>
+          {payment.payerName ||
+            (source === 'stk' ? 'Not sent for STK' : 'Not provided')}
+        </dd>
+        <dt className="text-gray-500">Bill ref</dt>
+        <dd className="break-all font-mono font-medium">
+          {payment.billReference}
+        </dd>
+      </dl>
+    </div>
+  );
+};
 
 const AllocationEditor = ({
   receiptAmount,
@@ -118,7 +239,7 @@ const AllocationEditor = ({
       <Button variant="secondary" disabled={disabled} onClick={onAdd}>
         Add allocation
       </Button>
-      <dl className="grid gap-2 rounded-md bg-gray-50 p-3 text-sm sm:grid-cols-3">
+      <dl className="grid gap-2 rounded-md bg-gray-50 p-3 text-sm sm:grid-cols-3 dark:bg-gray-900">
         <div>
           <dt className="text-gray-500">Receipt</dt>
           <dd className="font-semibold">
@@ -331,6 +452,19 @@ export default function KcbReconciliationPage() {
           `${member.firstname} ${member.lastname}`,
         ]),
       ),
+    [members],
+  );
+
+  const memberOptions = useMemo<ComboboxOption[]>(
+    () =>
+      members.map((member) => ({
+        value: member.member_id,
+        label: `${member.firstname} ${member.lastname}`,
+        description: [member.membernumber, member.phonenumber]
+          .filter(Boolean)
+          .join(' · '),
+        keywords: [memberSearchText(member)],
+      })),
     [members],
   );
 
@@ -704,143 +838,127 @@ export default function KcbReconciliationPage() {
           const contributionOptions = memberId
             ? (contributions[memberId] ?? [])
             : [];
+          const matchHint = kcbMatchHint(
+            payment,
+            payment.suggestedMemberId
+              ? (memberNames.get(payment.suggestedMemberId) ??
+                  payment.suggestedMemberId)
+              : undefined,
+          );
           return (
-            <Card key={payment.providerTransactionId} className="space-y-4">
-              <div className="grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
-                <div>
-                  <span className="block text-gray-500">KCB receipt</span>
-                  <strong>{payment.providerTransactionId}</strong>
-                </div>
-                <div>
-                  <span className="block text-gray-500">Payer</span>
-                  <strong>{payment.payerName}</strong>
-                  <br />
-                  {payment.payerPhone}
-                </div>
-                <div>
-                  <span className="block text-gray-500">Amount</span>
-                  <strong>
-                    {payment.currency} {payment.amount.toLocaleString('en-KE')}
-                  </strong>
-                </div>
-                <div>
-                  <span className="block text-gray-500">Reference</span>
-                  <strong>{payment.billReference}</strong>
-                </div>
-              </div>
-              {payment.suggestedMemberId ? (
-                <p className="text-xs text-amber-700">
-                  Suggested from a unique verified phone:{' '}
-                  {memberNames.get(payment.suggestedMemberId) ??
-                    payment.suggestedMemberId}
-                  . Confirm before reconciling.
-                </p>
-              ) : null}
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="space-y-1">
-                  <Label htmlFor={`member-${payment.providerTransactionId}`}>
-                    Member
-                  </Label>
-                  <Select
-                    value={memberId || 'none'}
-                    onValueChange={(value) =>
-                      void loadContributions(
-                        payment.providerTransactionId,
-                        value === 'none' ? '' : value,
-                      )
-                    }
-                  >
-                    <SelectTrigger
+            <Card
+              key={payment.providerTransactionId}
+              className="grid overflow-hidden p-0 lg:grid-cols-[20rem_1fr]"
+            >
+              <ReceiptEvidence payment={payment} />
+              <div className="flex flex-col gap-4 p-5">
+                <h2 className={sectionHeadingClass}>What you decide</h2>
+                {matchHint ? (
+                  <Callout title={matchHint.title} variant={matchHint.variant}>
+                    {matchHint.message}
+                  </Callout>
+                ) : null}
+                <div className="flex flex-col gap-3">
+                  <div className="space-y-1">
+                    <Label htmlFor={`member-${payment.providerTransactionId}`}>
+                      Member
+                    </Label>
+                    <Combobox
                       id={`member-${payment.providerTransactionId}`}
-                    >
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">Choose member</SelectItem>
-                      {members.map((member) => (
-                        <SelectItem
-                          key={member.member_id}
-                          value={member.member_id}
-                        >
-                          {member.firstname} {member.lastname}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                {payment.purpose === 'account_top_up' ? (
-                  <p className="text-sm text-gray-700 dark:text-gray-300">
-                    Member account top-up. Reconciling settles the member&apos;s
-                    unpaid contributions oldest first and keeps the rest as
-                    credit that future contributions use automatically.
-                  </p>
-                ) : (
-                  <>
-                    <div className="text-sm font-medium">
-                      Contribution allocations
-                      {contributionStatus === 'error' ? (
-                        <span className="mt-1 block text-xs text-red-700">
-                          {contributionErrors[memberId]}
-                          <Button
-                            variant="ghost"
-                            type="button"
-                            className="ml-2 h-auto border-0 p-0 font-semibold underline shadow-none"
-                            onClick={() =>
-                              void loadMemberContributions(memberId)
-                            }
-                          >
-                            Retry
-                          </Button>
-                        </span>
-                      ) : null}
-                      {(contributionWarnings[memberId] ?? 0) > 0 ? (
-                        <span className="mt-1 block text-xs text-amber-700">
-                          {contributionWarnings[memberId]} invalid contribution
-                          {contributionWarnings[memberId] === 1 ? '' : 's'}{' '}
-                          could not be shown.
-                        </span>
-                      ) : null}
-                    </div>
-                    <AllocationEditor
-                      receiptAmount={payment.amount}
-                      options={contributionOptions}
-                      rows={
-                        allocationDrafts[payment.providerTransactionId] ?? []
-                      }
-                      disabled={
-                        !memberId ||
-                        contributionStatus === 'loading' ||
-                        contributionStatus === 'error'
-                      }
-                      onAdd={() => addAllocation(payment.providerTransactionId)}
-                      onChange={(id, patch) =>
-                        updateAllocation(
+                      options={memberOptions}
+                      value={memberId}
+                      onValueChange={(value) =>
+                        void loadContributions(
                           payment.providerTransactionId,
-                          id,
-                          patch,
+                          value,
                         )
                       }
-                      onRemove={(id) =>
-                        removeAllocation(payment.providerTransactionId, id)
-                      }
+                      placeholder="Choose member"
+                      searchPlaceholder="Search name, admission no. or phone"
+                      emptyMessage="No member matches that search."
+                      filter={memberFilter}
                     />
-                  </>
-                )}
-              </div>
-              <div className="flex gap-2">
-                <Button
-                  onClick={() => void reconcile(payment)}
-                  isLoading={busy === payment.providerTransactionId}
-                >
-                  Reconcile payment
-                </Button>
-                <Button
-                  variant="destructive"
-                  onClick={() => void reject(payment)}
-                  disabled={Boolean(busy)}
-                >
-                  Reject
-                </Button>
+                  </div>
+                  {payment.purpose === 'account_top_up' ? (
+                    <p className="text-sm text-gray-700 dark:text-gray-300">
+                      Member account top-up. Reconciling settles the
+                      member&apos;s unpaid contributions oldest first and keeps
+                      the rest as credit that future contributions use
+                      automatically.
+                    </p>
+                  ) : (
+                    <>
+                      <div className="text-sm font-medium">
+                        Contribution allocations
+                        {contributionStatus === 'error' ? (
+                          <span className="mt-1 block text-xs text-red-700">
+                            {contributionErrors[memberId]}
+                            <Button
+                              variant="ghost"
+                              type="button"
+                              className="ml-2 h-auto border-0 p-0 font-semibold underline shadow-none"
+                              onClick={() =>
+                                void loadMemberContributions(memberId)
+                              }
+                            >
+                              Retry
+                            </Button>
+                          </span>
+                        ) : null}
+                        {(contributionWarnings[memberId] ?? 0) > 0 ? (
+                          <span className="mt-1 block text-xs text-amber-700">
+                            {contributionWarnings[memberId]} invalid
+                            contribution
+                            {contributionWarnings[memberId] === 1
+                              ? ''
+                              : 's'}{' '}
+                            could not be shown.
+                          </span>
+                        ) : null}
+                      </div>
+                      <AllocationEditor
+                        receiptAmount={payment.amount}
+                        options={contributionOptions}
+                        rows={
+                          allocationDrafts[payment.providerTransactionId] ?? []
+                        }
+                        disabled={
+                          !memberId ||
+                          contributionStatus === 'loading' ||
+                          contributionStatus === 'error'
+                        }
+                        onAdd={() =>
+                          addAllocation(payment.providerTransactionId)
+                        }
+                        onChange={(id, patch) =>
+                          updateAllocation(
+                            payment.providerTransactionId,
+                            id,
+                            patch,
+                          )
+                        }
+                        onRemove={(id) =>
+                          removeAllocation(payment.providerTransactionId, id)
+                        }
+                      />
+                    </>
+                  )}
+                </div>
+                <div className="mt-auto flex gap-2">
+                  <Button
+                    onClick={() => void reconcile(payment)}
+                    isLoading={busy === payment.providerTransactionId}
+                  >
+                    Reconcile payment
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    onClick={() => void reject(payment)}
+                    disabled={Boolean(busy)}
+                  >
+                    Reject
+                  </Button>
+                </div>
               </div>
             </Card>
           );
