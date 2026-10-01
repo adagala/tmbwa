@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { isMobilePhone } from 'validator';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -401,6 +402,306 @@ export const auditEventDocumentSchema = z.object({
   createdAt: z.unknown().optional(),
 }).passthrough();
 
+// ---------------------------------------------------------------------------
+// Beneficiaries
+// ---------------------------------------------------------------------------
+
+export const MAX_BENEFICIARIES = 3;
+
+export const beneficiary_relationships = [
+  'spouse',
+  'son',
+  'daughter',
+  'father',
+  'mother',
+  'brother',
+  'sister',
+  'grandfather',
+  'grandmother',
+  'grandson',
+  'granddaughter',
+  'nephew',
+  'niece',
+  'uncle',
+  'aunt',
+  'cousin',
+  'father_in_law',
+  'mother_in_law',
+  'brother_in_law',
+  'sister_in_law',
+  'guardian',
+  'dependant',
+  'other',
+] as const;
+
+export const BENEFICIARY_RELATIONSHIP_LABELS: Record<
+  (typeof beneficiary_relationships)[number],
+  string
+> = {
+  spouse: 'Spouse',
+  son: 'Son',
+  daughter: 'Daughter',
+  father: 'Father',
+  mother: 'Mother',
+  brother: 'Brother',
+  sister: 'Sister',
+  grandfather: 'Grandfather',
+  grandmother: 'Grandmother',
+  grandson: 'Grandson',
+  granddaughter: 'Granddaughter',
+  nephew: 'Nephew',
+  niece: 'Niece',
+  uncle: 'Uncle',
+  aunt: 'Aunt',
+  cousin: 'Cousin',
+  father_in_law: 'Father-in-law',
+  mother_in_law: 'Mother-in-law',
+  brother_in_law: 'Brother-in-law',
+  sister_in_law: 'Sister-in-law',
+  guardian: 'Guardian',
+  dependant: 'Dependant',
+  other: 'Other',
+};
+
+// Reasons that allow a change beyond the one-per-calendar-year allowance.
+export const beneficiary_change_reasons = [
+  'beneficiary_deceased',
+  'marriage',
+  'divorce_or_separation',
+  'birth_or_adoption',
+  'error_correction',
+  'other',
+] as const;
+
+export const BENEFICIARY_CHANGE_REASON_LABELS: Record<
+  (typeof beneficiary_change_reasons)[number],
+  string
+> = {
+  beneficiary_deceased: 'Death of a beneficiary',
+  marriage: 'Marriage',
+  divorce_or_separation: 'Divorce or separation',
+  birth_or_adoption: 'Birth or adoption',
+  error_correction: 'Correcting an error',
+  other: 'Other',
+};
+
+export const beneficiary_change_request_types = [
+  'initial',
+  'annual',
+  'exceptional',
+] as const;
+export const beneficiary_change_request_statuses = [
+  'pending',
+  'approved',
+  'rejected',
+  'cancelled',
+] as const;
+
+export const BeneficiaryRelationshipEnum = z.enum(beneficiary_relationships);
+export const BeneficiaryChangeReasonEnum = z.enum(beneficiary_change_reasons);
+export const BeneficiaryChangeRequestTypeEnum = z.enum(
+  beneficiary_change_request_types,
+);
+export const BeneficiaryChangeRequestStatusEnum = z.enum(
+  beneficiary_change_request_statuses,
+);
+
+const nairobiDateFormatter = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Africa/Nairobi',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+
+// `YYYY-MM-DD` for the given instant in Nairobi.
+export const nairobiDateKey = (date: Date) => nairobiDateFormatter.format(date);
+
+const isCalendarDate = (value: string) => {
+  const [year, month, day] = value.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
+  );
+};
+
+// Firestore rejects `undefined` values, so absent optional fields are dropped.
+const withoutUndefined = <Value extends Record<string, unknown>>(value: Value) =>
+  Object.fromEntries(
+    Object.entries(value).filter(([, entry]) => entry !== undefined),
+  ) as Value;
+
+// Form inputs submit '' for untouched optional fields; store them as absent.
+const optionalText = <Schema extends z.ZodTypeAny>(schema: Schema) =>
+  z.preprocess((value) => {
+    if (typeof value !== 'string') return value;
+    const trimmed = value.trim();
+    return trimmed === '' ? undefined : trimmed;
+  }, schema.optional());
+
+const personName = (label: string) =>
+  z
+    .string()
+    .trim()
+    .min(1, `${label} cannot be empty`)
+    .max(100, `${label} must be at most 100 characters`);
+
+export const beneficiarySchema = z
+  .object({
+    firstname: personName('First name'),
+    lastname: personName('Last name'),
+    relationship: BeneficiaryRelationshipEnum,
+    relationshipOther: optionalText(
+      z.string().max(60, 'Relationship must be at most 60 characters'),
+    ),
+    // Calendar date, not an instant, so it never shifts across time zones.
+    dateOfBirth: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, 'Provide a valid date of birth')
+      .refine(isCalendarDate, 'Provide a valid date of birth')
+      .refine(
+        (value) => value >= '1900-01-01',
+        'Provide a valid date of birth',
+      )
+      .refine(
+        (value) => value <= nairobiDateKey(new Date()),
+        'Date of birth cannot be in the future',
+      ),
+    email: optionalText(z.string().email('Invalid email address')),
+    phonenumber: optionalText(
+      z
+        .string()
+        .refine(
+          (value) => isMobilePhone(value, ['en-KE'], { strictMode: true }),
+          'Provide a valid phone number',
+        ),
+    ),
+    // Free text: national ID, passport or birth certificate number in any
+    // format. The length cap only bounds storage, like the name fields.
+    idnumber: optionalText(
+      z.string().max(100, 'ID number must be at most 100 characters'),
+    ),
+  })
+  .superRefine((beneficiary, context) => {
+    if (beneficiary.relationship === 'other' && !beneficiary.relationshipOther) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['relationshipOther'],
+        message: 'Describe the relationship',
+      });
+    }
+  })
+  .transform(({ relationshipOther, ...beneficiary }) =>
+    withoutUndefined(
+      beneficiary.relationship === 'other'
+        ? { ...beneficiary, relationshipOther }
+        : beneficiary,
+    ),
+  );
+
+export const beneficiaryListSchema = z
+  .array(beneficiarySchema)
+  .min(1, 'Add at least one beneficiary')
+  .max(
+    MAX_BENEFICIARIES,
+    `A member can have at most ${MAX_BENEFICIARIES} beneficiaries`,
+  )
+  .superRefine((beneficiaries, context) => {
+    const seen = new Set<string>();
+    beneficiaries.forEach((beneficiary, index) => {
+      if (!beneficiary.idnumber) return;
+      const key = beneficiary.idnumber.replace(/\s/g, '').toUpperCase();
+      if (seen.has(key)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [index, 'idnumber'],
+          message: 'Each beneficiary must have a different ID number',
+        });
+      }
+      seen.add(key);
+    });
+  });
+
+export const beneficiaryChangeReasonSchema = z
+  .object({
+    category: BeneficiaryChangeReasonEnum,
+    text: optionalText(
+      z.string().max(500, 'Reason must be at most 500 characters'),
+    ),
+  })
+  .superRefine((reason, context) => {
+    if (reason.category === 'other' && !reason.text) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['text'],
+        message: 'Explain the reason for this change',
+      });
+    }
+  })
+  .transform(withoutUndefined);
+
+// members/{memberId}/beneficiaries/{beneficiaryId}: approved beneficiaries.
+// Written only by trusted Cloud Functions.
+export const beneficiaryDocumentSchema = z
+  .object({
+    firstname: z.string().min(1),
+    lastname: z.string().min(1),
+    relationship: BeneficiaryRelationshipEnum,
+    relationshipOther: z.string().optional(),
+    dateOfBirth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    email: z.string().optional(),
+    phonenumber: z.string().optional(),
+    idnumber: z.string().optional(),
+    // Change request that produced this record.
+    requestId: z.string(),
+    approvedBy: z.string(),
+    approvedAt: z.unknown().optional(),
+  })
+  .passthrough();
+
+// members/{memberId}/beneficiary_state/current: server-owned bookkeeping kept
+// off the member document, which is copied into contribution records.
+export const beneficiaryStateDocumentSchema = z
+  .object({
+    // Incremented on every approved change; requests record the version they
+    // were made against so stale requests cannot be approved.
+    version: z.number().int().nonnegative(),
+    // Nairobi calendar year whose annual change has been used.
+    lastAnnualChangeYear: z.number().int().nullable().default(null),
+    pendingRequestId: z.string().nullable().default(null),
+    updatedAt: z.unknown().optional(),
+  })
+  .passthrough();
+
+// beneficiary_change_requests/{requestId}. Never deleted: these are the
+// history of every beneficiary change.
+export const beneficiaryChangeRequestDocumentSchema = z
+  .object({
+    memberId: z.string().min(1),
+    type: BeneficiaryChangeRequestTypeEnum,
+    reason: beneficiaryChangeReasonSchema.optional(),
+    proposedBeneficiaries: beneficiaryListSchema,
+    baseVersion: z.number().int().nonnegative(),
+    status: BeneficiaryChangeRequestStatusEnum,
+    submittedBy: z.string().min(1),
+    submittedAt: z.unknown().optional(),
+    reviewedBy: z.string().optional(),
+    reviewedAt: z.unknown().optional(),
+    reviewNote: z.string().optional(),
+    cancelledAt: z.unknown().optional(),
+  })
+  .passthrough()
+  .superRefine((request, context) => {
+    if (request.type === 'exceptional' && !request.reason) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['reason'],
+        message: 'An exceptional change requires a reason',
+      });
+    }
+  });
+
 export const parseDocument = <Schema extends z.ZodTypeAny>(
   schema: Schema,
   value: unknown,
@@ -461,3 +762,13 @@ export type KcbPaymentNotification = z.infer<typeof kcbPaymentNotificationDocume
 export type MemberNotification = z.infer<typeof memberNotificationDocumentSchema> & { id: string };
 export type NotificationDelivery = z.infer<typeof notificationDeliveryDocumentSchema> & { id: string };
 export type AuditEvent = z.infer<typeof auditEventDocumentSchema>;
+export type BeneficiaryRelationship = z.infer<typeof BeneficiaryRelationshipEnum>;
+export type BeneficiaryChangeReasonCategory = z.infer<typeof BeneficiaryChangeReasonEnum>;
+export type BeneficiaryChangeRequestType = z.infer<typeof BeneficiaryChangeRequestTypeEnum>;
+export type BeneficiaryChangeRequestStatus = z.infer<typeof BeneficiaryChangeRequestStatusEnum>;
+export type BeneficiaryInput = z.input<typeof beneficiarySchema>;
+export type Beneficiary = z.infer<typeof beneficiarySchema>;
+export type BeneficiaryChangeReason = z.infer<typeof beneficiaryChangeReasonSchema>;
+export type BeneficiaryDocument = z.infer<typeof beneficiaryDocumentSchema>;
+export type BeneficiaryState = z.infer<typeof beneficiaryStateDocumentSchema>;
+export type BeneficiaryChangeRequest = z.infer<typeof beneficiaryChangeRequestDocumentSchema>;
