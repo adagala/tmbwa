@@ -11,6 +11,8 @@ This directory contains the official KCB Buni Swagger exports and supporting not
 
 An accepted notification or STK request does not credit a member. Successful provider transactions enter the administrator reconciliation queue and only the trusted reconciliation command updates financial records.
 
+KCB sends a Till notification for STK payments too. Its `header.originatorConversationID` carries the M-Pesa receipt, so a Till notification is stored under that receipt when present (the KCB FT reference from `transactionID` is kept as `kcbTransactionReference`). The Till notification and STK callback for one payment therefore share a `kcb_payment_notifications` document, whichever arrives first. Notifications without a receipt-shaped conversation ID are keyed by `transactionID`. Reconciliation refuses an older FT-keyed Till item whose M-Pesa receipt already has its own document; reject those instead.
+
 ## Non-secret runtime parameters
 
 - `KCB_SHARED_REFERENCE` (the account/till number included at the start of STK

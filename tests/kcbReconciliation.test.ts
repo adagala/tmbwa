@@ -4,15 +4,20 @@ import {
   formatEatDate,
   formatEatTime,
   formatReceiptDelay,
+  isMpesaReceiptNumber,
   kcbMatchHint,
   kcbMpesaCode,
   kcbReceiptSource,
+  kcbTransactionReference,
   KcbReceiptEvidence,
   matchesMemberSearch,
   memberSearchText,
   parseKcbPaymentTime,
 } from '../src/lib/kcbReconciliation';
-import { parseKcbTransactionDate } from '../functions/src/kcb/domain';
+import {
+  isMpesaReceiptNumber as backendIsMpesaReceiptNumber,
+  parseKcbTransactionDate,
+} from '../functions/src/kcb/domain';
 
 describe('KCB reconciliation contribution options', () => {
   it('includes unpaid and partially paid contributions', () => {
@@ -98,6 +103,39 @@ describe('KCB receipt evidence', () => {
         }),
       ),
     ).toBe('TJ1A7XK2QF');
+  });
+
+  it('shows both codes for Till receipts keyed by the M-Pesa receipt', () => {
+    const tillByReceipt = receipt({
+      providerTransactionId: 'TJ1A7XK2QF',
+      kcbTransactionReference: 'FT26274K8QW2',
+    });
+    expect(kcbMpesaCode(tillByReceipt)).toBe('TJ1A7XK2QF');
+    expect(kcbTransactionReference(tillByReceipt)).toBe('FT26274K8QW2');
+    expect(kcbTransactionReference(receipt())).toBe('FT26274K8QW2');
+    expect(
+      kcbTransactionReference(
+        receipt({ providerTransactionId: 'TJ1A7XK2QF', source: 'stk_callback' }),
+      ),
+    ).toBeUndefined();
+  });
+
+  it('shows the M-Pesa code from the conversation ID on older Till receipts', () => {
+    const legacyTill = receipt({ conversationId: 'TJ1A7XK2QF' });
+    expect(kcbMpesaCode(legacyTill)).toBe('TJ1A7XK2QF');
+    expect(kcbTransactionReference(legacyTill)).toBe('FT26274K8QW2');
+    expect(
+      kcbMpesaCode(receipt({ conversationId: 'conversation-1' })),
+    ).toBeUndefined();
+  });
+
+  it('recognizes M-Pesa receipts exactly like the backend', () => {
+    ['TJ1A7XK2QF', 'TJ1A7XK', 'TJ1A7XK2QF12345678901', 'tj1a7xk2qf', 'DEV-123456', undefined].forEach(
+      (value) =>
+        expect(isMpesaReceiptNumber(value)).toBe(
+          backendIsMpesaReceiptNumber(value),
+        ),
+    );
   });
 
   it('derives the receipt source for documents written before source existed', () => {

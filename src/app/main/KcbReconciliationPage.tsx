@@ -26,6 +26,7 @@ import {
   formatReceiptDelay,
   kcbMatchHint,
   kcbMpesaCode,
+  kcbTransactionReference,
   kcbReceiptSource,
   matchesMemberSearch,
   memberSearchText,
@@ -86,6 +87,7 @@ const CopyableCode = ({ value }: { value: string }) => {
 const ReceiptEvidence = ({ payment }: { payment: KcbPaymentNotification }) => {
   const source = kcbReceiptSource(payment);
   const mpesaCode = kcbMpesaCode(payment);
+  const kcbReference = kcbTransactionReference(payment);
   const paidAt = parseKcbPaymentTime(payment.transactionDate);
   const receivedAt = payment.receivedAt?.toDate();
   const delay =
@@ -111,19 +113,20 @@ const ReceiptEvidence = ({ payment }: { payment: KcbPaymentNotification }) => {
       <dl className="grid grid-cols-[6rem_1fr] gap-x-2.5 gap-y-2 text-sm">
         {mpesaCode ? (
           <>
-            <dt className="text-gray-500">M-Pesa code</dt>
+            <dt className="text-gray-500">MPesa code</dt>
             <dd>
               <CopyableCode value={mpesaCode} />
             </dd>
           </>
-        ) : (
+        ) : null}
+        {kcbReference ? (
           <>
             <dt className="text-gray-500">KCB ref</dt>
             <dd>
-              <CopyableCode value={payment.providerTransactionId} />
+              <CopyableCode value={kcbReference} />
             </dd>
           </>
-        )}
+        ) : null}
         <dt className="text-gray-500">Time paid</dt>
         <dd className="font-medium">
           {paidAt ? (

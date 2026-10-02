@@ -56,6 +56,8 @@ export type KcbReceiptEvidence = {
   transactionType?: unknown;
   channelCode?: unknown;
   reconciliationWarning?: unknown;
+  kcbTransactionReference?: string;
+  conversationId?: unknown;
 };
 
 export type KcbReceiptSource = 'stk' | 'till';
@@ -69,12 +71,28 @@ export const kcbReceiptSource = (
     ? 'stk'
     : 'till';
 
-// STK callbacks key the notification by MpesaReceiptNumber. Till IPNs key it
-// by KCB's own FT reference and carry no M-Pesa receipt.
-export const kcbMpesaCode = (receipt: KcbReceiptEvidence) =>
-  kcbReceiptSource(receipt) === 'stk'
-    ? receipt.providerTransactionId
+// Mirrors isMpesaReceiptNumber in functions/src/kcb/domain.ts.
+export const isMpesaReceiptNumber = (value: unknown): value is string =>
+  typeof value === 'string' && /^[A-Z0-9]{8,20}$/.test(value);
+
+// STK callbacks key the notification by MpesaReceiptNumber. Till IPNs are
+// keyed by the M-Pesa receipt too when KCB sends one as the conversation ID,
+// keeping the FT reference in kcbTransactionReference. Older Till IPNs are
+// keyed by the FT reference but still carry the receipt as conversationId.
+export const kcbMpesaCode = (receipt: KcbReceiptEvidence) => {
+  if (kcbReceiptSource(receipt) === 'stk' || receipt.kcbTransactionReference) {
+    return receipt.providerTransactionId;
+  }
+  return isMpesaReceiptNumber(receipt.conversationId)
+    ? receipt.conversationId
     : undefined;
+};
+
+export const kcbTransactionReference = (receipt: KcbReceiptEvidence) =>
+  receipt.kcbTransactionReference ??
+  (kcbMpesaCode(receipt) === receipt.providerTransactionId
+    ? undefined
+    : receipt.providerTransactionId);
 
 const MONTHS = [
   'Jan',

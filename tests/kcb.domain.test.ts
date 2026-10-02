@@ -12,10 +12,11 @@ import {
   KcbNotificationValidationError,
   lockedStkAllocationAmount, normalizeKenyanPhone, parseRequestedKenyanPhone,
   ownsExpectedStkTransition, parseKcbTransactionDate, parseStkCallback,
-  parseTillNotification, permitsUnsignedSandboxNotification,
+  isMpesaReceiptNumber, parseTillNotification, permitsUnsignedSandboxNotification,
   secureTokenMatches, stkCallbackSettlesRequest, stkFailureStatus,
   stkPaymentMatchesPendingRequest,
   terminalNotificationMatchesStkRequest,
+  tillNotificationDocumentId,
   unmatchedStkCallbackMatchesRequest,
   verifyKcbSignature,
 } from '../functions/src/kcb/domain';
@@ -64,6 +65,23 @@ describe('KCB Till notification contract', () => {
       messageId: 'message-1', providerTransactionId: 'FT25139M3RM6', billReference: '7969138',
       payerPhone: '+254711000000', payerName: 'PETER BOR', amount: 1000, currency: 'KES',
     });
+  });
+
+  it('keys a Till notification by the M-Pesa receipt KCB sends as the conversation ID', () => {
+    expect(tillNotificationDocumentId(parseTillNotification({
+      ...payload,
+      header: { ...payload.header, originatorConversationID: 'TJ1A7XK2QF' },
+    }))).toBe('TJ1A7XK2QF');
+    expect(tillNotificationDocumentId(parseTillNotification(payload))).toBe('FT25139M3RM6');
+    expect(tillNotificationDocumentId({ providerTransactionId: 'FT25139M3RM6' })).toBe('FT25139M3RM6');
+  });
+
+  it('recognizes only M-Pesa receipt-shaped values', () => {
+    ['TJ1A7XK2QF', 'TJ1A7XK2', 'TJ1A7XK2QF1234567890']
+      .forEach((value) => expect(isMpesaReceiptNumber(value)).toBe(true));
+    ['conversation-1', 'DEV-1234567890', 'tj1a7xk2qf', 'TJ1A7XK', 'TJ1A7XK2QF12345678901',
+      'TJ1A/XK2QF', undefined, 1234567890]
+      .forEach((value) => expect(isMpesaReceiptNumber(value)).toBe(false));
   });
 
   it('accepts direct and server-generated STK bill references only', () => {
