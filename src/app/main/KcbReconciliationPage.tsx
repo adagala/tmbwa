@@ -46,6 +46,10 @@ import {
 } from '@/lib/firebase/kcb';
 import { Member, parseMemberDocument } from 'tmbwa-shared/firebase';
 import { RiExchange2Line } from '@remixicon/react';
+import {
+  DialogKcbAction,
+  KcbActionSummaryItem,
+} from '@/components/ui/kcb/DialogKcbAction';
 
 const devSimulatorEnabled =
   import.meta.env.VITE_APP_ENV === 'development' &&
@@ -58,6 +62,34 @@ const memberFilter = (option: ComboboxOption, query: string) =>
   );
 
 type AllocationDraft = { id: string; contributionId: string; amount: string };
+
+type PendingKcbAction =
+  | {
+      kind: 'reconcile';
+      payment: KcbPaymentNotification;
+      memberId: string;
+      allocations: Array<{ contributionId: string; amount: number }>;
+    }
+  | { kind: 'reject'; payment: KcbPaymentNotification }
+  | { kind: 'resolve-stk'; stkRequest: AmbiguousKcbStkRequest };
+
+const formatKes = (amount: number) => `KES ${amount.toLocaleString('en-KE')}`;
+
+const paymentSummary = (
+  payment: KcbPaymentNotification,
+): KcbActionSummaryItem[] => {
+  const mpesaCode = kcbMpesaCode(payment);
+  return [
+    {
+      label: 'Amount',
+      value: `${payment.currency} ${payment.amount.toLocaleString('en-KE')}`,
+    },
+    ...(mpesaCode ? [{ label: 'MPesa code', value: mpesaCode }] : []),
+    { label: 'Phone', value: payment.payerPhone },
+    ...(payment.payerName ? [{ label: 'Name', value: payment.payerName }] : []),
+    { label: 'Bill ref', value: payment.billReference },
+  ];
+};
 
 const sectionHeadingClass =
   'text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400';
@@ -303,6 +335,13 @@ export default function KcbReconciliationPage() {
   const [testAmount, setTestAmount] = useState(100);
   const [testResult, setTestResult] = useState<string>();
   const pendingTestRequestId = useRef<string>();
+  const [pendingAction, setPendingAction] = useState<PendingKcbAction>();
+  const [actionOpen, setActionOpen] = useState(false);
+
+  const openAction = (action: PendingKcbAction) => {
+    setPendingAction(action);
+    setActionOpen(true);
+  };
 
   const loadMemberContributions = useCallback((memberId: string) => {
     if (!memberId || loadedContributionMembers.current.has(memberId)) {
@@ -544,34 +583,17 @@ export default function KcbReconciliationPage() {
     return undefined;
   };
 
-  const reconcile = async (payment: KcbPaymentNotification) => {
+  const reconcile = (payment: KcbPaymentNotification) => {
     const memberId = selectedMembers[payment.providerTransactionId];
     if (!memberId) return setError('Choose a member.');
     if (payment.purpose === 'account_top_up') {
-      if (
-        !window.confirm(
-          `Record this KES ${payment.amount.toLocaleString('en-KE')} member top-up? It settles unpaid contributions oldest first and keeps the rest as credit for future contributions.`,
-        )
-      )
-        return;
-      setBusy(payment.providerTransactionId);
       setError(undefined);
-      try {
-        await reconcileKcbPayment({
-          providerTransactionId: payment.providerTransactionId,
-          memberId,
-          allocations: [],
-        });
-      } catch (cause) {
-        setError(
-          cause instanceof Error
-            ? cause.message
-            : 'Could not reconcile payment.',
-        );
-      } finally {
-        setBusy(undefined);
-      }
-      return;
+      return openAction({
+        kind: 'reconcile',
+        payment,
+        memberId,
+        allocations: [],
+      });
     }
     const allocations = allocationsFor(payment.providerTransactionId);
     const validationError = validateDrafts(
@@ -581,28 +603,8 @@ export default function KcbReconciliationPage() {
       false,
     );
     if (validationError) return setError(validationError);
-    const allocated = allocations.reduce((sum, item) => sum + item.amount, 0);
-    if (
-      !window.confirm(
-        `Allocate KES ${allocated.toLocaleString('en-KE')} and leave KES ${(payment.amount - allocated).toLocaleString('en-KE')} as account credit?`,
-      )
-    )
-      return;
-    setBusy(payment.providerTransactionId);
     setError(undefined);
-    try {
-      await reconcileKcbPayment({
-        providerTransactionId: payment.providerTransactionId,
-        memberId,
-        allocations,
-      });
-    } catch (cause) {
-      setError(
-        cause instanceof Error ? cause.message : 'Could not reconcile payment.',
-      );
-    } finally {
-      setBusy(undefined);
-    }
+    openAction({ kind: 'reconcile', payment, memberId, allocations });
   };
 
   const allocateCredit = async (payment: KcbPaymentNotification) => {
@@ -640,50 +642,6 @@ export default function KcbReconciliationPage() {
     }
   };
 
-  const reject = async (payment: KcbPaymentNotification) => {
-    const reason = window.prompt('Why should this payment be rejected?');
-    if (!reason?.trim()) return;
-    setBusy(payment.providerTransactionId);
-    setError(undefined);
-    try {
-      await rejectKcbPayment(payment.providerTransactionId, reason.trim());
-    } catch (cause) {
-      setError(
-        cause instanceof Error ? cause.message : 'Could not reject payment.',
-      );
-    } finally {
-      setBusy(undefined);
-    }
-  };
-
-  const resolveAmbiguousStkRequest = async (
-    stkRequest: AmbiguousKcbStkRequest,
-  ) => {
-    const reason = window.prompt(
-      'Enter the provider verification evidence confirming that no payment was accepted:',
-    );
-    if (!reason?.trim()) return;
-    if (
-      !window.confirm(
-        'Mark this STK request as failed and release its contribution lock?',
-      )
-    )
-      return;
-    setBusy(stkRequest.requestId);
-    setError(undefined);
-    try {
-      await resolveKcbStkUnknownOutcome(stkRequest.requestId, reason.trim());
-    } catch (cause) {
-      setError(
-        cause instanceof Error
-          ? cause.message
-          : 'Could not resolve the ambiguous STK request.',
-      );
-    } finally {
-      setBusy(undefined);
-    }
-  };
-
   const sendDevelopmentTest = async () => {
     const requestId = pendingTestRequestId.current ?? crypto.randomUUID();
     pendingTestRequestId.current = requestId;
@@ -706,6 +664,102 @@ export default function KcbReconciliationPage() {
     } finally {
       setBusy(undefined);
     }
+  };
+
+  const actionDialog = (action: PendingKcbAction) => {
+    if (action.kind === 'reject') {
+      return {
+        title: 'Reject payment',
+        description:
+          'The notification is marked rejected without changing any member balance. The reason is recorded in the audit log.',
+        summary: paymentSummary(action.payment),
+        reasonField: {
+          id: `reject-reason-${action.payment.providerTransactionId}`,
+          label: 'Rejection reason',
+          placeholder: 'Why should this payment be rejected?',
+        },
+        confirmLabel: 'Reject payment',
+        loadingText: 'Rejecting',
+        destructive: true,
+        onConfirm: async (reason: string) => {
+          await rejectKcbPayment(action.payment.providerTransactionId, reason);
+        },
+      };
+    }
+    if (action.kind === 'resolve-stk') {
+      const { stkRequest } = action;
+      return {
+        title: 'Confirm no payment was accepted',
+        description:
+          'Marks this STK request as failed and releases its contribution lock. Only continue after KCB confirms that no payment was accepted.',
+        summary: [
+          { label: 'Request', value: stkRequest.requestId },
+          {
+            label: 'Member',
+            value: memberNames.get(stkRequest.memberId) ?? stkRequest.memberId,
+          },
+          {
+            label: 'Contribution',
+            value: stkRequest.contributionId || 'Account top-up',
+          },
+        ],
+        reasonField: {
+          id: `stk-evidence-${stkRequest.requestId}`,
+          label: 'Provider verification evidence',
+          placeholder: 'e.g. KCB support ticket or status query result',
+        },
+        confirmLabel: 'Mark failed and release lock',
+        loadingText: 'Releasing',
+        destructive: true,
+        onConfirm: async (reason: string) => {
+          await resolveKcbStkUnknownOutcome(stkRequest.requestId, reason);
+        },
+      };
+    }
+    const { payment, memberId, allocations } = action;
+    const memberSummary = {
+      label: 'Member',
+      value: memberNames.get(memberId) ?? memberId,
+    };
+    const confirm = async () => {
+      await reconcileKcbPayment({
+        providerTransactionId: payment.providerTransactionId,
+        memberId,
+        allocations,
+      });
+    };
+    if (payment.purpose === 'account_top_up') {
+      return {
+        title: 'Record member top-up',
+        description: `Record this ${formatKes(payment.amount)} member top-up? It settles unpaid contributions oldest first and keeps the rest as credit for future contributions.`,
+        summary: [memberSummary, ...paymentSummary(payment)],
+        confirmLabel: 'Record top-up',
+        loadingText: 'Recording',
+        onConfirm: confirm,
+      };
+    }
+    const allocated = allocations.reduce((sum, item) => sum + item.amount, 0);
+    const months = new Map(
+      (contributions[memberId] ?? []).map((option) => [
+        option.id,
+        option.month,
+      ]),
+    );
+    return {
+      title: 'Reconcile payment',
+      description: `Allocate ${formatKes(allocated)} and leave ${formatKes(payment.amount - allocated)} as account credit?`,
+      summary: [
+        memberSummary,
+        ...paymentSummary(payment),
+        ...allocations.map((allocation) => ({
+          label: `Allocate to ${months.get(allocation.contributionId) ?? allocation.contributionId}`,
+          value: formatKes(allocation.amount),
+        })),
+      ],
+      confirmLabel: 'Reconcile payment',
+      loadingText: 'Reconciling',
+      onConfirm: confirm,
+    };
   };
 
   if (user && !allowed) return <Navigate to="/profile" replace />;
@@ -823,9 +877,8 @@ export default function KcbReconciliationPage() {
               </dl>
               <Button
                 variant="destructive"
-                isLoading={busy === stkRequest.requestId}
                 disabled={Boolean(busy)}
-                onClick={() => void resolveAmbiguousStkRequest(stkRequest)}
+                onClick={() => openAction({ kind: 'resolve-stk', stkRequest })}
               >
                 Confirm no payment and release lock
               </Button>
@@ -950,14 +1003,14 @@ export default function KcbReconciliationPage() {
                 </div>
                 <div className="mt-auto flex gap-2">
                   <Button
-                    onClick={() => void reconcile(payment)}
-                    isLoading={busy === payment.providerTransactionId}
+                    onClick={() => reconcile(payment)}
+                    disabled={Boolean(busy)}
                   >
                     Reconcile payment
                   </Button>
                   <Button
                     variant="destructive"
-                    onClick={() => void reject(payment)}
+                    onClick={() => openAction({ kind: 'reject', payment })}
                     disabled={Boolean(busy)}
                   >
                     Reject
@@ -1027,6 +1080,13 @@ export default function KcbReconciliationPage() {
             );
           })}
         </div>
+      ) : null}
+      {pendingAction ? (
+        <DialogKcbAction
+          {...actionDialog(pendingAction)}
+          open={actionOpen}
+          onOpenChange={setActionOpen}
+        />
       ) : null}
     </div>
   );
