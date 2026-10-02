@@ -10,7 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/Dialog';
-import { Input } from '@/components/Input';
+import { Textarea } from '@/components/Textarea';
 import { Label } from '@/components/Label';
 
 export type KcbActionSummaryItem = { label: string; value: string };
@@ -103,10 +103,11 @@ export const DialogKcbAction = ({
           {reasonField ? (
             <div className="space-y-1">
               <Label htmlFor={reasonField.id}>{reasonField.label}</Label>
-              <Input
+              <Textarea
                 id={reasonField.id}
                 required
                 autoFocus
+                rows={3}
                 placeholder={reasonField.placeholder}
                 value={reason}
                 disabled={loading}
