@@ -1,4 +1,7 @@
 import { createVerify, timingSafeEqual } from 'crypto';
+import { isMpesaReceiptNumber } from 'tmbwa-shared';
+
+export { isMpesaReceiptNumber };
 
 export type KcbTillNotification = {
   messageId: string;
@@ -131,12 +134,6 @@ export const parseTillNotification = (payload: unknown): KcbTillNotification => 
     narration: optionalText(notification.narration),
   };
 };
-
-// M-Pesa receipts are currently 10 characters, but neither Safaricom nor KCB
-// guarantees that, so accept a range. This only screens out non-receipt
-// conversation IDs and keeps the value safe as a document ID.
-export const isMpesaReceiptNumber = (value: unknown): value is string =>
-  typeof value === 'string' && /^[A-Z0-9]{8,20}$/.test(value);
 
 // KCB reports the M-Pesa receipt as originatorConversationID. Keying by it lets
 // the Till notification for an STK payment land on the STK callback's document

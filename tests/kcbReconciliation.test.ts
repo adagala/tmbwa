@@ -4,7 +4,6 @@ import {
   formatEatDate,
   formatEatTime,
   formatReceiptDelay,
-  isMpesaReceiptNumber,
   kcbMatchHint,
   kcbMpesaCode,
   kcbReceiptSource,
@@ -14,10 +13,7 @@ import {
   memberSearchText,
   parseKcbPaymentTime,
 } from '../src/lib/kcbReconciliation';
-import {
-  isMpesaReceiptNumber as backendIsMpesaReceiptNumber,
-  parseKcbTransactionDate,
-} from '../functions/src/kcb/domain';
+import { parseKcbTransactionDate } from '../functions/src/kcb/domain';
 
 describe('KCB reconciliation contribution options', () => {
   it('includes unpaid and partially paid contributions', () => {
@@ -127,15 +123,6 @@ describe('KCB receipt evidence', () => {
     expect(
       kcbMpesaCode(receipt({ conversationId: 'conversation-1' })),
     ).toBeUndefined();
-  });
-
-  it('recognizes M-Pesa receipts exactly like the backend', () => {
-    ['TJ1A7XK2QF', 'TJ1A7XK', 'TJ1A7XK2QF12345678901', 'tj1a7xk2qf', 'DEV-123456', undefined].forEach(
-      (value) =>
-        expect(isMpesaReceiptNumber(value)).toBe(
-          backendIsMpesaReceiptNumber(value),
-        ),
-    );
   });
 
   it('derives the receipt source for documents written before source existed', () => {

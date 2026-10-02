@@ -83,6 +83,16 @@ export const unallocatedPaymentAmount = (
     ? Math.max(Number(amount) - Number(contributionAmount), 0)
     : Number(storedAmount);
 
+// ---------------------------------------------------------------------------
+// KCB / M-Pesa
+// ---------------------------------------------------------------------------
+
+// M-Pesa receipts are currently 10 characters, but neither Safaricom nor KCB
+// guarantees that, so accept a range. This only screens out non-receipt
+// conversation IDs and keeps the value safe as a document ID.
+export const isMpesaReceiptNumber = (value: unknown): value is string =>
+  typeof value === 'string' && /^[A-Z0-9]{8,20}$/.test(value);
+
 export const member_status = [
   MEMBER_STATUS.ACTIVE,
   MEMBER_STATUS.INACTIVE,

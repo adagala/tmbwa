@@ -1,3 +1,5 @@
+import { isMpesaReceiptNumber } from 'tmbwa-shared';
+
 export type ContributionOption = {
   id: string;
   month: string;
@@ -70,10 +72,6 @@ export const kcbReceiptSource = (
   receipt.channelCode === 'stk'
     ? 'stk'
     : 'till';
-
-// Mirrors isMpesaReceiptNumber in functions/src/kcb/domain.ts.
-export const isMpesaReceiptNumber = (value: unknown): value is string =>
-  typeof value === 'string' && /^[A-Z0-9]{8,20}$/.test(value);
 
 // STK callbacks key the notification by MpesaReceiptNumber. Till IPNs are
 // keyed by the M-Pesa receipt too when KCB sends one as the conversation ID,
