@@ -113,6 +113,26 @@ describe('Firestore authorization', () => {
     await assertSucceeds(setDoc(doc(db, 'members/new-member'), newMember(past)));
   });
 
+  it('keeps phoneNormalized server-owned', async () => {
+    await seed();
+    const adminDb = testEnv.authenticatedContext('admin', { roles: ['super_admin'] }).firestore();
+    const memberDb = testEnv.authenticatedContext('member-a', { role: 'member' }).firestore();
+    const past = new Date('2020-03-15T09:00:00Z');
+    const phoneNormalized = '+254712345679';
+    await assertFails(setDoc(doc(adminDb, 'members/new-member'), newMember(past, { phoneNormalized })));
+    await assertFails(updateDoc(doc(adminDb, 'members/member-a'), { phoneNormalized }));
+    await assertFails(updateDoc(doc(adminDb, 'members/member-a'), { phonenumber: '0712345679', phoneNormalized }));
+    await assertFails(updateDoc(doc(memberDb, 'members/member-a'), { phoneNormalized }));
+    await assertFails(updateDoc(doc(memberDb, 'members/member-a'), { phonenumber: '0712345679', phoneNormalized }));
+    await testEnv.withSecurityRulesDisabled(async (context) =>
+      updateDoc(doc(context.firestore(), 'members/member-a'), { phoneNormalized }));
+    await assertFails(updateDoc(doc(adminDb, 'members/member-a'), { phoneNormalized: deleteField() }));
+    await assertFails(updateDoc(doc(memberDb, 'members/member-a'), { phoneNormalized: deleteField() }));
+    // The profile phone itself stays editable; Functions update the copy.
+    await assertSucceeds(updateDoc(doc(memberDb, 'members/member-a'), { phonenumber: '0712345670' }));
+    await assertSucceeds(setDoc(doc(adminDb, 'members/new-member'), newMember(past)));
+  });
+
   it('denies a super admin claim the member record no longer supports', async () => {
     await seed();
     const db = testEnv.authenticatedContext('admin', { roles: ['super_admin'] }).firestore();

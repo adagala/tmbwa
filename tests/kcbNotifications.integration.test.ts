@@ -20,6 +20,7 @@ process.env.KCB_PUBLIC_KEY = '';
 const { admin } = await import('../functions/src/firebaseAdmin');
 admin.initializeApp({ projectId: 'demo-tmbwa' });
 const kcb = await import('../functions/src/kcb');
+const { profilePhoneNormalized } = await import('../functions/src/members/phone');
 
 const db = () => admin.firestore();
 const MEMBER = 'member-a';
@@ -401,5 +402,94 @@ describe('Till notifications and STK callbacks for one payment', () => {
     });
     expect(stored).not.toHaveProperty('paidAt');
     expect(stored).not.toHaveProperty('mpesaReceiptNumber');
+  });
+});
+
+describe('Till notification member suggestions', () => {
+  // The member triggers keep phoneNormalized; they do not run here.
+  const setProfilePhone = (memberId: string, phonenumber: string) =>
+    db()
+      .doc(`members/${memberId}`)
+      .set(
+        { phonenumber, phoneNormalized: profilePhoneNormalized(phonenumber) },
+        { merge: true },
+      );
+
+  const deliverFrom = (debitMSISDN: string, receipt: string) =>
+    deliverTillNotification({
+      messageId: `message-${receipt}`,
+      header: { originatorConversationID: receipt },
+      data: { debitMSISDN, transactionID: `FT-${receipt}` },
+    });
+
+  it('suggests the one member whose profile phone matches the payer', async () => {
+    await setProfilePhone(MEMBER, '0712345678');
+    const response = await deliverTillNotification();
+
+    expect(response.statusCode).toBe(200);
+    expect(await notification()).toMatchObject({
+      status: 'unresolved',
+      payerPhone: PHONE,
+      suggestedMemberId: MEMBER,
+      matchReason: 'unique_profile_phone',
+    });
+    expect(await payments()).toHaveLength(0);
+  });
+
+  it('matches 07, 2547, +2547 and 01 forms of the same number', async () => {
+    await setProfilePhone(MEMBER, '+254 712 345 678');
+    await db().doc('members/member-b').set({
+      ...memberFields,
+      email: 'bob@example.test',
+      status: 'active',
+      balance: 0,
+      contributionBalance: 0,
+      reservedKcbCredit: 0,
+    });
+    await setProfilePhone('member-b', '0112 345-678');
+
+    const deliveries: Array<[string, string, string]> = [
+      ['0712345678', 'TJ1A7XK2Q1', MEMBER],
+      ['254712345678', 'TJ1A7XK2Q2', MEMBER],
+      ['+254712345678', 'TJ1A7XK2Q3', MEMBER],
+      ['0112345678', 'TJ1A7XK2Q4', 'member-b'],
+      ['254112345678', 'TJ1A7XK2Q5', 'member-b'],
+    ];
+    for (const [payer, receipt, memberId] of deliveries) {
+      expect((await deliverFrom(payer, receipt)).statusCode).toBe(200);
+      expect(await notification(receipt)).toMatchObject({
+        suggestedMemberId: memberId,
+        matchReason: 'unique_profile_phone',
+      });
+    }
+  });
+
+  it('suggests no member when several share the phone', async () => {
+    await setProfilePhone(MEMBER, '0712345678');
+    await db().doc('members/member-b').set({
+      ...memberFields,
+      email: 'bob@example.test',
+      status: 'active',
+      balance: 0,
+      contributionBalance: 0,
+      reservedKcbCredit: 0,
+    });
+    await setProfilePhone('member-b', '254712345678');
+    await deliverTillNotification();
+
+    expect(await notification()).toMatchObject({
+      suggestedMemberId: null,
+      matchReason: 'ambiguous_phone_match',
+    });
+  });
+
+  it('suggests no member when no profile phone matches', async () => {
+    await setProfilePhone(MEMBER, '0722000000');
+    await deliverTillNotification();
+
+    expect(await notification()).toMatchObject({
+      suggestedMemberId: null,
+      matchReason: 'no_verified_phone_match',
+    });
   });
 });

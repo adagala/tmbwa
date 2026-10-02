@@ -35,8 +35,8 @@ Reconciliation is a sensitive financial action. Confirm the KCB receipt, payer, 
    - Payer name and phone number
    - Amount
    - Bill reference
-   - Any member suggested from a verified phone number
-3. Select the correct **Member**. Treat a suggested member as a hint and confirm it independently.
+   - Any member suggested because the payer's phone number is on exactly one member's profile
+3. Select the correct **Member**. Treat a suggested member as a hint and confirm it independently: members edit their own phone number, and a number shared by several members (for example a family phone) gives no suggestion.
 4. Under **Contribution allocations**, select a contribution month and enter the amount to allocate.
 5. Use **Add allocation** when one receipt must be split across multiple contribution months.
 6. Confirm the totals shown for **Receipt**, **Allocated**, and **Account credit**.

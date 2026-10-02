@@ -27,6 +27,17 @@ Whichever source arrives second never overwrites the payment details the first o
 
 All of these fields are optional; documents written before them fall back to the older fields.
 
+## Till member suggestions
+
+A Till notification is matched on the payer phone against the server-owned `members/{id}.phoneNormalized`, a copy of the member's profile `phonenumber` in the `+2547XXXXXXXX` / `+2541XXXXXXXX` form. The `newMember` and `updateMember` triggers keep it current, and remove it when the profile number is not a valid Kenyan mobile; clients cannot write it. One matching member is stored as `suggestedMemberId` with `matchReason: 'unique_profile_phone'`; no match stores `no_verified_phone_match` and several store `ambiguous_phone_match`, both without a suggestion. Notifications stored earlier may carry `unique_verified_phone`. A suggestion is never applied automatically: an administrator confirms the member when reconciling. Existing notifications are not re-matched.
+
+To enable it in an environment:
+
+1. Deploy the default Functions codebase.
+2. From `functions/`, set `GOOGLE_APPLICATION_CREDENTIALS` to that environment's service-account file and `GOOGLE_CLOUD_PROJECT` to its project ID (the script refuses to run without it), then run `npm run backfill:member-phone-normalized` (dry run). Check the `Target project` line it prints first, and review the updated, unchanged, invalid and duplicate counts. It prints member IDs only, never phone numbers.
+3. Run `npm run backfill:member-phone-normalized -- --apply`. It is safe to re-run.
+4. In development, send a synthetic Till notification from a member's profile phone and confirm it is suggested for that member.
+
 ## Non-secret runtime parameters
 
 - `KCB_SHARED_REFERENCE` (the account/till number included at the start of STK

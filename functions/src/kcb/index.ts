@@ -267,10 +267,13 @@ export const kcbTillNotification = onRequest(
           }
           return;
         }
+        // Only a suggestion: an administrator confirms the member before any
+        // balance changes. Members edit their own phone number, so a number
+        // two members share leaves the payment without a suggestion.
         const matches = await transaction.get(
           db()
             .collection('members')
-            .where('verifiedPhoneNormalized', '==', notification.payerPhone)
+            .where('phoneNormalized', '==', notification.payerPhone)
             .limit(2),
         );
         const suggestedMemberId =
@@ -286,7 +289,7 @@ export const kcbTillNotification = onRequest(
               status: 'unresolved',
               suggestedMemberId,
               matchReason: suggestedMemberId
-                ? 'unique_verified_phone'
+                ? 'unique_profile_phone'
                 : matches.empty
                   ? 'no_verified_phone_match'
                   : 'ambiguous_phone_match',
