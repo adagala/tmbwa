@@ -8,6 +8,7 @@
     "migrate:stk-locks": "npm run build:scripts && node lib-scripts/scripts/kcb/backfillActiveStkLocks.js",
     "validate:members": "npm run build:scripts && node lib-scripts/scripts/members/validateMembers.js",
     "backfill:member-roles": "npm run build:scripts && node lib-scripts/scripts/members/backfillMemberRoles.js",
+    "backfill:member-phone-normalized": "npm run build:scripts && node lib-scripts/scripts/members/backfillMemberPhoneNormalized.js",
     "roles:readiness": "npm run build:scripts && node lib-scripts/scripts/members/rolesReadiness.js",
     "roles:restore-legacy": "npm run build:scripts && node lib-scripts/scripts/members/restoreLegacyRoleFields.js",
     "build:watch": "tsc --watch",

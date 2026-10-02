@@ -4,6 +4,7 @@ import {
   onDocumentDeleted,
   onDocumentUpdated,
 } from 'firebase-functions/v2/firestore';
+import { logger } from 'firebase-functions';
 import { Member, MonthlyStats, Stats } from '../types';
 import {
   createIndex,
@@ -20,8 +21,40 @@ import {
 } from 'tmbwa-shared';
 import { memberData } from '../firestoreData';
 import { syncRoleClaims } from './claims';
+import {
+  phoneNormalizedChange,
+  phoneNumberChanged,
+  profilePhoneNormalized,
+} from './phone';
 
 export { assignMemberRoles } from './roles';
+
+// Brings `phoneNormalized` in line with the member's current `phonenumber`.
+// It reads the record as it is now, so an event delivered late cannot restore
+// an older number, and writes only when the value differs, so the update it
+// causes does nothing further. Logs the member ID only, never the number.
+const syncPhoneNormalized = async (memberId: string) => {
+  const ref = admin.firestore().doc(`members/${memberId}`);
+  const invalid = await admin.firestore().runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(ref);
+    if (!snapshot.exists) return false;
+    const data = snapshot.data();
+    const change = phoneNormalizedChange(data);
+    if (change?.action === 'set') {
+      transaction.update(ref, { phoneNormalized: change.value });
+    } else if (change?.action === 'remove') {
+      transaction.update(ref, {
+        phoneNormalized: admin.firestore.FieldValue.delete(),
+      });
+    }
+    return !profilePhoneNormalized(data?.phonenumber);
+  });
+  if (invalid) {
+    logger.warn('Member phone number is not a valid Kenyan mobile.', {
+      memberId,
+    });
+  }
+};
 
 export const newMember = onDocumentCreated(
   {
@@ -79,6 +112,7 @@ export const newMember = onDocumentCreated(
     batch.set(monthlyStatsRef, monthlyStats, { merge: true });
 
     await batch.commit();
+    await syncPhoneNormalized(uid);
 
     // The bootstrap credential is deliberately random and never disclosed.
     // Members establish their own password through Firebase's reset flow.
@@ -170,7 +204,10 @@ export const updateMember = onDocumentUpdated(
     }
 
     // if phone number updated, update phone
-    if (memberBefore.phonenumber !== memberAfter.phonenumber) {
+    if (
+      phoneNumberChanged(snapshots.before.data(), snapshots.after.data())
+    ) {
+      await syncPhoneNormalized(uid);
       await admin
         .auth()
         .updateUser(uid, { phoneNumber: memberAfter.phonenumber });

@@ -212,11 +212,16 @@ export const kcbMatchHint = (
             'KCB confirmed this payment, but its details do not match the stored STK request. Check the phone and member before reconciling.',
         };
   }
-  if (receipt.matchReason === 'unique_verified_phone') {
+  // unique_verified_phone is kept for notifications stored before matching
+  // used the profile phone number.
+  if (
+    receipt.matchReason === 'unique_profile_phone' ||
+    receipt.matchReason === 'unique_verified_phone'
+  ) {
     return {
       variant: 'warning',
       title: 'Suggested member',
-      message: `${suggestedMemberName ?? 'One member'} has this verified phone. Confirm before reconciling.`,
+      message: `${suggestedMemberName ?? 'One member'} had this phone number on their profile when the payment arrived. Confirm before reconciling.`,
     };
   }
   if (receipt.matchReason === 'ambiguous_phone_match') {
@@ -224,7 +229,7 @@ export const kcbMatchHint = (
       variant: 'warning',
       title: 'Several members share this phone',
       message:
-        'More than one member has this verified phone. Match on the payer name or the time paid.',
+        'More than one member had this phone number on their profile. Match on the payer name or the time paid.',
     };
   }
   if (receipt.matchReason === 'no_verified_phone_match') {
@@ -232,7 +237,7 @@ export const kcbMatchHint = (
       variant: 'warning',
       title: 'No phone match',
       message:
-        'No member has this verified phone. Match on the payer name or the time paid, or reject it with a reason.',
+        'No member was matched to this phone number. Match on the payer name or the time paid, or reject it with a reason.',
     };
   }
   return undefined;

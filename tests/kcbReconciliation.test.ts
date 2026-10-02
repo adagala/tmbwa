@@ -83,7 +83,7 @@ const receipt = (
   amount: 1500,
   currency: 'KES',
   transactionDate: 'Thu Oct 01 14:32:05 EAT 2026',
-  matchReason: 'unique_verified_phone',
+  matchReason: 'unique_profile_phone',
   source: 'till_notification',
   ...overrides,
 });
@@ -211,6 +211,17 @@ describe('KCB receipt evidence', () => {
     expect(kcbMatchHint(receipt(), 'Jane Kamau')?.message).toContain(
       'Jane Kamau',
     );
+    expect(kcbMatchHint(receipt(), 'Jane Kamau')).toMatchObject({
+      title: 'Suggested member',
+      message: expect.stringContaining('phone number on their profile'),
+    });
+    // Notifications stored before profile phone matching keep their reason.
+    expect(
+      kcbMatchHint(
+        receipt({ matchReason: 'unique_verified_phone' }),
+        'Jane Kamau',
+      ),
+    ).toEqual(kcbMatchHint(receipt(), 'Jane Kamau'));
     expect(
       kcbMatchHint(receipt({ matchReason: 'no_verified_phone_match' }))?.title,
     ).toBe('No phone match');

@@ -202,6 +202,9 @@ export const memberDocumentSchema = memberFormBaseSchema.extend({
   reservedKcbCredit: z.number().nonnegative().default(0),
   // Server-owned; written only by assignMemberRoles and the roles backfill.
   roles: z.array(z.string()).optional(),
+  // Server-owned; a normalised copy of phonenumber kept by the member
+  // triggers and the phoneNormalized backfill for KCB Till matching.
+  phoneNormalized: z.string().optional(),
   firstnameSearchableIndex: searchableIndexSchema.optional(),
   lastnameSearchableIndex: searchableIndexSchema.optional(),
   createat: z.unknown().optional(),
