@@ -308,6 +308,15 @@ export const kcbPaymentNotificationDocumentSchema = z.object({
   paymentId: z.string().optional(),
   receiptNumber: z.string().optional(),
   kcbTransactionReference: z.string().optional(),
+  // Explicit per-source identifiers; messageId and channelCode keep whatever
+  // the first source to arrive reported.
+  kcbMessageId: z.string().optional(),
+  kcbChannelCode: z.string().optional(),
+  checkoutRequestId: z.string().optional(),
+  merchantRequestId: z.string().optional(),
+  mpesaReceiptNumber: z.string().optional(),
+  // Parsed from transactionDate, which keeps the raw provider value.
+  paidAt: z.unknown().optional(),
   allocations: z.array(z.object({
     contributionId: z.string().min(1),
     amount: z.number().positive(),

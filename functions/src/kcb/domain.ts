@@ -145,6 +145,105 @@ export const tillNotificationDocumentId = (
     ? notification.conversationId
     : notification.providerTransactionId;
 
+// Payment details both the Till notification and the STK callback report. When
+// one source writes onto a document the other created, the values already
+// there are kept; each source's own identifiers use explicit field names.
+const REPORTED_PAYMENT_FIELDS = [
+  'messageId',
+  'channelCode',
+  'billReference',
+  'payerPhone',
+  'payerName',
+  'currency',
+  'transactionDate',
+  'transactionType',
+  'paidAt',
+  'mpesaReceiptNumber',
+  'receivedAt',
+] as const;
+
+const hasValue = (value: unknown) =>
+  value !== undefined && value !== null && value !== '';
+
+export const withoutReportedFieldsAlreadySet = (
+  incoming: Record<string, unknown>,
+  existing: Record<string, unknown> | undefined,
+) => {
+  if (!existing) return incoming;
+  const result = { ...incoming };
+  REPORTED_PAYMENT_FIELDS.forEach((field) => {
+    if (hasValue(existing[field])) delete result[field];
+  });
+  return result;
+};
+
+// The raw transactionDate stays authoritative; an unparseable value leaves
+// paidAt unset rather than blocking the notification.
+export const kcbPaidAt = (transactionDate: unknown) => {
+  if (typeof transactionDate !== 'string') return undefined;
+  try {
+    return parseKcbTransactionDate(transactionDate);
+  } catch {
+    return undefined;
+  }
+};
+
+export const stkNotificationIdentifiers = (callback: {
+  checkoutRequestId: string;
+  merchantRequestId?: unknown;
+  receiptNumber?: unknown;
+  transactionDate?: unknown;
+}) => {
+  const paidAt = kcbPaidAt(callback.transactionDate);
+  return {
+    checkoutRequestId: callback.checkoutRequestId,
+    ...(typeof callback.merchantRequestId === 'string' && callback.merchantRequestId
+      ? { merchantRequestId: callback.merchantRequestId }
+      : {}),
+    ...(typeof callback.receiptNumber === 'string' && callback.receiptNumber
+      ? { mpesaReceiptNumber: callback.receiptNumber }
+      : {}),
+    ...(paidAt ? { paidAt } : {}),
+  };
+};
+
+export const tillNotificationIdentifiers = (notification: KcbTillNotification) => {
+  const paidAt = kcbPaidAt(notification.transactionDate);
+  return {
+    kcbMessageId: notification.messageId,
+    kcbChannelCode: notification.channelCode,
+    kcbTransactionReference: notification.providerTransactionId,
+    ...(isMpesaReceiptNumber(notification.conversationId)
+      ? { mpesaReceiptNumber: notification.conversationId }
+      : {}),
+    ...(paidAt ? { paidAt } : {}),
+  };
+};
+
+// The Till notification already holds an STK payment's receipt and nothing has
+// acted on it, so the STK callback may settle the payment on that document.
+export const stkCallbackCanSettleTillNotification = (
+  existing: { status: string; source?: unknown; stkRequestId?: unknown; amount: number },
+  callbackAmount: number | undefined,
+) =>
+  existing.status === 'unresolved' &&
+  existing.source !== 'stk_callback' &&
+  existing.stkRequestId === undefined &&
+  Number(existing.amount) === Number(callbackAmount);
+
+// A Till notification whose amount disagrees with the STK callback keeps its
+// own amount and is flagged for an administrator.
+export const stkCallbackAmountFields = (
+  existing: { source?: unknown; stkRequestId?: unknown; amount: number } | undefined,
+  callbackAmount: number,
+) =>
+  existing &&
+  existing.source !== 'stk_callback' &&
+  existing.stkRequestId === undefined &&
+  Number(existing.amount) !== Number(callbackAmount)
+    ? { stkCallbackAmount: callbackAmount, reconciliationWarning: 'payment_details_mismatch' }
+    : { amount: callbackAmount };
+
 export const verifyKcbSignature =(rawBody: Buffer, signature: string, publicKey: string) => {
   if (!rawBody.length || !signature.trim() || !publicKey.trim()) return false;
   try {

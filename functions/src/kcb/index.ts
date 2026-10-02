@@ -55,7 +55,12 @@ import {
   stkNotificationTarget,
   stkPaymentMatchesPendingRequest,
   terminalNotificationMatchesStkRequest,
+  stkCallbackAmountFields,
+  stkCallbackCanSettleTillNotification,
+  stkNotificationIdentifiers,
   tillNotificationDocumentId,
+  tillNotificationIdentifiers,
+  withoutReportedFieldsAlreadySet,
   unmatchedStkCallbackMatchesRequest,
   verifyKcbSignature,
 } from './domain';
@@ -99,6 +104,25 @@ const KCB_TOKEN_URL = defineString('KCB_TOKEN_URL', {
 const KCB_STK_URL = defineString('KCB_STK_URL', {
   default: 'https://api.buni.kcbgroup.com/mm/api/request/1.0.0/stkpush',
 });
+// Creates the STK notification, or writes it onto the Till notification that
+// already holds the receipt without replacing what the Till reported.
+const writeStkNotification = (
+  transaction: FirebaseFirestore.Transaction,
+  notificationRef: FirebaseFirestore.DocumentReference,
+  notification: Record<string, unknown>,
+  existingTillNotification: Record<string, unknown> | undefined,
+) => {
+  if (existingTillNotification) {
+    transaction.set(
+      notificationRef,
+      withoutReportedFieldsAlreadySet(notification, existingTillNotification),
+      { merge: true },
+    );
+  } else {
+    transaction.create(notificationRef, notification);
+  }
+};
+
 const KCB_STK_CALLBACK_URL = defineString('KCB_STK_CALLBACK_URL');
 const KCB_STK_ROUTE_CODE = defineString('KCB_STK_ROUTE_CODE', {
   default: '207',
@@ -213,21 +237,33 @@ export const kcbTillNotification = onRequest(
       }
 
       const notificationId = tillNotificationDocumentId(notification);
-      const kcbTransactionReference =
-        notificationId === notification.providerTransactionId
-          ? undefined
-          : notification.providerTransactionId;
+      const tillIdentifiers = tillNotificationIdentifiers(notification);
       const notificationRef = db().doc(
         `kcb_payment_notifications/${notificationId}`,
       );
       await db().runTransaction(async (transaction) => {
         const existing = await transaction.get(notificationRef);
         if (existing.exists) {
-          if (
-            kcbTransactionReference &&
-            existing.get('kcbTransactionReference') === undefined
-          ) {
-            transaction.update(notificationRef, { kcbTransactionReference });
+          // The STK callback recorded this payment first: add what only the
+          // Till notification reports, without touching its settlement.
+          if (existing.get('kcbMessageId') === undefined) {
+            transaction.set(
+              notificationRef,
+              withoutReportedFieldsAlreadySet(
+                {
+                  ...tillIdentifiers,
+                  payerName: notification.payerName,
+                  ...(notification.conversationId
+                    ? { conversationId: notification.conversationId }
+                    : {}),
+                  ...(notification.narration
+                    ? { narration: notification.narration }
+                    : {}),
+                },
+                existing.data(),
+              ),
+              { merge: true },
+            );
           }
           return;
         }
@@ -245,8 +281,8 @@ export const kcbTillNotification = onRequest(
             kcbPaymentNotificationDocumentSchema,
             {
               ...notification,
+              ...tillIdentifiers,
               providerTransactionId: notificationId,
-              ...(kcbTransactionReference ? { kcbTransactionReference } : {}),
               status: 'unresolved',
               suggestedMemberId,
               matchReason: suggestedMemberId
@@ -459,6 +495,7 @@ export const reconcileKcbPayment = onCall(async (request) => {
           currency: notification.currency,
           notificationRef,
           notificationExists: true,
+          existingNotification: notification,
           notificationReceivedAt: notification.receivedAt,
           actorId,
           actorRoles,
@@ -1621,10 +1658,23 @@ export const requestKcbStkPush = onCall(
             requestMerchantRequestId: merchantRequestId,
             requestAmount: Number(current.amount),
           });
-          const notificationConflict = notification.exists && (
-            notificationStatus !== 'unresolved' ||
-            notificationData?.stkRequestId !== requestId
-          );
+          const settlesTillNotification =
+            notificationData !== undefined &&
+            stkCallbackCanSettleTillNotification(
+              notificationData,
+              Number(unmatchedData.amount),
+            );
+          const stkIdentifiers = stkNotificationIdentifiers({
+            checkoutRequestId,
+            merchantRequestId: unmatchedData.merchantRequestId,
+            receiptNumber,
+            transactionDate: unmatchedData.transactionDate,
+          });
+          const notificationConflict =
+            notification.exists && !settlesTillNotification && (
+              notificationStatus !== 'unresolved' ||
+              notificationData?.stkRequestId !== requestId
+            );
           const isTopUpRequest = isTopUpStkRequest(current);
           if (
             isTopUpRequest &&
@@ -1666,6 +1716,8 @@ export const requestKcbStkPush = onCall(
                 currency: KCB_CURRENCY.value(),
                 notificationRef,
                 notificationExists: notification.exists,
+                existingNotification: notificationData,
+                notificationIdentifiers: stkIdentifiers,
                 notificationReceivedAt: notificationData?.receivedAt,
                 actorId: 'system:kcb_stk_callback',
                 auditPath:
@@ -1763,6 +1815,7 @@ export const requestKcbStkPush = onCall(
                 currency: KCB_CURRENCY.value(),
                 transactionDate: String(unmatchedData.transactionDate ?? ''),
                 transactionType: 'MPESA_STK',
+                ...stkIdentifiers,
                 status: 'reconciled',
                 suggestedMemberId: current.memberId,
                 memberId: current.memberId,
@@ -1790,7 +1843,10 @@ export const requestKcbStkPush = onCall(
             if (notification.exists) {
               transaction.set(
                 notificationRef,
-                reconciledNotification,
+                withoutReportedFieldsAlreadySet(
+                  reconciledNotification,
+                  notificationData,
+                ),
                 { merge: true },
               );
             } else {
@@ -1890,14 +1946,18 @@ export const requestKcbStkPush = onCall(
             return 'reconciled';
           }
           if (!terminalNotificationStatus) {
+            const amountFields = stkCallbackAmountFields(
+              notificationData,
+              Number(unmatchedData.amount),
+            );
             const correlatedNotification = {
               messageId: checkoutRequestId,
               channelCode: 'stk',
               billReference: current.invoiceNumber,
               payerPhone: String(unmatchedData.payerPhone ?? ''),
-              amount: Number(unmatchedData.amount),
               transactionDate: String(unmatchedData.transactionDate ?? ''),
               transactionType: 'MPESA_STK',
+              ...stkIdentifiers,
               suggestedMemberId: current.memberId,
               memberId: current.memberId,
               ...stkNotificationTarget(current),
@@ -1912,12 +1972,17 @@ export const requestKcbStkPush = onCall(
             if (notification.exists) {
               transaction.set(
                 notificationRef,
-                {
-                  ...correlatedNotification,
-                  reconciliationWarning: callbackMatchesRequest
-                    ? admin.firestore.FieldValue.delete()
-                    : 'payment_details_mismatch',
-                },
+                withoutReportedFieldsAlreadySet(
+                  {
+                    ...correlatedNotification,
+                    ...amountFields,
+                    reconciliationWarning:
+                      callbackMatchesRequest && !('stkCallbackAmount' in amountFields)
+                        ? admin.firestore.FieldValue.delete()
+                        : 'payment_details_mismatch',
+                  },
+                  notificationData,
+                ),
                 { merge: true },
               );
             } else {
@@ -1928,6 +1993,7 @@ export const requestKcbStkPush = onCall(
                   {
                     providerTransactionId: receiptNumber,
                     ...correlatedNotification,
+                    amount: Number(unmatchedData.amount),
                     payerName: '',
                     currency: KCB_CURRENCY.value(),
                     status: 'unresolved',
@@ -2429,6 +2495,7 @@ export const kcbStkCallback = onRequest(
               currency: KCB_CURRENCY.value(),
               transactionDate: callback.transactionDate,
               transactionType: 'MPESA_STK',
+              ...stkNotificationIdentifiers(callback),
               status: 'unresolved',
               suggestedMemberId: pending.memberId,
               memberId: pending.memberId,
@@ -2445,7 +2512,10 @@ export const kcbStkCallback = onRequest(
             if (existingNotification.exists && existingStatus === 'unresolved') {
               transaction.set(
                 notificationRef,
-                quarantinedNotification,
+                withoutReportedFieldsAlreadySet(
+                  quarantinedNotification,
+                  existingData,
+                ),
                 { merge: true },
               );
             } else if (!existingNotification.exists) {
@@ -2506,8 +2576,18 @@ export const kcbStkCallback = onRequest(
           `kcb_payment_notifications/${callback.receiptNumber}`,
         );
         const existingNotification = await transaction.get(notificationRef);
-        if (existingNotification.exists) {
-          const existingData = kcbPaymentNotificationData(existingNotification);
+        const existingNotificationData = existingNotification.exists
+          ? kcbPaymentNotificationData(existingNotification)
+          : undefined;
+        const settlesTillNotification =
+          existingNotificationData !== undefined &&
+          stkCallbackCanSettleTillNotification(
+            existingNotificationData,
+            callback.amount,
+          );
+        const stkIdentifiers = stkNotificationIdentifiers(callback);
+        if (existingNotificationData && !settlesTillNotification) {
+          const existingData = existingNotificationData;
           const existingStatus = existingData.status;
           if (existingStatus !== 'unresolved') {
             const terminalLinkageMatches =
@@ -2568,23 +2648,27 @@ export const kcbStkCallback = onRequest(
           }
           transaction.set(
             notificationRef,
-            {
-              messageId: callback.checkoutRequestId,
-              channelCode: 'stk',
-              billReference: pending.invoiceNumber,
-              payerPhone: callback.payerPhone,
-              amount: callback.amount,
-              transactionDate: callback.transactionDate,
-              transactionType: 'MPESA_STK',
-              suggestedMemberId: pending.memberId,
-              memberId: pending.memberId,
-              ...stkNotificationTarget(pending),
-              matchReason: 'authenticated_stk_request',
-              provider: 'kcb_buni',
-              source: 'stk_callback',
-              stkRequestId: snapshot.id,
-              requestedAmount: Number(pending.amount),
-            },
+            withoutReportedFieldsAlreadySet(
+              {
+                messageId: callback.checkoutRequestId,
+                channelCode: 'stk',
+                billReference: pending.invoiceNumber,
+                payerPhone: callback.payerPhone,
+                ...stkCallbackAmountFields(existingData, Number(callback.amount)),
+                transactionDate: callback.transactionDate,
+                transactionType: 'MPESA_STK',
+                ...stkIdentifiers,
+                suggestedMemberId: pending.memberId,
+                memberId: pending.memberId,
+                ...stkNotificationTarget(pending),
+                matchReason: 'authenticated_stk_request',
+                provider: 'kcb_buni',
+                source: 'stk_callback',
+                stkRequestId: snapshot.id,
+                requestedAmount: Number(pending.amount),
+              },
+              existingData,
+            ),
             { merge: true },
           );
         } else {
@@ -2619,7 +2703,10 @@ export const kcbStkCallback = onRequest(
               billReference: pending.invoiceNumber,
               currency: KCB_CURRENCY.value(),
               notificationRef,
-              notificationExists: false,
+              notificationExists: settlesTillNotification,
+              existingNotification: existingNotificationData,
+              notificationIdentifiers: stkIdentifiers,
+              notificationReceivedAt: existingNotificationData?.receivedAt,
               actorId: 'system:kcb_stk_callback',
               auditPath:
                 `audit_events/stk-auto-reconcile-${callback.checkoutRequestId}`,
@@ -2703,6 +2790,7 @@ export const kcbStkCallback = onRequest(
               currency: KCB_CURRENCY.value(),
               transactionDate: callback.transactionDate,
               transactionType: 'MPESA_STK',
+              ...stkIdentifiers,
               status: 'reconciled',
               suggestedMemberId: pending.memberId,
               memberId: pending.memberId,
@@ -2724,13 +2812,15 @@ export const kcbStkCallback = onRequest(
               reconciledAt: admin.firestore.FieldValue.serverTimestamp(),
               reconciledBy: actorId,
             };
-            transaction.create(
+            writeStkNotification(
+              transaction,
               notificationRef,
               validateDocumentWrite(
                 kcbPaymentNotificationDocumentSchema,
                 reconciledNotification,
                 notificationRef.path,
               ),
+              settlesTillNotification ? existingNotificationData : undefined,
             );
             transaction.create(db().doc(paymentPath), payment);
             transaction.update(contributionRef, {
@@ -2812,7 +2902,8 @@ export const kcbStkCallback = onRequest(
             );
             return;
           }
-          transaction.create(
+          writeStkNotification(
+            transaction,
             notificationRef,
             validateDocumentWrite(
               kcbPaymentNotificationDocumentSchema,
@@ -2827,6 +2918,7 @@ export const kcbStkCallback = onRequest(
                 currency: KCB_CURRENCY.value(),
                 transactionDate: callback.transactionDate,
                 transactionType: 'MPESA_STK',
+                ...stkIdentifiers,
                 status: 'unresolved',
                 suggestedMemberId: pending.memberId,
                 memberId: pending.memberId,
@@ -2840,6 +2932,7 @@ export const kcbStkCallback = onRequest(
               },
               notificationRef.path,
             ),
+            settlesTillNotification ? existingNotificationData : undefined,
           );
         }
         transaction.update(correlatedRequestRef, {

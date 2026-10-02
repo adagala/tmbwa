@@ -128,6 +128,7 @@ const contributionReadSchema = contributionReadDocumentSchema.extend({
 export const kcbPaymentNotificationSchema = kcbPaymentNotificationDocumentSchema.extend({
   providerTransactionId: z.string(),
   receivedAt: z.instanceof(Timestamp).optional(),
+  paidAt: z.instanceof(Timestamp).optional(),
 });
 export const memberNotificationSchema = memberNotificationDocumentSchema.extend({
   id: z.string(),

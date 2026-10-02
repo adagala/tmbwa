@@ -13,6 +13,20 @@ An accepted notification or STK request does not credit a member. Successful pro
 
 KCB sends a Till notification for STK payments too. Its `header.originatorConversationID` carries the M-Pesa receipt, so a Till notification is stored under that receipt when present (the KCB FT reference from `transactionID` is kept as `kcbTransactionReference`). The Till notification and STK callback for one payment therefore share a `kcb_payment_notifications` document, whichever arrives first. Notifications without a receipt-shaped conversation ID are keyed by `transactionID`. Reconciliation refuses an older FT-keyed Till item whose M-Pesa receipt already has its own document; reject those instead.
 
+Whichever source arrives second never overwrites the payment details the first one reported (`messageId`, `channelCode`, `billReference`, `payerPhone`, `payerName`, `currency`, `transactionDate`, `transactionType`, `paidAt`, `mpesaReceiptNumber`, `receivedAt`); it only fills those that are missing or empty. When an untouched Till notification with the same amount already holds the receipt, the STK callback settles the payment automatically on that document, exactly as if it had arrived first. If the amounts differ, the Till amount is kept, the callback amount is stored as `stkCallbackAmount`, and the item is flagged `payment_details_mismatch` for an administrator.
+
+| Field | Till notification | STK callback |
+| --- | --- | --- |
+| `mpesaReceiptNumber` | `originatorConversationID`, when it is receipt-shaped | `MpesaReceiptNumber` |
+| `paidAt` | parsed from `transactionDate` when it parses | parsed from `TransactionDate` when it parses |
+| `transactionDate` | raw provider value, e.g. `Mon May 19 13:30:54 EAT 2025` | raw provider value, e.g. `20250519133054` |
+| `kcbMessageId`, `kcbChannelCode` | `header.messageID`, `header.channelCode` | — |
+| `kcbTransactionReference` | `transactionID` (FT reference) | — |
+| `checkoutRequestId`, `merchantRequestId` | — | `CheckoutRequestID`, `MerchantRequestID` |
+| `messageId`, `channelCode` | as reported by whichever source arrived first (legacy; prefer the explicit fields) | |
+
+All of these fields are optional; documents written before them fall back to the older fields.
+
 ## Non-secret runtime parameters
 
 - `KCB_SHARED_REFERENCE` (the account/till number included at the start of STK

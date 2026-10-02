@@ -116,6 +116,17 @@ describe('KCB receipt evidence', () => {
     ).toBeUndefined();
   });
 
+  it('prefers the stored M-Pesa receipt and shows FT-keyed Till receipts by KCB ref only', () => {
+    expect(
+      kcbMpesaCode(
+        receipt({ mpesaReceiptNumber: 'TJ1A7XK2QF', providerTransactionId: 'TJ1A7XK2QF' }),
+      ),
+    ).toBe('TJ1A7XK2QF');
+    const ftKeyed = receipt({ kcbTransactionReference: 'FT26274K8QW2' });
+    expect(kcbMpesaCode(ftKeyed)).toBeUndefined();
+    expect(kcbTransactionReference(ftKeyed)).toBe('FT26274K8QW2');
+  });
+
   it('shows the M-Pesa code from the conversation ID on older Till receipts', () => {
     const legacyTill = receipt({ conversationId: 'TJ1A7XK2QF' });
     expect(kcbMpesaCode(legacyTill)).toBe('TJ1A7XK2QF');

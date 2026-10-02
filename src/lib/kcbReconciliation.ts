@@ -60,6 +60,7 @@ export type KcbReceiptEvidence = {
   reconciliationWarning?: unknown;
   kcbTransactionReference?: string;
   conversationId?: unknown;
+  mpesaReceiptNumber?: string;
 };
 
 export type KcbReceiptSource = 'stk' | 'till';
@@ -73,12 +74,17 @@ export const kcbReceiptSource = (
     ? 'stk'
     : 'till';
 
-// STK callbacks key the notification by MpesaReceiptNumber. Till IPNs are
-// keyed by the M-Pesa receipt too when KCB sends one as the conversation ID,
-// keeping the FT reference in kcbTransactionReference. Older Till IPNs are
-// keyed by the FT reference but still carry the receipt as conversationId.
+// Notifications from #88 on store mpesaReceiptNumber. Older STK documents are
+// keyed by the receipt; older Till documents keyed by the receipt carry a
+// different FT reference in kcbTransactionReference, and those keyed by the FT
+// reference may still carry the receipt as conversationId.
 export const kcbMpesaCode = (receipt: KcbReceiptEvidence) => {
-  if (kcbReceiptSource(receipt) === 'stk' || receipt.kcbTransactionReference) {
+  if (receipt.mpesaReceiptNumber) return receipt.mpesaReceiptNumber;
+  if (
+    kcbReceiptSource(receipt) === 'stk' ||
+    (receipt.kcbTransactionReference &&
+      receipt.kcbTransactionReference !== receipt.providerTransactionId)
+  ) {
     return receipt.providerTransactionId;
   }
   return isMpesaReceiptNumber(receipt.conversationId)

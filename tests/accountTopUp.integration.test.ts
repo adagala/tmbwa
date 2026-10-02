@@ -461,14 +461,50 @@ describe('account top-ups', () => {
     await expect(requestTopUp(500)).rejects.toMatchObject({ code: 'failed-precondition' });
   });
 
-  it('lets an administrator reconcile a top-up whose till notification arrived first', async () => {
+  it('settles a top-up automatically when its till notification arrived first', async () => {
+    await seedMember({ balance: -500 });
+    await seedContribution('2026-03', 500, 500);
+    const { requestId, checkoutRequestId } = await requestTopUp(800);
+    await db().doc('kcb_payment_notifications/R-7').set({
+      payerPhone: PHONE,
+      payerName: 'Alice',
+      amount: 800,
+      currency: 'KES',
+      billReference: '7969138',
+      transactionDate: 'Wed Sep 30 10:10:10 EAT 2026',
+      status: 'unresolved',
+      matchReason: 'unique_verified_phone',
+      messageId: 'till-message',
+      source: 'till_notification',
+    });
+    await deliverCallback(checkoutRequestId, 800, 'R-7');
+
+    expect((await db().doc(`kcb_stk_requests/${requestId}`).get()).data()!.status).toBe(
+      'reconciled',
+    );
+    expect(await contributionDoc('2026-03')).toMatchObject({ balance: 0, paid: 'paid' });
+    expect(await memberDoc()).toMatchObject({ balance: 300, reservedKcbCredit: 0 });
+    expect(await payments()).toHaveLength(1);
+    expect((await db().doc('kcb_payment_notifications/R-7').get()).data()).toMatchObject({
+      status: 'reconciled',
+      purpose: 'account_top_up',
+      stkRequestId: requestId,
+      payerName: 'Alice',
+      messageId: 'till-message',
+      transactionDate: 'Wed Sep 30 10:10:10 EAT 2026',
+      checkoutRequestId,
+      mpesaReceiptNumber: 'R-7',
+    });
+  });
+
+  it('lets an administrator reconcile a top-up whose till notification amount disagrees', async () => {
     await seedMember({ balance: -500 });
     await seedContribution('2026-03', 500, 500);
     const { requestId, checkoutRequestId } = await requestTopUp(800);
     await db().doc('kcb_payment_notifications/R-8').set({
       payerPhone: PHONE,
       payerName: 'Alice',
-      amount: 800,
+      amount: 750,
       currency: 'KES',
       billReference: '7969138',
       transactionDate: '20260930101010',
@@ -481,6 +517,12 @@ describe('account top-ups', () => {
       'succeeded_pending_reconciliation',
     );
     expect(await payments()).toHaveLength(0);
+    expect((await db().doc('kcb_payment_notifications/R-8').get()).data()).toMatchObject({
+      amount: 750,
+      stkCallbackAmount: 800,
+      reconciliationWarning: 'payment_details_mismatch',
+      stkRequestId: requestId,
+    });
 
     await expect(
       callable(kcb.reconcileKcbPayment, adminAuth, {
@@ -505,7 +547,7 @@ describe('account top-ups', () => {
     expect(duplicate.duplicate).toBe(true);
 
     expect(await contributionDoc('2026-03')).toMatchObject({ balance: 0, paid: 'paid' });
-    expect(await memberDoc()).toMatchObject({ balance: 300, reservedKcbCredit: 0 });
+    expect(await memberDoc()).toMatchObject({ balance: 250, reservedKcbCredit: 0 });
     expect(await payments()).toHaveLength(1);
     expect((await db().doc(`kcb_stk_requests/${requestId}`).get()).data()!.status).toBe(
       'reconciled',
