@@ -88,7 +88,8 @@ const ReceiptEvidence = ({ payment }: { payment: KcbPaymentNotification }) => {
   const source = kcbReceiptSource(payment);
   const mpesaCode = kcbMpesaCode(payment);
   const kcbReference = kcbTransactionReference(payment);
-  const paidAt = parseKcbPaymentTime(payment.transactionDate);
+  const paidAt =
+    payment.paidAt?.toDate() ?? parseKcbPaymentTime(payment.transactionDate);
   const receivedAt = payment.receivedAt?.toDate();
   const delay =
     paidAt && receivedAt ? formatReceiptDelay(paidAt, receivedAt) : undefined;

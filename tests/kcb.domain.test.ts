@@ -16,7 +16,13 @@ import {
   secureTokenMatches, stkCallbackSettlesRequest, stkFailureStatus,
   stkPaymentMatchesPendingRequest,
   terminalNotificationMatchesStkRequest,
+  kcbPaidAt,
+  stkCallbackAmountFields,
+  stkCallbackCanSettleTillNotification,
+  stkNotificationIdentifiers,
   tillNotificationDocumentId,
+  tillNotificationIdentifiers,
+  withoutReportedFieldsAlreadySet,
   unmatchedStkCallbackMatchesRequest,
   verifyKcbSignature,
 } from '../functions/src/kcb/domain';
@@ -82,6 +88,71 @@ describe('KCB Till notification contract', () => {
     ['conversation-1', 'DEV-1234567890', 'tj1a7xk2qf', 'TJ1A7XK', 'TJ1A7XK2QF12345678901',
       'TJ1A/XK2QF', undefined, 1234567890]
       .forEach((value) => expect(isMpesaReceiptNumber(value)).toBe(false));
+  });
+
+  it('records the Till notification identifiers under explicit names', () => {
+    const notification = parseTillNotification({
+      ...payload,
+      header: { ...payload.header, originatorConversationID: 'TJ1A7XK2QF' },
+    });
+    expect(tillNotificationIdentifiers(notification)).toEqual({
+      kcbMessageId: 'message-1',
+      kcbChannelCode: '202',
+      kcbTransactionReference: 'FT25139M3RM6',
+      mpesaReceiptNumber: 'TJ1A7XK2QF',
+      paidAt: new Date('2025-05-19T10:30:54.000Z'),
+    });
+    expect(tillNotificationIdentifiers(parseTillNotification(payload)))
+      .not.toHaveProperty('mpesaReceiptNumber');
+  });
+
+  it('records the STK callback identifiers under explicit names', () => {
+    expect(stkNotificationIdentifiers({
+      checkoutRequestId: 'checkout-1', merchantRequestId: 'merchant-1',
+      receiptNumber: 'TJ1A7XK2QF', transactionDate: '20250519133054',
+    })).toEqual({
+      checkoutRequestId: 'checkout-1', merchantRequestId: 'merchant-1',
+      mpesaReceiptNumber: 'TJ1A7XK2QF', paidAt: new Date('2025-05-19T10:30:54.000Z'),
+    });
+    expect(stkNotificationIdentifiers({ checkoutRequestId: 'checkout-1', merchantRequestId: '' }))
+      .toEqual({ checkoutRequestId: 'checkout-1' });
+  });
+
+  it('leaves paidAt unset for a date it cannot parse', () => {
+    expect(kcbPaidAt('30/09/2026 10:10')).toBeUndefined();
+    expect(kcbPaidAt(undefined)).toBeUndefined();
+  });
+
+  it('keeps the payment details already reported on a document', () => {
+    expect(withoutReportedFieldsAlreadySet(
+      { messageId: 'checkout-1', payerName: '', status: 'reconciled', checkoutRequestId: 'checkout-1' },
+      { messageId: 'kcb-message-1', payerName: 'ALICE' },
+    )).toEqual({ status: 'reconciled', checkoutRequestId: 'checkout-1' });
+    expect(withoutReportedFieldsAlreadySet(
+      { payerName: 'ALICE', narration: 'Fees' },
+      { payerName: '' },
+    )).toEqual({ payerName: 'ALICE', narration: 'Fees' });
+    expect(withoutReportedFieldsAlreadySet({ messageId: 'x' }, undefined)).toEqual({ messageId: 'x' });
+  });
+
+  it('lets the STK callback settle only an untouched Till notification for the same amount', () => {
+    const till = { status: 'unresolved', source: 'till_notification', amount: 1000 };
+    expect(stkCallbackCanSettleTillNotification(till, 1000)).toBe(true);
+    expect(stkCallbackCanSettleTillNotification({ ...till, source: undefined }, 1000)).toBe(true);
+    expect(stkCallbackCanSettleTillNotification(till, 900)).toBe(false);
+    expect(stkCallbackCanSettleTillNotification({ ...till, status: 'rejected' }, 1000)).toBe(false);
+    expect(stkCallbackCanSettleTillNotification({ ...till, stkRequestId: 'push-1' }, 1000)).toBe(false);
+    expect(stkCallbackCanSettleTillNotification({ ...till, source: 'stk_callback' }, 1000)).toBe(false);
+  });
+
+  it('keeps a disagreeing Till amount and flags it', () => {
+    const till = { source: 'till_notification', amount: 900 };
+    expect(stkCallbackAmountFields(till, 1000)).toEqual({
+      stkCallbackAmount: 1000, reconciliationWarning: 'payment_details_mismatch',
+    });
+    expect(stkCallbackAmountFields({ ...till, amount: 1000 }, 1000)).toEqual({ amount: 1000 });
+    expect(stkCallbackAmountFields({ ...till, stkRequestId: 'push-1' }, 1000)).toEqual({ amount: 1000 });
+    expect(stkCallbackAmountFields(undefined, 1000)).toEqual({ amount: 1000 });
   });
 
   it('accepts direct and server-generated STK bill references only', () => {

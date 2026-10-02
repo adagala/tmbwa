@@ -16,6 +16,7 @@ import {
   ACCOUNT_TOP_UP_PURPOSE,
   isActiveStkRequestStatus,
   parseKcbTransactionDate,
+  withoutReportedFieldsAlreadySet,
 } from './domain';
 
 const db = () => admin.firestore();
@@ -96,6 +97,9 @@ export const recordStkTopUp = (
     currency: string;
     notificationRef: FirebaseFirestore.DocumentReference;
     notificationExists: boolean;
+    // The document being written onto; its reported payment details are kept.
+    existingNotification?: Record<string, unknown>;
+    notificationIdentifiers?: Record<string, unknown>;
     notificationReceivedAt?: unknown;
     actorId: string;
     // Set when an officer acts; absent for system callbacks.
@@ -192,6 +196,7 @@ export const recordStkTopUp = (
       currency: args.currency,
       transactionDate: args.transactionDate,
       transactionType: 'MPESA_STK',
+      ...args.notificationIdentifiers,
       status: 'reconciled',
       suggestedMemberId: args.memberId,
       memberId: args.memberId,
@@ -214,7 +219,11 @@ export const recordStkTopUp = (
     args.notificationRef.path,
   );
   if (args.notificationExists) {
-    transaction.set(args.notificationRef, notification, { merge: true });
+    transaction.set(
+      args.notificationRef,
+      withoutReportedFieldsAlreadySet(notification, args.existingNotification),
+      { merge: true },
+    );
   } else {
     transaction.create(args.notificationRef, notification);
   }
