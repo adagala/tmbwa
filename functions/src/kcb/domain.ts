@@ -132,7 +132,23 @@ export const parseTillNotification = (payload: unknown): KcbTillNotification => 
   };
 };
 
-export const verifyKcbSignature = (rawBody: Buffer, signature: string, publicKey: string) => {
+// M-Pesa receipts are currently 10 characters, but neither Safaricom nor KCB
+// guarantees that, so accept a range. This only screens out non-receipt
+// conversation IDs and keeps the value safe as a document ID.
+export const isMpesaReceiptNumber = (value: unknown): value is string =>
+  typeof value === 'string' && /^[A-Z0-9]{8,20}$/.test(value);
+
+// KCB reports the M-Pesa receipt as originatorConversationID. Keying by it lets
+// the Till notification for an STK payment land on the STK callback's document
+// (keyed by MpesaReceiptNumber) instead of creating a second queue item.
+export const tillNotificationDocumentId = (
+  notification: Pick<KcbTillNotification, 'conversationId' | 'providerTransactionId'>,
+) =>
+  isMpesaReceiptNumber(notification.conversationId)
+    ? notification.conversationId
+    : notification.providerTransactionId;
+
+export const verifyKcbSignature =(rawBody: Buffer, signature: string, publicKey: string) => {
   if (!rawBody.length || !signature.trim() || !publicKey.trim()) return false;
   try {
     const verifier = createVerify('RSA-SHA256');

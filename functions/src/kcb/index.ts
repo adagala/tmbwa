@@ -34,6 +34,7 @@ import {
   isActiveStkRequestStatus,
   isLockedStkReconciliation,
   isManuallyResolvableStkUnknownOutcome,
+  isMpesaReceiptNumber,
   isRecoverableStkLeaseStatus,
   isSameStkRequestPayload,
   isStkInitiationLeaseExpired,
@@ -54,6 +55,7 @@ import {
   stkNotificationTarget,
   stkPaymentMatchesPendingRequest,
   terminalNotificationMatchesStkRequest,
+  tillNotificationDocumentId,
   unmatchedStkCallbackMatchesRequest,
   verifyKcbSignature,
 } from './domain';
@@ -210,12 +212,25 @@ export const kcbTillNotification = onRequest(
         throw new KcbNotificationValidationError('Unexpected bill reference.');
       }
 
+      const notificationId = tillNotificationDocumentId(notification);
+      const kcbTransactionReference =
+        notificationId === notification.providerTransactionId
+          ? undefined
+          : notification.providerTransactionId;
       const notificationRef = db().doc(
-        `kcb_payment_notifications/${notification.providerTransactionId}`,
+        `kcb_payment_notifications/${notificationId}`,
       );
       await db().runTransaction(async (transaction) => {
         const existing = await transaction.get(notificationRef);
-        if (existing.exists) return;
+        if (existing.exists) {
+          if (
+            kcbTransactionReference &&
+            existing.get('kcbTransactionReference') === undefined
+          ) {
+            transaction.update(notificationRef, { kcbTransactionReference });
+          }
+          return;
+        }
         const matches = await transaction.get(
           db()
             .collection('members')
@@ -230,6 +245,8 @@ export const kcbTillNotification = onRequest(
             kcbPaymentNotificationDocumentSchema,
             {
               ...notification,
+              providerTransactionId: notificationId,
+              ...(kcbTransactionReference ? { kcbTransactionReference } : {}),
               status: 'unresolved',
               suggestedMemberId,
               matchReason: suggestedMemberId
@@ -351,6 +368,25 @@ export const reconcileKcbPayment = onCall(async (request) => {
     }
     const notificationSource =
       typeof notification.source === 'string' ? notification.source : undefined;
+    // Till notifications stored before #86 are keyed by KCB's FT reference. If
+    // their M-Pesa receipt has its own document, the STK callback already
+    // recorded this payment.
+    const mpesaReceipt = notification.conversationId;
+    if (
+      notificationSource !== 'stk_callback' &&
+      isMpesaReceiptNumber(mpesaReceipt) &&
+      mpesaReceipt !== providerTransactionId
+    ) {
+      const receiptNotification = await transaction.get(
+        db().doc(`kcb_payment_notifications/${mpesaReceipt}`),
+      );
+      if (receiptNotification.exists) {
+        throw new HttpsError(
+          'failed-precondition',
+          `This notification duplicates M-Pesa payment ${mpesaReceipt}. Reject it instead.`,
+        );
+      }
+    }
     let lockedMemberId = notification.memberId;
     let lockedContributionId = notification.contributionId;
     let lockedStkRequestId: string | undefined;
