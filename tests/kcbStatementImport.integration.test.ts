@@ -1,7 +1,10 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { statementPdf, type StatementHeader, type StatementRow } from './fixtures/kcbStatementPdf';
 
 // Runs against the Firestore and Storage emulators (see `npm run test:integration`).
+// Every test runs at least one full import: PDF parsing, Storage, and a
+// transaction per row, which takes several seconds on CI runners.
+vi.setConfig({ testTimeout: 20_000, hookTimeout: 20_000 });
 process.env.GCLOUD_PROJECT = 'demo-tmbwa';
 process.env.KCB_STATEMENT_ACCOUNT_NUMBER = '1100000001';
 
