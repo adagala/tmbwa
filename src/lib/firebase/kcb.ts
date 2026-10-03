@@ -15,6 +15,10 @@ import {
 } from 'tmbwa-shared/firebase';
 import { parseDocument } from 'tmbwa-shared';
 import { unallocatedPaymentAmount } from 'tmbwa-shared';
+import type {
+  StatementImportResult,
+  StatementPreview,
+} from '@/lib/kcbStatementImport';
 
 export type { KcbPaymentNotification } from 'tmbwa-shared/firebase';
 
@@ -206,6 +210,61 @@ export const subscribeToKcbStkRequestStatus = (
       callback(typeof status === 'string' ? status : undefined);
     },
     () => callback(undefined),
+  );
+
+// Statement imports parse the PDF on the server, which can take a while for a
+// long statement.
+const STATEMENT_TIMEOUT_MS = 540_000;
+
+export const previewKcbStatement = async (pdfBase64: string) =>
+  (
+    await httpsCallable(functions, 'previewKcbStatement', {
+      timeout: STATEMENT_TIMEOUT_MS,
+    })({ pdfBase64 })
+  ).data as StatementPreview;
+
+export const importKcbStatement = async (data: {
+  pdfBase64: string;
+  fileName: string;
+  includeReceipts: string[];
+}) =>
+  (
+    await httpsCallable(functions, 'importKcbStatement', {
+      timeout: STATEMENT_TIMEOUT_MS,
+    })(data)
+  ).data as StatementImportResult;
+
+export const markKcbPaymentAlreadyRecorded = (data: {
+  providerTransactionId: string;
+  memberId: string;
+  paymentIds: string[];
+  contributionIds: string[];
+  reason: string;
+}) => call('markKcbPaymentAlreadyRecorded', data);
+
+export const undoKcbPaymentAlreadyRecorded = (
+  providerTransactionId: string,
+  reason: string,
+) => call('undoKcbPaymentAlreadyRecorded', { providerTransactionId, reason });
+
+export const subscribeToAlreadyRecordedKcbPayments = (
+  callback: (items: KcbPaymentNotification[]) => void,
+) =>
+  onSnapshot(
+    query(
+      collection(db, 'kcb_payment_notifications'),
+      where('status', '==', 'already_recorded'),
+    ),
+    (snapshot) =>
+      callback(
+        snapshot.docs.map((item) =>
+          parseDocument(
+            kcbPaymentNotificationSchema,
+            { providerTransactionId: item.id, ...item.data() },
+            item.ref.path,
+          ),
+        ),
+      ),
   );
 
 export const rejectKcbPayment = (

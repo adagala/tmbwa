@@ -256,3 +256,42 @@ describe('KCB reconciliation member search', () => {
     expect(matchesMemberSearch(jane, '254722000111')).toBe(false);
   });
 });
+
+describe('payments imported from a KCB statement', () => {
+  const imported = (overrides: Partial<KcbReceiptEvidence> = {}) =>
+    receipt({
+      providerTransactionId: 'TD11AAAAAA',
+      mpesaReceiptNumber: 'TD11AAAAAA',
+      kcbTransactionReference: 'FT25092AAAA1',
+      transactionDate: '20250402000000',
+      source: 'statement_import',
+      ...overrides,
+    });
+
+  it('are their own receipt source with both references', () => {
+    expect(kcbReceiptSource(imported())).toBe('statement');
+    expect(kcbMpesaCode(imported())).toBe('TD11AAAAAA');
+    expect(kcbTransactionReference(imported())).toBe('FT25092AAAA1');
+  });
+
+  it('describe a phone suggestion as of the import', () => {
+    expect(kcbMatchHint(imported(), 'Alice Member')?.message).toBe(
+      'Alice Member had this phone number on their profile when the statement was imported. Confirm before reconciling.',
+    );
+  });
+
+  it('warn when the M-Pesa code is already on a recorded payment', () => {
+    expect(
+      kcbMatchHint(imported({ referenceCheck: { reason: 'amount_differs' } })),
+    ).toEqual({
+      variant: 'error',
+      title: 'M-Pesa code already on a recorded payment',
+      message:
+        'A payment carries this code but for a different amount. It was imported on request. Check that it is not already counted before reconciling, or mark it already recorded.',
+    });
+    expect(
+      kcbMatchHint(imported({ referenceCheck: { reason: 'several_members' } }))
+        ?.message,
+    ).toMatch(/^Payments for several members carry this code\./);
+  });
+});

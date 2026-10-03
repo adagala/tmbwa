@@ -61,18 +61,23 @@ export type KcbReceiptEvidence = {
   kcbTransactionReference?: string;
   conversationId?: unknown;
   mpesaReceiptNumber?: string;
+  // Set on payments imported from a KCB statement whose M-Pesa code is on a
+  // payment that does not clearly account for it (#94).
+  referenceCheck?: unknown;
 };
 
-export type KcbReceiptSource = 'stk' | 'till';
+export type KcbReceiptSource = 'stk' | 'till' | 'statement';
 
 export const kcbReceiptSource = (
   receipt: KcbReceiptEvidence,
 ): KcbReceiptSource =>
-  receipt.source === 'stk_callback' ||
-  receipt.transactionType === 'MPESA_STK' ||
-  receipt.channelCode === 'stk'
-    ? 'stk'
-    : 'till';
+  receipt.source === 'statement_import'
+    ? 'statement'
+    : receipt.source === 'stk_callback' ||
+        receipt.transactionType === 'MPESA_STK' ||
+        receipt.channelCode === 'stk'
+      ? 'stk'
+      : 'till';
 
 // Notifications from #88 on store mpesaReceiptNumber. Older STK documents are
 // keyed by the receipt; older Till documents keyed by the receipt carry a
@@ -186,6 +191,13 @@ export type KcbMatchHint = {
 
 const kes = (value: number) => `KES ${value.toLocaleString('en-KE')}`;
 
+const referenceCheckMessage = (reason: unknown) =>
+  reason === 'several_members'
+    ? 'Payments for several members carry this code.'
+    : reason === 'amount_differs'
+      ? 'A payment carries this code but for a different amount.'
+      : 'A payment carries this code but the member’s phone is not the payer’s.';
+
 export const kcbMatchHint = (
   receipt: KcbReceiptEvidence,
   suggestedMemberName?: string,
@@ -196,6 +208,16 @@ export const kcbMatchHint = (
       title: 'STK request identifiers differ',
       message:
         'KCB confirmed this payment, but its merchant request ID does not match the stored STK request. Verify with KCB before reconciling.',
+    };
+  }
+  const referenceCheck = receipt.referenceCheck as
+    | { reason?: unknown }
+    | undefined;
+  if (referenceCheck) {
+    return {
+      variant: 'error',
+      title: 'M-Pesa code already on a recorded payment',
+      message: `${referenceCheckMessage(referenceCheck.reason)} It was imported on request. Check that it is not already counted before reconciling, or mark it already recorded.`,
     };
   }
   if (receipt.matchReason === 'authenticated_stk_request_mismatch') {
@@ -221,7 +243,7 @@ export const kcbMatchHint = (
     return {
       variant: 'warning',
       title: 'Suggested member',
-      message: `${suggestedMemberName ?? 'One member'} had this phone number on their profile when the payment arrived. Confirm before reconciling.`,
+      message: `${suggestedMemberName ?? 'One member'} had this phone number on their profile when the ${receipt.source === 'statement_import' ? 'statement was imported' : 'payment arrived'}. Confirm before reconciling.`,
     };
   }
   if (receipt.matchReason === 'ambiguous_phone_match') {

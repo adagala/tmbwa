@@ -40,9 +40,11 @@ import {
   rejectKcbPayment,
   resolveKcbStkUnknownOutcome,
   sendKcbDevTillNotification,
+  subscribeToAlreadyRecordedKcbPayments,
   subscribeToKcbPaymentsWithCredit,
   subscribeToAmbiguousKcbStkRequests,
   subscribeToUnresolvedKcbPayments,
+  undoKcbPaymentAlreadyRecorded,
 } from '@/lib/firebase/kcb';
 import { Member, parseMemberDocument } from 'tmbwa-shared/firebase';
 import { RiExchange2Line } from '@remixicon/react';
@@ -50,6 +52,8 @@ import {
   DialogKcbAction,
   KcbActionSummaryItem,
 } from '@/components/ui/kcb/DialogKcbAction';
+import { DialogAlreadyRecorded } from '@/components/ui/kcb/DialogAlreadyRecorded';
+import { StatementImportCard } from '@/components/ui/kcb/StatementImportCard';
 
 const devSimulatorEnabled =
   import.meta.env.VITE_APP_ENV === 'development' &&
@@ -71,6 +75,7 @@ type PendingKcbAction =
       allocations: Array<{ contributionId: string; amount: number }>;
     }
   | { kind: 'reject'; payment: KcbPaymentNotification }
+  | { kind: 'undo-already-recorded'; payment: KcbPaymentNotification }
   | { kind: 'resolve-stk'; stkRequest: AmbiguousKcbStkRequest };
 
 const formatKes = (amount: number) => `KES ${amount.toLocaleString('en-KE')}`;
@@ -128,7 +133,11 @@ const ReceiptEvidence = ({ payment }: { payment: KcbPaymentNotification }) => {
   return (
     <div className="border-b border-gray-200 bg-gray-50 p-5 lg:border-b-0 lg:border-r dark:border-gray-900 dark:bg-gray-950/60">
       <div className="mb-3 flex items-center justify-between gap-2">
-        <h2 className={sectionHeadingClass}>What KCB reported</h2>
+        <h2 className={sectionHeadingClass}>
+          {source === 'statement'
+            ? 'What the statement shows'
+            : 'What KCB reported'}
+        </h2>
         <Badge
           variant="neutral"
           className={
@@ -137,7 +146,11 @@ const ReceiptEvidence = ({ payment }: { payment: KcbPaymentNotification }) => {
               : undefined
           }
         >
-          {source === 'stk' ? 'STK push' : 'Paybill'}
+          {source === 'stk'
+            ? 'STK push'
+            : source === 'statement'
+              ? 'From statement'
+              : 'Paybill'}
         </Badge>
       </div>
       <p className="mb-4 text-2xl font-bold tracking-tight text-gray-900 dark:text-gray-50">
@@ -160,9 +173,14 @@ const ReceiptEvidence = ({ payment }: { payment: KcbPaymentNotification }) => {
             </dd>
           </>
         ) : null}
-        <dt className="text-gray-500">Time paid</dt>
+        <dt className="text-gray-500">
+          {source === 'statement' ? 'Date paid' : 'Time paid'}
+        </dt>
         <dd className="font-medium">
-          {paidAt ? (
+          {paidAt && source === 'statement' ? (
+            // Statements give the date only.
+            formatEatDate(paidAt)
+          ) : paidAt ? (
             <>
               {formatEatDate(paidAt)}
               <br />
@@ -172,7 +190,12 @@ const ReceiptEvidence = ({ payment }: { payment: KcbPaymentNotification }) => {
             <span className="break-words">{payment.transactionDate}</span>
           )}
         </dd>
-        {receivedAt ? (
+        {receivedAt && source === 'statement' ? (
+          <>
+            <dt className="text-gray-500">Imported</dt>
+            <dd className="text-gray-500">{formatEatDate(receivedAt)}</dd>
+          </>
+        ) : receivedAt ? (
           <>
             <dt className="text-gray-500">Received</dt>
             <dd className="text-gray-500">
@@ -337,6 +360,14 @@ export default function KcbReconciliationPage() {
   const pendingTestRequestId = useRef<string>();
   const [pendingAction, setPendingAction] = useState<PendingKcbAction>();
   const [actionOpen, setActionOpen] = useState(false);
+  const [alreadyRecordedPayments, setAlreadyRecordedPayments] = useState<
+    KcbPaymentNotification[]
+  >([]);
+  const [alreadyRecordedTarget, setAlreadyRecordedTarget] = useState<{
+    payment: KcbPaymentNotification;
+    memberId: string;
+  }>();
+  const [alreadyRecordedOpen, setAlreadyRecordedOpen] = useState(false);
 
   const openAction = (action: PendingKcbAction) => {
     setPendingAction(action);
@@ -424,6 +455,9 @@ export default function KcbReconciliationPage() {
     const unsubscribeAmbiguous = subscribeToAmbiguousKcbStkRequests(
       setAmbiguousStkRequests,
     );
+    const unsubscribeAlreadyRecorded = subscribeToAlreadyRecordedKcbPayments(
+      setAlreadyRecordedPayments,
+    );
     void getDocs(query(collection(db, 'members'), orderBy('firstname'))).then(
       (snapshot) =>
         setMembers(
@@ -436,6 +470,7 @@ export default function KcbReconciliationPage() {
       unsubscribe();
       unsubscribeCredit();
       unsubscribeAmbiguous();
+      unsubscribeAlreadyRecorded();
     };
   }, [allowed]);
 
@@ -686,6 +721,35 @@ export default function KcbReconciliationPage() {
         },
       };
     }
+    if (action.kind === 'undo-already-recorded') {
+      const { payment } = action;
+      return {
+        title: 'Undo already recorded',
+        description:
+          'Returns this statement payment to the queue so it can be reconciled or linked again. No balance changes.',
+        summary: [
+          {
+            label: 'Member',
+            value:
+              memberNames.get(payment.memberId ?? '') ?? payment.memberId ?? '',
+          },
+          ...paymentSummary(payment),
+        ],
+        reasonField: {
+          id: `undo-already-recorded-${payment.providerTransactionId}`,
+          label: 'Why undo it?',
+          placeholder: 'e.g. Linked to the wrong payment',
+        },
+        confirmLabel: 'Undo',
+        loadingText: 'Undoing',
+        onConfirm: async (reason: string) => {
+          await undoKcbPaymentAlreadyRecorded(
+            payment.providerTransactionId,
+            reason,
+          );
+        },
+      };
+    }
     if (action.kind === 'resolve-stk') {
       const { stkRequest } = action;
       return {
@@ -775,7 +839,8 @@ export default function KcbReconciliationPage() {
             KCB Payment Reconciliation
           </h1>
           <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-            Review Paybill notifications before they change a member balance.
+            Review Paybill notifications and imported statement payments before
+            they change a member balance.
           </p>
         </div>
       </div>
@@ -833,6 +898,7 @@ export default function KcbReconciliationPage() {
           ) : null}
         </Card>
       ) : null}
+      <StatementImportCard memberNames={memberNames} />
       {ambiguousStkRequests.length ? (
         <div className="space-y-4">
           <div>
@@ -1001,13 +1067,27 @@ export default function KcbReconciliationPage() {
                     </>
                   )}
                 </div>
-                <div className="mt-auto flex gap-2">
+                <div className="mt-auto flex flex-wrap gap-2">
                   <Button
                     onClick={() => reconcile(payment)}
                     disabled={Boolean(busy)}
                   >
                     Reconcile payment
                   </Button>
+                  {payment.source === 'statement_import' ? (
+                    <Button
+                      variant="secondary"
+                      disabled={Boolean(busy)}
+                      onClick={() => {
+                        if (!memberId) return setError('Choose a member.');
+                        setError(undefined);
+                        setAlreadyRecordedTarget({ payment, memberId });
+                        setAlreadyRecordedOpen(true);
+                      }}
+                    >
+                      Already recorded
+                    </Button>
+                  ) : null}
                   <Button
                     variant="destructive"
                     onClick={() => openAction({ kind: 'reject', payment })}
@@ -1080,6 +1160,86 @@ export default function KcbReconciliationPage() {
             );
           })}
         </div>
+      ) : null}
+      {alreadyRecordedPayments.length ? (
+        <div className="space-y-4">
+          <div>
+            <h2 className="text-lg font-semibold">
+              Statement payments marked already recorded
+            </h2>
+            <p className="text-sm text-gray-600">
+              These were linked to records entered by hand. Undo a link to
+              return the payment to the queue.
+            </p>
+          </div>
+          {alreadyRecordedPayments.map((payment) => {
+            const linkedPayments = (payment.linkedPaymentIds ?? []) as string[];
+            const linkedMonths = (payment.linkedContributionIds ??
+              []) as string[];
+            return (
+              <Card
+                key={payment.providerTransactionId}
+                className="flex flex-wrap items-end justify-between gap-4"
+              >
+                <dl className="grid flex-1 gap-2 text-sm sm:grid-cols-4">
+                  <div>
+                    <dt className="text-gray-500">M-Pesa code</dt>
+                    <dd className="font-mono font-semibold">
+                      {kcbMpesaCode(payment) ?? payment.providerTransactionId}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-gray-500">Amount</dt>
+                    <dd className="font-semibold">
+                      {formatKes(payment.amount)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-gray-500">Member</dt>
+                    <dd className="font-semibold">
+                      {memberNames.get(payment.memberId ?? '') ??
+                        payment.memberId}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-gray-500">Linked to</dt>
+                    <dd className="font-semibold">
+                      {[
+                        linkedPayments.length
+                          ? `${linkedPayments.length} payment${linkedPayments.length === 1 ? '' : 's'}`
+                          : '',
+                        linkedMonths.join(', '),
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </dd>
+                  </div>
+                </dl>
+                <Button
+                  variant="secondary"
+                  disabled={Boolean(busy)}
+                  onClick={() =>
+                    openAction({ kind: 'undo-already-recorded', payment })
+                  }
+                >
+                  Undo
+                </Button>
+              </Card>
+            );
+          })}
+        </div>
+      ) : null}
+      {alreadyRecordedTarget ? (
+        <DialogAlreadyRecorded
+          open={alreadyRecordedOpen}
+          onOpenChange={setAlreadyRecordedOpen}
+          payment={alreadyRecordedTarget.payment}
+          memberId={alreadyRecordedTarget.memberId}
+          memberName={
+            memberNames.get(alreadyRecordedTarget.memberId) ??
+            alreadyRecordedTarget.memberId
+          }
+        />
       ) : null}
       {pendingAction ? (
         <DialogKcbAction

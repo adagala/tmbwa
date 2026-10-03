@@ -1,6 +1,6 @@
 # TMBWA Administrator User Guide
 
-This guide explains how administrators can add funds for a member, reconcile KCB payments, allocate account credit, resolve ambiguous STK outcomes, view financial reports, and monitor notification delivery.
+This guide explains how administrators can add funds for a member, reconcile KCB payments, import older payments from a KCB statement, allocate account credit, resolve ambiguous STK outcomes, view financial reports, and monitor notification delivery.
 
 ## Before you begin
 
@@ -66,6 +66,38 @@ Some reconciled receipts may have an unallocated remainder.
 5. Select **Allocate existing credit**.
 
 This assigns previously recorded credit; it does not receive the payment a second time.
+
+## Import older payments from a KCB statement
+
+Use this to bring M-Pesa payments that reached the association's KCB account before TMBWA recorded them into the reconciliation queue. Importing never changes a member balance; you still reconcile each payment yourself.
+
+1. Download the **Account Statement** PDF for the period from KCB. Use the PDF exactly as KCB provides it; scanned or edited copies are refused.
+2. In **KCB reconciliation**, under **Import a KCB statement**, choose the PDF.
+3. TMBWA checks that the statement is for the association's account, and that its totals and running balance add up. If not, it shows why and imports nothing.
+4. Review the table. Each row shows what will happen to it:
+
+   | Outcome | Meaning |
+   | --- | --- |
+   | **Will be imported** | A new payment. It is added to the queue. |
+   | **Already received from KCB** | The payment is already in the queue or was already reconciled. It is skipped. |
+   | **Already recorded by M-Pesa code** | A payment recorded by hand with the same M-Pesa code accounts for it. It is skipped. |
+   | **Check: …** | A payment recorded by hand carries the same code but does not clearly match, for example a different amount. It is skipped unless you tick **Import anyway**. |
+   | **Opening balance** / **Not an M-Pesa payment** | Not a member payment. It is ignored. |
+
+5. Select **Import payments** and confirm.
+
+Imported payments appear in the queue marked **From statement**, with the date paid from the statement. Reconcile them as described in [Reconcile an unresolved KCB payment](#reconcile-an-unresolved-kcb-payment). Importing the same statement again changes nothing, and overlapping statements never import a payment twice.
+
+### Mark a statement payment as already recorded
+
+Some older payments were recorded by hand without their M-Pesa code, so TMBWA cannot recognise them. Do not reconcile such a payment, because that would count it twice. Do not reject it either, because it is a real payment.
+
+1. On the payment in the queue, choose the member.
+2. Select **Already recorded**.
+3. Tick the existing payments or paid months that already account for it. Payments closest to the statement date are listed first.
+4. Explain how it was recorded and select **Mark already recorded**.
+
+No balance changes. The payment leaves the queue and appears under **Statement payments marked already recorded**. If you linked it by mistake, select **Undo** there and give a reason. The payment then returns to the queue.
 
 ## Resolve an ambiguous STK outcome
 
