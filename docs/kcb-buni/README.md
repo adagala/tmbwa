@@ -110,3 +110,59 @@ The default Functions package deploy script intentionally selects `functions:def
 Sign in as an administrator and use **KCB reconciliation → Development test payment**. The item appears unresolved and must use the normal reconciliation workflow.
 
 Never deploy the `development-tools` codebase or enable either Sandbox flag in UAT or production. After testing, set both server and client enabled flags to `false` and remove the development-tools function if it is no longer needed. Do not enable production callbacks until KCB's production authentication requirements have been confirmed and implemented.
+
+## Development STK simulator
+
+The development-tools codebase also simulates M-PESA Express end to end, so **Add funds** and **Pay balance via STK** can be clicked through in the development app. No production code changes: the development project points `requestKcbStkPush` at a mock KCB API, and a simulated phone action posts the STK result to the real deployed `kcbStkCallback`.
+
+1. `kcbDevMockApi` (HTTPS) stands in for KCB. `POST /token` returns a synthetic access token. `POST /stkpush` validates the STK request body, returns an accepted response (`header.statusCode = '0'`, `ResponseCode = 0`, new `MerchantRequestID` and `CheckoutRequestID`), and records a pending prompt in `kcb_dev_stk_prompts/{CheckoutRequestID}`. It records a prompt only when the request's `callbackUrl` is the configured `KCB_STK_CALLBACK_URL` carrying the correct `KCB_STK_CALLBACK_TOKEN`, which only `requestKcbStkPush` holds. The token is never stored or logged.
+2. `listKcbDevStkPrompts` (callable) lists open prompts.
+3. `resolveKcbDevStkPrompt` (callable) takes `promptId` and `outcome`: `approve` posts `ResultCode 0` with the amount, a deterministic `DEV…` receipt, the phone and the transaction date; `cancel` posts `ResultCode 1032`; `timeout` posts `ResultCode 1037`. The prompt is claimed in a transaction and marked `resolved`, so answering it again with the same outcome is a no-op, and a different outcome is refused. Because the receipt is derived from the prompt, a retried approval cannot create a second payment either. If the callback cannot be reached or fails, the claim lapses after 30 seconds and the same outcome can be retried. Only a 401 from the callback releases the prompt for any outcome, because nothing was recorded.
+
+Prompt access: a super admin may list and answer any prompt. A member may list and answer the prompts for their own account or that they requested, as if holding the phone. Firestore rules deny all client access to `kcb_dev_stk_prompts`; the UI reads it only through the callables.
+
+Every simulator function refuses to run unless `APP_ENV=development` and `KCB_DEV_MOCK_ENABLED=true`. The mock API and `resolveKcbDevStkPrompt` also require `KCB_STK_CALLBACK_URL` to be HTTPS, to share the exact origin of `KCB_DEV_ALLOWED_CALLBACK_ORIGIN`, and to end in `/kcbStkCallback`.
+
+### Configuration (development project only)
+
+Default codebase (`functions/.env.<dev-project-id>`, not committed):
+
+- `KCB_TOKEN_URL=https://<region>-<dev-project-id>.cloudfunctions.net/kcbDevMockApi/token`
+- `KCB_STK_URL=https://<region>-<dev-project-id>.cloudfunctions.net/kcbDevMockApi/stkpush`
+- `KCB_STK_CALLBACK_URL`: deployed HTTPS URL of `kcbStkCallback`, as for real STK.
+- `KCB_CONSUMER_KEY` and `KCB_CONSUMER_SECRET` must still be set as secrets, but the mock ignores their values, so use placeholders rather than real KCB credentials.
+
+Development-tools codebase (`functions-dev/.env.<dev-project-id>`, not committed):
+
+- `APP_ENV=development`
+- `KCB_DEV_MOCK_ENABLED=true`
+- `KCB_STK_CALLBACK_URL`: the same `kcbStkCallback` URL as above.
+- `KCB_DEV_ALLOWED_CALLBACK_ORIGIN`: exact HTTPS origin of that URL.
+- `KCB_STK_CALLBACK_TOKEN` is read from the same Secret Manager secret as the default codebase.
+
+Web build: `VITE_APP_ENV=development` and `VITE_KCB_DEV_MOCK_ENABLED=true`. The **Simulated M-Pesa prompts** panel then appears under **KCB reconciliation → Development test payment** (all open prompts), in the **Add funds** dialog and in the contribution drawer after an STK request (that request's prompt only).
+
+### Deploy
+
+```bash
+firebase deploy --only functions:development-tools
+firebase deploy --only functions:default:requestKcbStkPush,functions:default:kcbStkCallback
+```
+
+Deploy the development-tools codebase first so the mock API URL exists, then redeploy the two default functions so they pick up the `KCB_TOKEN_URL` and `KCB_STK_URL` overrides.
+
+### Try it
+
+1. Sign in as a member, open **Add funds**, enter an amount and send the prompt.
+2. In the panel, choose **Approve**. The production callback settles unpaid contributions oldest first, keeps the remainder as unreserved credit, and the dialog shows **Top-up received**.
+3. **Cancel** or **Time out** marks the STK request `cancelled` or `timed_out` and records no payment.
+
+`npm run test:integration` (`tests/kcbStkSimulator.integration.test.ts`) runs the same chain against the Firestore emulator.
+
+### Turn it off
+
+1. Remove the `KCB_TOKEN_URL` and `KCB_STK_URL` overrides (or point them at the KCB Sandbox) and redeploy `requestKcbStkPush`.
+2. Set `KCB_DEV_MOCK_ENABLED=false` for the development-tools codebase and redeploy it, or delete its functions with `firebase functions:delete kcbDevMockApi listKcbDevStkPrompts resolveKcbDevStkPrompt`. In the development-tools codebase this flag also disables `sendKcbDevTillNotification`; the default codebase's own `KCB_DEV_MOCK_ENABLED`, which allows unsigned Sandbox Till notifications, is configured separately.
+3. Set `VITE_KCB_DEV_MOCK_ENABLED=false` in the development web build.
+
+Leftover `kcb_dev_stk_prompts` documents hold no financial state and can be deleted.

@@ -205,6 +205,11 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Development-only STK simulator prompts (functions-dev); server-only.
+    match /kcb_dev_stk_prompts/{promptId} {
+      allow read, write: if false;
+    }
+
     match /notification_events/{eventId} {
       allow read: if can('notifications.retry');
       allow write: if false;

@@ -226,3 +226,43 @@ export const sendKcbDevTillNotification = (amount: number, requestId: string) =>
     requestId,
     amount,
   });
+
+// Development-only STK simulator (functions-dev). The panel that uses these is
+// rendered only when kcbDevSimulatorEnabled is true; the functions refuse to
+// run outside the development project regardless.
+export const kcbDevSimulatorEnabled =
+  import.meta.env.VITE_APP_ENV === 'development' &&
+  import.meta.env.VITE_KCB_DEV_MOCK_ENABLED === 'true';
+
+export type KcbDevStkPrompt = {
+  promptId: string;
+  stkRequestId: string | null;
+  memberId: string | null;
+  purpose: string | null;
+  contributionId: string | null;
+  amount: number;
+  phoneNumber: string;
+  status: 'pending' | 'resolving';
+  createdAt: string | null;
+};
+
+export type KcbDevStkPromptOutcome = 'approve' | 'cancel' | 'timeout';
+
+export const listKcbDevStkPrompts = async (stkRequestId?: string) => {
+  const result = await httpsCallable(
+    functions,
+    'listKcbDevStkPrompts',
+  )(stkRequestId ? { stkRequestId } : {});
+  return (result.data as { prompts: KcbDevStkPrompt[] }).prompts;
+};
+
+export const resolveKcbDevStkPrompt = (
+  promptId: string,
+  outcome: KcbDevStkPromptOutcome,
+) =>
+  httpsCallable(
+    functions,
+    'resolveKcbDevStkPrompt',
+  )({ promptId, outcome }) as Promise<{
+    data: { status: string; duplicate: boolean };
+  }>;

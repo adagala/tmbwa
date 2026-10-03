@@ -22,6 +22,7 @@ import useUser from '@/hooks/useUser';
 import { DialogDeleteContribution } from './DialogDeleteContribution';
 import { DialogReverseLegacyCorrection } from './DialogReverseLegacyCorrection';
 import { requestKcbStkPush } from '@/lib/firebase/kcb';
+import { KcbDevStkPromptsPanel } from '@/components/ui/kcb/KcbDevStkPromptsPanel';
 import { isKenyanMobileNumber } from '@/lib/kenyanPhone';
 import { useToast } from '@/hooks/useToast';
 import {
@@ -85,6 +86,7 @@ export const DialogContributionDetails = ({
   const { toast } = useToast();
   const [isRequestingStk, setIsRequestingStk] = React.useState(false);
   const [stkPhone, setStkPhone] = React.useState(member?.phonenumber ?? '');
+  const [stkRequestId, setStkRequestId] = React.useState<string>();
   const isValidStkPhone = isKenyanMobileNumber(stkPhone);
   // No one manages their own contributions; the backend refuses it too.
   const isOwnContribution = user?.uid === contribution.member_id;
@@ -113,19 +115,24 @@ export const DialogContributionDetails = ({
 
   // Start from the member's number each time the drawer opens.
   React.useEffect(() => {
-    if (open) setStkPhone(member?.phonenumber ?? '');
+    if (open) {
+      setStkPhone(member?.phonenumber ?? '');
+      setStkRequestId(undefined);
+    }
   }, [open, member?.phonenumber]);
 
   const requestContributionPayment = async () => {
     if (!user || !canRequestStk || !isValidStkPhone) return;
     setIsRequestingStk(true);
     try {
-      await requestKcbStkPush({
+      const result = await requestKcbStkPush({
         memberId: contribution.member_id,
         contributionId: contribution.contribution_id,
         amount: Number(contribution.balance),
         phone: stkPhone,
       });
+      const requestId = (result.data as { requestId?: unknown }).requestId;
+      setStkRequestId(typeof requestId === 'string' ? requestId : undefined);
       toast({
         title: 'STK Push requested',
         description:
@@ -362,6 +369,12 @@ export const DialogContributionDetails = ({
                   Enter a valid Kenyan mobile number.
                 </p>
               )}
+              {stkRequestId ? (
+                <KcbDevStkPromptsPanel
+                  className="mt-3"
+                  stkRequestId={stkRequestId}
+                />
+              ) : null}
             </div>
           ) : null}
           <div className="flex items-center justify-between gap-2">

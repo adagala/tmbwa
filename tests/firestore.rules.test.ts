@@ -188,6 +188,20 @@ describe('Firestore authorization', () => {
     await assertFails(updateDoc(doc(db, 'monthly_stats/2026-08-01'), { amount: 0 }));
   });
 
+  it('denies all client access to development STK simulator prompts', async () => {
+    await seed();
+    await testEnv.withSecurityRulesDisabled(async (context) =>
+      setDoc(doc(context.firestore(), 'kcb_dev_stk_prompts/ws_CO_DEV1'), { memberId: 'member-a', status: 'pending' }));
+    const adminDb = testEnv.authenticatedContext('admin', { roles: ['super_admin'] }).firestore();
+    const memberDb = testEnv.authenticatedContext('member-a', { role: 'member' }).firestore();
+    for (const db of [adminDb, memberDb]) {
+      await assertFails(getDoc(doc(db, 'kcb_dev_stk_prompts/ws_CO_DEV1')));
+      await assertFails(getDocs(collection(db, 'kcb_dev_stk_prompts')));
+      await assertFails(updateDoc(doc(db, 'kcb_dev_stk_prompts/ws_CO_DEV1'), { status: 'resolved' }));
+      await assertFails(setDoc(doc(db, 'kcb_dev_stk_prompts/ws_CO_DEV2'), { memberId: 'member-a', status: 'pending' }));
+    }
+  });
+
   it('allows only administrators to run reporting collection-group queries', async () => {
     await seed();
     const adminDb = testEnv.authenticatedContext('admin', { roles: ['super_admin'] }).firestore();

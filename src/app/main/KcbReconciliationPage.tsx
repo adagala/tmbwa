@@ -39,6 +39,7 @@ import {
   reconcileKcbPayment,
   rejectKcbPayment,
   resolveKcbStkUnknownOutcome,
+  kcbDevSimulatorEnabled,
   sendKcbDevTillNotification,
   subscribeToKcbPaymentsWithCredit,
   subscribeToAmbiguousKcbStkRequests,
@@ -50,10 +51,7 @@ import {
   DialogKcbAction,
   KcbActionSummaryItem,
 } from '@/components/ui/kcb/DialogKcbAction';
-
-const devSimulatorEnabled =
-  import.meta.env.VITE_APP_ENV === 'development' &&
-  import.meta.env.VITE_KCB_DEV_MOCK_ENABLED === 'true';
+import { KcbDevStkPromptsPanel } from '@/components/ui/kcb/KcbDevStkPromptsPanel';
 
 const memberFilter = (option: ComboboxOption, query: string) =>
   matchesMemberSearch(
@@ -787,7 +785,7 @@ export default function KcbReconciliationPage() {
           {error}
         </p>
       ) : null}
-      {devSimulatorEnabled ? (
+      {kcbDevSimulatorEnabled ? (
         <Card className="space-y-3 border-amber-300 bg-amber-50">
           <div>
             <h2 className="font-semibold text-amber-900">
@@ -831,6 +829,7 @@ export default function KcbReconciliationPage() {
               {testResult}
             </p>
           ) : null}
+          <KcbDevStkPromptsPanel className="bg-white" />
         </Card>
       ) : null}
       {ambiguousStkRequests.length ? (
