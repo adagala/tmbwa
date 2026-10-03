@@ -185,6 +185,8 @@ describe('Firestore authorization', () => {
     await assertFails(updateDoc(doc(db, 'members/member-a'), { balance: 500 }));
     await assertFails(deleteDoc(doc(db, 'members/member-a')));
     await assertFails(deleteDoc(doc(db, 'members/member-a/payments/payment-1')));
+    // Statement imports match on this server-owned field.
+    await assertFails(updateDoc(doc(db, 'members/member-a/payments/payment-1'), { referenceNormalized: 'TD11AAAAAA' }));
     await assertFails(updateDoc(doc(db, 'monthly_stats/2026-08-01'), { amount: 0 }));
   });
 
@@ -244,6 +246,7 @@ describe('Firestore authorization', () => {
     const db = testEnv.authenticatedContext('member-a', { role: 'member' }).firestore();
     await assertFails(updateDoc(doc(db, 'members/member-a/contributions/2026-08-01'), { balance: 0 }));
     await assertFails(setDoc(doc(db, 'members/member-a/payments/payment-2'), { amount: 500 }));
+    await assertFails(updateDoc(doc(db, 'members/member-a/payments/payment-1'), { referenceNormalized: 'TD11AAAAAA' }));
     await assertFails(updateDoc(doc(db, 'monthly_stats/2026-08-01'), { amount: 0 }));
   });
 

@@ -6,7 +6,6 @@ import {
   auditEventDocumentSchema,
   contributionDocumentSchema,
   notificationEventDocumentSchema,
-  paymentDocumentSchema,
   missingContributionMonths,
 } from 'tmbwa-shared';
 import {
@@ -30,6 +29,7 @@ import {
   memberData,
   paymentData,
   validateDocumentWrite,
+  validatePaymentWrite,
 } from '../firestoreData';
 import { isActiveStkRequestStatus } from '../kcb/domain';
 import { getCurrentMonth } from '../utils';
@@ -318,8 +318,7 @@ const writeContributionMonth = (
       request_id: requestId,
       receipt_number: `TMBWA-${paymentId.toUpperCase()}`,
     };
-    const validatedPayment = validateDocumentWrite(
-      paymentDocumentSchema,
+    const validatedPayment = validatePaymentWrite(
       payment,
       `members/${memberId}/payments/${paymentId}`,
     );

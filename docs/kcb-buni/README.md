@@ -38,6 +38,22 @@ To enable it in an environment:
 3. Run `npm run backfill:member-phone-normalized -- --apply`. It is safe to re-run.
 4. In development, send a synthetic Till notification from a member's profile phone and confirm it is suggested for that member.
 
+## Payment reference matching
+
+Statement imports (#94) recognise payments already recorded by hand through the server-owned `members/{id}/payments/{paymentId}.referenceNormalized`. This field is the M-Pesa code typed into `referencenumber`, with whitespace removed and upper-cased (`normalizeMpesaReference` in `tmbwa-shared`). On payments recorded through KCB, `referencenumber` is the provider transaction ID (the M-Pesa receipt or the KCB `FT…` reference), which is stored the same way. It is absent when the reference is not an M-Pesa code, such as `BALANCE B/F`; `receipt_number` holds the internal `TMBWA-…` receipt and is not considered. Every Function that creates a payment sets it through `validatePaymentWrite`; clients cannot write payments. `referencenumber` stays the source of truth.
+
+To enable it in an environment:
+
+1. Deploy the Firestore indexes (`firebase deploy --only firestore:indexes`) and wait for the collection-group `payments.referenceNormalized` index to finish building.
+2. Deploy the default Functions codebase, so payments created from now on carry the field.
+3. From `functions/`, set `GOOGLE_APPLICATION_CREDENTIALS` and `GOOGLE_CLOUD_PROJECT` as above, then run `npm run backfill:payment-reference-normalized` (dry run). Check the `Target project` line, then review:
+   - **Counts:** to set, to remove, unchanged, `BALANCE B/F`, and other references that are not M-Pesa codes.
+   - **Shared references:** payment paths that share one normalised code. A statement payment matching one of these needs the treasurer's check.
+   - **Contributions with embedded payments that have no payment document:** a statement import cannot see those payments.
+
+   It prints document paths and counts only, never references, names or phone numbers.
+4. Run `npm run backfill:payment-reference-normalized -- --apply`. It writes only `referenceNormalized` and `referenceNormalizedBackfilledAt` and is safe to re-run; then run the dry run again and confirm `To update: 0`.
+
 ## Non-secret runtime parameters
 
 - `KCB_SHARED_REFERENCE` (the account/till number included at the start of STK

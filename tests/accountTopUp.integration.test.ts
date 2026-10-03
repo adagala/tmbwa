@@ -237,6 +237,8 @@ describe('account top-ups', () => {
       provider_transaction_id: 'R-1',
       request_id: requestId,
     });
+    // 'R-1' is not an M-Pesa code, so it has no normalized form.
+    expect(payment).not.toHaveProperty('referenceNormalized');
     const notification = (
       await db().doc('kcb_payment_notifications/R-1').get()
     ).data()!;
@@ -548,7 +550,10 @@ describe('account top-ups', () => {
 
     expect(await contributionDoc('2026-03')).toMatchObject({ balance: 0, paid: 'paid' });
     expect(await memberDoc()).toMatchObject({ balance: 250, reservedKcbCredit: 0 });
-    expect(await payments()).toHaveLength(1);
+    const [reconciled, ...others] = await payments();
+    expect(others).toHaveLength(0);
+    expect(reconciled).toMatchObject({ referencenumber: 'R-8' });
+    expect(reconciled).not.toHaveProperty('referenceNormalized');
     expect((await db().doc(`kcb_stk_requests/${requestId}`).get()).data()!.status).toBe(
       'reconciled',
     );
