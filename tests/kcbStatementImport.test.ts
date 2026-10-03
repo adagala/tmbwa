@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { parseKcbStatement, validateKcbStatement } from 'tmbwa-shared';
+import { parseKcbStatement, validateKcbStatement, type KcbStatementTransaction } from 'tmbwa-shared';
 import {
+  MAX_SELECTED_RECEIPTS,
   MAX_STATEMENT_PDF_BYTES,
+  importSelection,
   referenceMatch,
   statementPdfBytes,
   statementTransactionDate,
@@ -99,5 +101,57 @@ describe('extractPdfText', () => {
 
   it('fails on a corrupt PDF', async () => {
     await expect(extractPdfText(Buffer.from('%PDF-1.4 not really'))).rejects.toThrow();
+  });
+});
+
+describe('importSelection', () => {
+  const credit = (index: number, receipt: string, transactionDate: string): KcbStatementTransaction => ({
+    index, transactionDate, valueDate: transactionDate, details: '', moneyOutCents: 0, moneyInCents: 50000,
+    ledgerBalanceCents: 0, kind: 'mpesa_credit',
+    mpesa: { channel: 'till', businessNumber: '7969138', receipt, payerPhone: '254700000001', payerName: 'JANE' },
+  });
+  const transactions: KcbStatementTransaction[] = [
+    { index: 0, transactionDate: '2025-06-01', valueDate: '2025-06-01', details: 'BALANCE B/FWD',
+      moneyOutCents: 0, moneyInCents: 0, ledgerBalanceCents: 0, kind: 'opening_balance' },
+    credit(1, 'TD11AAAAAA', '2025-06-02'),
+    credit(2, 'TD22BBBBBB', '2025-06-30'),
+    credit(3, 'TD33CCCCCC', '2025-07-01'),
+  ];
+
+  it('accepts M-Pesa payments from the statement, normalising and de-duplicating them', () => {
+    expect(importSelection(transactions, { receipts: ['td11 aaaaaa', 'TD11AAAAAA', 'TD33CCCCCC'] }))
+      .toEqual({ receipts: new Set(['TD11AAAAAA', 'TD33CCCCCC']) });
+  });
+
+  it('accepts a range that holds every selected payment, inclusive of both ends', () => {
+    expect(importSelection(transactions, {
+      receipts: ['TD11AAAAAA', 'TD22BBBBBB'], fromDate: '2025-06-02', toDate: '2025-06-30',
+    })).toEqual({ receipts: new Set(['TD11AAAAAA', 'TD22BBBBBB']), fromDate: '2025-06-02', toDate: '2025-06-30' });
+    expect(importSelection(transactions, { receipts: ['TD33CCCCCC'], fromDate: '2025-07-01', toDate: '' }))
+      .toEqual({ receipts: new Set(['TD33CCCCCC']), fromDate: '2025-07-01' });
+  });
+
+  it('refuses empty, oversized or foreign selections', () => {
+    expect(() => importSelection(transactions, { receipts: [] })).toThrow('Choose at least one payment to import.');
+    expect(() => importSelection(transactions, { receipts: undefined })).toThrow('Choose at least one payment');
+    expect(() => importSelection(transactions, { receipts: Array(MAX_SELECTED_RECEIPTS + 1).fill('TD11AAAAAA') }))
+      .toThrow(/at most/);
+    expect(() => importSelection(transactions, { receipts: ['BALANCE B/F'] })).toThrow('must be M-Pesa receipts');
+    expect(() => importSelection(transactions, { receipts: ['TD99ZZZZZZ'] }))
+      .toThrow('TD99ZZZZZZ is not an M-Pesa payment in this statement.');
+  });
+
+  it('refuses payments outside the range and malformed ranges', () => {
+    expect(() => importSelection(transactions, {
+      receipts: ['TD33CCCCCC'], fromDate: '2025-06-01', toDate: '2025-06-30',
+    })).toThrow('TD33CCCCCC is outside the chosen date range.');
+    expect(() => importSelection(transactions, { receipts: ['TD11AAAAAA'], fromDate: '2025-06-30', toDate: '2025-06-01' }))
+      .toThrow('fromDate must not be after toDate.');
+    expect(() => importSelection(transactions, { receipts: ['TD11AAAAAA'], fromDate: '01.06.2025' }))
+      .toThrow('fromDate must be a date');
+    expect(() => importSelection(transactions, { receipts: ['TD11AAAAAA'], toDate: '2025-06-31' }))
+      .toThrow('toDate must be a date');
+    expect(() => importSelection(transactions, { receipts: ['TD11AAAAAA'], toDate: '2025-13-01' }))
+      .toThrow('toDate must be a date');
   });
 });

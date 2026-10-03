@@ -193,12 +193,21 @@ const cases: Case[] = [
     fn: kcbStatement.importKcbStatement,
     allowed: 'treasurer',
     denied: 'auditor',
-    // A valid statement, so the command reaches its transactions.
-    data: () => ({ pdfBase64: statementPdf({
-      account: '1100000001', period: '01.04.2025 - 01.05.2025',
-      start: '0.00', end: '0.00', moneyIn: '0.00', moneyOut: '0.00',
-    }, [{ date: '01.04.2025', details: ['BALANCE B/FWD'], out: '0.00', in: '0.00', balance: '0.00' }])
-      .toString('base64') }),
+    // A valid statement and selection, so the command reaches its transactions.
+    data: () => ({
+      requestId,
+      receipts: ['TD11AAAAAA'],
+      pdfBase64: statementPdf({
+        account: '1100000001', period: '01.04.2025 - 01.05.2025',
+        start: '0.00', end: '500.00', moneyIn: '500.00', moneyOut: '0.00',
+      }, [
+        { date: '01.04.2025', details: ['BALANCE B/FWD'], out: '0.00', in: '0.00', balance: '0.00' },
+        {
+          date: '02.04.2025', details: ['Transfer 7969138 MPESA', 'TD11AAAAAA 254700000001 JANE /'],
+          out: '0.00', in: '500.00', balance: '500.00', reference: 'FT25092AAAA1',
+        },
+      ]).toString('base64'),
+    }),
   },
   {
     name: 'markKcbPaymentAlreadyRecorded',

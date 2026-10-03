@@ -344,27 +344,16 @@ export const kcbPaymentNotificationDocumentSchema = z.object({
   purpose: StkPurposeEnum.optional(),
   // Set on notifications created from an imported account statement.
   importId: z.string().optional(),
+  importRunId: z.string().optional(),
   statementDate: z.string().optional(),
 }).passthrough();
 
-// One imported KCB account statement (#94), keyed by the PDF's SHA-256. Rows
-// record only identifiers and outcomes; payer details live on the
-// notifications the import created.
-export const kcbStatementImportRowSchema = z.object({
-  index: z.number().int().nonnegative(),
-  outcome: z.enum(['imported', 'already_in_app', 'matched_check', 'ignored']),
-  reason: z.string().optional(),
-  receipt: z.string().optional(),
-  bankReference: z.string().optional(),
-  notificationId: z.string().optional(),
-  matchedPaymentPaths: z.array(z.string()).optional(),
-});
-
+// One uploaded KCB account statement (#94), keyed by the PDF's SHA-256. Each
+// import of payments from it is a run in its `runs` subcollection.
 export const kcbStatementImportDocumentSchema = z.object({
   fileHash: z.string(),
   fileName: z.string(),
   storagePath: z.string(),
-  status: z.enum(['importing', 'completed']),
   accountNumber: z.string(),
   periodStart: z.string(),
   periodEnd: z.string(),
@@ -373,8 +362,34 @@ export const kcbStatementImportDocumentSchema = z.object({
   totalMoneyInCents: z.number().int(),
   totalMoneyOutCents: z.number().int(),
   transactionCount: z.number().int().nonnegative(),
+  importedBy: z.string(),
+  createdAt: z.unknown().optional(),
+  lastImportedBy: z.string().optional(),
+  lastImportedAt: z.unknown().optional(),
+}).passthrough();
+
+// One selection of payments imported from a statement (#100). Rows record
+// only identifiers and outcomes of the selected payments; payer details live
+// on the notifications the import created.
+export const kcbStatementImportRunRowSchema = z.object({
+  index: z.number().int().nonnegative(),
+  outcome: z.enum(['imported', 'already_in_app']),
+  reason: z.string().optional(),
+  receipt: z.string(),
+  bankReference: z.string().optional(),
+  notificationId: z.string().optional(),
+  matchedPaymentPaths: z.array(z.string()).optional(),
+});
+
+export const kcbStatementImportRunDocumentSchema = z.object({
+  requestId: z.string(),
+  importId: z.string(),
+  status: z.enum(['importing', 'completed']),
+  receipts: z.array(z.string()),
+  fromDate: z.string().optional(),
+  toDate: z.string().optional(),
   counts: z.record(z.number().int().nonnegative()).optional(),
-  rows: z.array(kcbStatementImportRowSchema).optional(),
+  rows: z.array(kcbStatementImportRunRowSchema).optional(),
   importedBy: z.string(),
   createdAt: z.unknown().optional(),
   completedAt: z.unknown().optional(),

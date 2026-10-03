@@ -115,11 +115,10 @@ type PreviewRow = { index: number; outcome: string; reason?: string; suggestedMe
 describe('previewKcbStatement', () => {
   it('reports what an import would do with each row, without writing anything', async () => {
     const before = await notificationIds();
-    const preview = await call<{ importStatus: unknown; problems: unknown[]; rows: PreviewRow[] }>(
+    const preview = await call<{ problems: unknown[]; rows: PreviewRow[] }>(
       statement.previewKcbStatement, treasurer, { pdfBase64: pdfBase64() });
 
     expect(preview.problems).toEqual([]);
-    expect(preview.importStatus).toBeNull();
     expect(preview.rows.map(({ index, outcome, reason }) => ({ index, outcome, reason }))).toEqual([
       { index: 0, outcome: 'ignored', reason: 'opening_balance' },
       { index: 1, outcome: 'new', reason: undefined },
@@ -160,19 +159,26 @@ describe('previewKcbStatement', () => {
 });
 
 describe('importKcbStatement', () => {
-  it('creates unresolved notifications for new payments only and keeps the PDF', async () => {
-    const result = await call<{ importId: string; duplicate: boolean; counts: Record<string, number> }>(
-      statement.importKcbStatement, treasurer, { pdfBase64: pdfBase64(), fileName: 'April 2025.pdf' });
+  type ImportResult = { importId: string; runId: string; duplicate: boolean; counts: Record<string, number> };
+  const importPayments = (data: Record<string, unknown> = {}) =>
+    call<ImportResult>(statement.importKcbStatement, treasurer, {
+      requestId: 'run-1', pdfBase64: pdfBase64(), receipts: ['TD11AAAAAA', 'TD66FFFFFF'], ...data,
+    });
 
-    expect(result.duplicate).toBe(false);
-    expect(result.counts).toEqual({ ignored: 2, imported: 2, already_in_app: 3, matched_check: 1 });
-    expect(await notificationIds()).toEqual(['FT25094DDDD4', 'TD11AAAAAA', 'TD33CCCCCC', 'TD66FFFFFF']);
+  it('creates unresolved notifications for the selected payments only and keeps the PDF', async () => {
+    const result = await importPayments({ receipts: ['TD11AAAAAA'], fileName: 'April 2025.pdf' });
+
+    expect(result).toMatchObject({ runId: 'run-1', duplicate: false });
+    expect(result.counts).toEqual({ imported: 1, already_in_app: 0, not_selected: 5, ignored: 2 });
+    // TD66FFFFFF is new too, but was not selected.
+    expect(await notificationIds()).toEqual(['FT25094DDDD4', 'TD11AAAAAA', 'TD33CCCCCC']);
 
     const imported = (await db().doc('kcb_payment_notifications/TD11AAAAAA').get()).data()!;
     expect(imported).toMatchObject({
       status: 'unresolved',
       source: 'statement_import',
       importId: result.importId,
+      importRunId: 'run-1',
       importedBy: TREASURER,
       providerTransactionId: 'TD11AAAAAA',
       mpesaReceiptNumber: 'TD11AAAAAA',
@@ -188,17 +194,12 @@ describe('importKcbStatement', () => {
       matchReason: 'unique_profile_phone',
     });
     expect(imported.paidAt.toDate().toISOString()).toBe('2025-04-01T21:00:00.000Z');
-    expect((await db().doc('kcb_payment_notifications/TD66FFFFFF').get()).data()).toMatchObject({
-      suggestedMemberId: null,
-      matchReason: 'no_verified_phone_match',
-    });
     // Existing notifications are left as they were.
     expect((await db().doc('kcb_payment_notifications/TD33CCCCCC').get()).data())
       .toEqual(LIVE_NOTIFICATION);
 
     const record = (await db().doc(`kcb_statement_imports/${result.importId}`).get()).data()!;
     expect(record).toMatchObject({
-      status: 'completed',
       fileName: 'April 2025.pdf',
       storagePath: `kcb_statements/${result.importId}.pdf`,
       accountNumber: '1100000001',
@@ -207,41 +208,72 @@ describe('importKcbStatement', () => {
       totalMoneyInCents: 600000,
       transactionCount: 8,
       importedBy: TREASURER,
-      completedBy: TREASURER,
+      lastImportedBy: TREASURER,
     });
-    expect(record.rows[2]).toMatchObject({
-      outcome: 'already_in_app', reason: 'recorded_payment', receipt: 'TD22BBBBBB',
-      matchedPaymentPaths: ['members/member-b/payments/manual-1'],
+    const run = (await db().doc(`kcb_statement_imports/${result.importId}/runs/run-1`).get()).data()!;
+    expect(run).toMatchObject({
+      status: 'completed',
+      receipts: ['TD11AAAAAA'],
+      counts: result.counts,
+      importedBy: TREASURER,
+      rows: [{ index: 1, outcome: 'imported', receipt: 'TD11AAAAAA', notificationId: 'TD11AAAAAA' }],
     });
-    expect(record.rows[5]).toMatchObject({ outcome: 'matched_check', reason: 'amount_differs' });
     // Payer details stay on the notifications.
-    expect(JSON.stringify(record.rows)).not.toContain('2547');
+    expect(JSON.stringify(run.rows)).not.toContain('2547');
 
     const [stored] = await admin.storage().bucket().file(record.storagePath).download();
     expect(stored.toString('base64')).toBe(pdfBase64());
 
-    expect((await db().doc(`audit_events/kcb-statement-imported-${result.importId}`).get()).data()).toMatchObject({
+    expect((await db().doc('audit_events/kcb-statement-imported-run-1').get()).data()).toMatchObject({
       action: 'kcb_statement.imported',
       actorId: TREASURER,
       actorRoles: ['treasurer'],
       targetId: result.importId,
-      changes: { counts: result.counts, transactionCount: 8 },
+      changes: { runId: 'run-1', selectedCount: 1, counts: result.counts, fromDate: null, toDate: null },
     });
   });
 
-  it('changes nothing when the same statement is imported again', async () => {
-    const first = await call<{ importId: string }>(statement.importKcbStatement, treasurer, { pdfBase64: pdfBase64() });
+  it('returns the earlier result when the same run is repeated', async () => {
+    const first = await importPayments();
     const ids = await notificationIds();
-    const again = await call<{ importId: string; duplicate: boolean }>(
-      statement.importKcbStatement, treasurer, { pdfBase64: pdfBase64() });
-    expect(again).toMatchObject({ importId: first.importId, duplicate: true });
+    await expect(importPayments()).resolves.toEqual({ ...first, duplicate: true });
     expect(await notificationIds()).toEqual(ids);
+    await expect(importPayments({ receipts: ['TD11AAAAAA'] })).rejects.toMatchObject({
+      code: 'failed-precondition',
+      message: 'This requestId was already used for another selection.',
+    });
+  });
+
+  it('imports the same statement again for another selection without duplicating payments', async () => {
+    await importPayments({ requestId: 'june', receipts: ['TD11AAAAAA'] });
+    const second = await importPayments({ requestId: 'july', receipts: ['TD11AAAAAA', 'TD66FFFFFF'] });
+
+    expect(second.counts).toEqual({ imported: 2, already_in_app: 0, not_selected: 4, ignored: 2 });
+    expect((await notificationIds()).filter((id) => id === 'TD11AAAAAA')).toHaveLength(1);
+    expect((await db().doc('kcb_payment_notifications/TD11AAAAAA').get()).get('importRunId')).toBe('june');
+    const runs = await db().collection(`kcb_statement_imports/${second.importId}/runs`).get();
+    expect(runs.docs.map((doc) => doc.id).sort()).toEqual(['july', 'june']);
+  });
+
+  it('skips a selected payment that is already in the app', async () => {
+    const result = await importPayments({ receipts: ['TD22BBBBBB', 'TD33CCCCCC', 'TD11AAAAAA'] });
+    expect(result.counts).toEqual({ imported: 1, already_in_app: 2, not_selected: 3, ignored: 2 });
+    const run = (await db().doc(`kcb_statement_imports/${result.importId}/runs/run-1`).get()).data()!;
+    expect(run.rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        receipt: 'TD22BBBBBB', outcome: 'already_in_app', reason: 'recorded_payment',
+        matchedPaymentPaths: ['members/member-b/payments/manual-1'],
+      }),
+      expect.objectContaining({ receipt: 'TD33CCCCCC', outcome: 'already_in_app', reason: 'kcb_notification' }),
+    ]));
   });
 
   it('never imports a payment twice from overlapping statements', async () => {
-    await call(statement.importKcbStatement, treasurer, { pdfBase64: pdfBase64() });
+    await importPayments();
     // A later statement repeating the 6 April payment.
-    const overlapping = await call<{ counts: Record<string, number> }>(statement.importKcbStatement, treasurer, {
+    const overlapping = await importPayments({
+      requestId: 'run-2',
+      receipts: ['TD66FFFFFF'],
       pdfBase64: pdfBase64(
         { ...HEADER, period: '06.04.2025 - 06.05.2025', start: '15,650.00', moneyIn: '300.00', moneyOut: '0.00' },
         [
@@ -250,15 +282,13 @@ describe('importKcbStatement', () => {
         ],
       ),
     });
-    expect(overlapping.counts).toEqual({ ignored: 1, already_in_app: 1 });
+    expect(overlapping.counts).toEqual({ imported: 0, already_in_app: 1, not_selected: 0, ignored: 1 });
     expect((await notificationIds()).filter((id) => id === 'TD66FFFFFF')).toHaveLength(1);
   });
 
-  it('imports a payment that needs a check only when the treasurer includes it', async () => {
-    const result = await call<{ counts: Record<string, number> }>(statement.importKcbStatement, treasurer, {
-      pdfBase64: pdfBase64(), includeReceipts: ['td55eeeeee'],
-    });
-    expect(result.counts).toEqual({ ignored: 2, imported: 3, already_in_app: 3 });
+  it('imports a payment that needs a check when the treasurer selects it', async () => {
+    const result = await importPayments({ receipts: ['td55eeeeee'] });
+    expect(result.counts).toMatchObject({ imported: 1 });
     expect((await db().doc('kcb_payment_notifications/TD55EEEEEE').get()).data()).toMatchObject({
       status: 'unresolved',
       source: 'statement_import',
@@ -266,31 +296,52 @@ describe('importKcbStatement', () => {
     });
   });
 
-  it('completes an interrupted import without duplicating its notifications', async () => {
+  it('imports within a date range and records it', async () => {
+    const result = await importPayments({ receipts: ['TD11AAAAAA'], fromDate: '2025-04-01', toDate: '2025-04-05' });
+    expect((await db().doc(`kcb_statement_imports/${result.importId}/runs/run-1`).get()).data())
+      .toMatchObject({ fromDate: '2025-04-01', toDate: '2025-04-05' });
+    expect((await db().doc('audit_events/kcb-statement-imported-run-1').get()).get('changes'))
+      .toMatchObject({ fromDate: '2025-04-01', toDate: '2025-04-05' });
+  });
+
+  it('completes an interrupted run without duplicating its notifications', async () => {
     const preview = await call<{ importId: string }>(statement.previewKcbStatement, treasurer, { pdfBase64: pdfBase64() });
-    await db().doc(`kcb_statement_imports/${preview.importId}`).set({ status: 'importing' });
+    await db().doc(`kcb_statement_imports/${preview.importId}/runs/run-1`).set({
+      requestId: 'run-1', importId: preview.importId, status: 'importing',
+      receipts: ['TD11AAAAAA', 'TD66FFFFFF'], importedBy: TREASURER,
+    });
     await db().doc('kcb_payment_notifications/TD11AAAAAA').set({
       status: 'unresolved', source: 'statement_import', importId: preview.importId,
     });
 
-    const result = await call<{ counts: Record<string, number> }>(
-      statement.importKcbStatement, treasurer, { pdfBase64: pdfBase64() });
-    expect(result.counts).toEqual({ ignored: 2, imported: 2, already_in_app: 3, matched_check: 1 });
-    expect((await db().doc(`kcb_statement_imports/${preview.importId}`).get()).get('status')).toBe('completed');
+    const result = await importPayments();
+    expect(result.counts).toEqual({ imported: 2, already_in_app: 0, not_selected: 4, ignored: 2 });
+    expect((await db().doc(`kcb_statement_imports/${preview.importId}/runs/run-1`).get()).get('status'))
+      .toBe('completed');
   });
 
   it('refuses a statement that does not balance, writing nothing', async () => {
     const tampered = ROWS.map((row) => (row.reference === 'FT25092AAAA1' ? { ...row, in: '1,100.00' } : row));
-    await expect(call(statement.importKcbStatement, treasurer, { pdfBase64: pdfBase64(HEADER, tampered) }))
+    await expect(importPayments({ pdfBase64: pdfBase64(HEADER, tampered) }))
       .rejects.toMatchObject({ code: 'failed-precondition' });
     expect(await notificationIds()).toEqual(['FT25094DDDD4', 'TD33CCCCCC']);
     expect((await db().collection('kcb_statement_imports').get()).empty).toBe(true);
     expect((await admin.storage().bucket().getFiles())[0]).toEqual([]);
   });
 
-  it('rejects an invalid list of receipts to include', async () => {
-    await expect(call(statement.importKcbStatement, treasurer, { pdfBase64: pdfBase64(), includeReceipts: ['BALANCE B/F'] }))
-      .rejects.toMatchObject({ code: 'invalid-argument' });
+  it('rejects selections that are empty, not in the statement or outside the range', async () => {
+    const rejected = async (data: Record<string, unknown>, message: string) =>
+      expect(importPayments(data)).rejects.toMatchObject({ code: 'invalid-argument', message });
+    await rejected({ receipts: [] }, 'Choose at least one payment to import.');
+    await rejected({ receipts: ['BALANCE B/F'] }, 'receipts must be M-Pesa receipts.');
+    await rejected({ receipts: ['TD99ZZZZZZ'] }, 'TD99ZZZZZZ is not an M-Pesa payment in this statement.');
+    await rejected(
+      { receipts: ['TD66FFFFFF'], fromDate: '2025-04-01', toDate: '2025-04-05' },
+      'TD66FFFFFF is outside the chosen date range.',
+    );
+    await rejected({ fromDate: '2025-04-30', toDate: '2025-04-01' }, 'fromDate must not be after toDate.');
+    await rejected({ requestId: '' }, 'requestId is required.');
+    expect((await db().collection('kcb_statement_imports').get()).empty).toBe(true);
   });
 });
 
@@ -328,7 +379,9 @@ describe('already recorded statement payments', () => {
     await db().doc('members/member-a/contributions/2025-05-01').set({
       contribution_id: '2025-05-01', month: '2025-05-01', amount: 1000, balance: 1000, paid: 'unpaid',
     });
-    await call(statement.importKcbStatement, treasurer, { pdfBase64: pdfBase64() });
+    await call(statement.importKcbStatement, treasurer, {
+      requestId: 'run-1', pdfBase64: pdfBase64(), receipts: ['TD11AAAAAA', 'TD66FFFFFF'],
+    });
   });
 
   it('links the payment to existing records without changing any balance', async () => {
