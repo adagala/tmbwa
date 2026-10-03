@@ -22,6 +22,7 @@ import {
   subscribeToKcbStkRequestStatus,
 } from '@/lib/firebase/kcb';
 import { isKenyanMobileNumber } from '@/lib/kenyanPhone';
+import { KcbDevStkPromptsPanel } from '@/components/ui/kcb/KcbDevStkPromptsPanel';
 
 const formatKes = (value: number) =>
   `KES ${value.toLocaleString('en-KE', { maximumFractionDigits: 2 })}`;
@@ -173,13 +174,21 @@ export const DialogAccountTopUp = ({
           </DialogHeader>
 
           {message ? (
-            <Callout
-              className="mt-6"
-              title={message.title}
-              variant={message.variant}
-            >
-              {message.body}
-            </Callout>
+            <>
+              <Callout
+                className="mt-6"
+                title={message.title}
+                variant={message.variant}
+              >
+                {message.body}
+              </Callout>
+              {requestId && (!status || pendingStatuses.includes(status)) ? (
+                <KcbDevStkPromptsPanel
+                  className="mt-4"
+                  stkRequestId={requestId}
+                />
+              ) : null}
+            </>
           ) : (
             <div className="mt-6 space-y-4">
               <div className="space-y-2">
