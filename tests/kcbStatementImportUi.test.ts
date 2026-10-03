@@ -4,7 +4,12 @@ import {
   alreadyRecordedCandidates,
   bytesToBase64,
   formatStatementAmount,
+  isSelectableRow,
+  isoDate,
+  localDate,
+  rowsInRange,
   statementOutcomeCounts,
+  statementRangePresets,
   statementOutcomeLabel,
   statementOutcomeVariant,
 } from '../src/lib/kcbStatementImport';
@@ -29,7 +34,7 @@ describe('bytesToBase64', () => {
 
 describe('statement preview outcomes', () => {
   it('labels every outcome for the treasurer', () => {
-    expect(statementOutcomeLabel(row({}))).toBe('Will be imported');
+    expect(statementOutcomeLabel(row({}))).toBe('New');
     expect(statementOutcomeLabel(row({ outcome: 'ignored', reason: 'opening_balance' }))).toBe('Opening balance');
     expect(statementOutcomeLabel(row({ outcome: 'ignored', reason: 'not_mpesa_credit' }))).toBe('Not an M-Pesa payment');
     expect(statementOutcomeLabel(row({ outcome: 'already_in_app', reason: 'kcb_notification' })))
@@ -81,5 +86,46 @@ describe('alreadyRecordedCandidates', () => {
 
   it('lists everything when the statement payment has no date', () => {
     expect(alreadyRecordedCandidates(payments, undefined)).toHaveLength(4);
+  });
+});
+
+describe('choosing rows to import', () => {
+  it('lets only new rows and rows needing a check be selected', () => {
+    expect(isSelectableRow(row({ receipt: 'TD11AAAAAA' }))).toBe(true);
+    expect(isSelectableRow(row({ receipt: 'TD11AAAAAA', outcome: 'matched_check' }))).toBe(true);
+    expect(isSelectableRow(row({ receipt: 'TD11AAAAAA', outcome: 'already_in_app' }))).toBe(false);
+    expect(isSelectableRow(row({ outcome: 'ignored' }))).toBe(false);
+    expect(isSelectableRow(row({}))).toBe(false);
+  });
+
+  it('filters rows by an inclusive date range, open at either end', () => {
+    const rows = ['2025-05-31', '2025-06-01', '2025-06-30', '2025-07-01'].map((transactionDate) =>
+      row({ transactionDate }));
+    const dates = (range: { from?: string; to?: string }) =>
+      rowsInRange(rows, range).map((item) => item.transactionDate);
+    expect(dates({ from: '2025-06-01', to: '2025-06-30' })).toEqual(['2025-06-01', '2025-06-30']);
+    expect(dates({ from: '2025-06-30' })).toEqual(['2025-06-30', '2025-07-01']);
+    expect(dates({ to: '2025-05-31' })).toEqual(['2025-05-31']);
+    expect(dates({})).toHaveLength(4);
+  });
+
+  it('converts between statement dates and the picker’s local dates', () => {
+    expect(isoDate(new Date(2025, 5, 1))).toBe('2025-06-01');
+    expect(localDate('2025-06-30').getDate()).toBe(30);
+    expect(isoDate(localDate('2025-12-31'))).toBe('2025-12-31');
+  });
+
+  it('offers the whole statement and each month it covers, clipped to the period', () => {
+    expect(statementRangePresets('2025-04-15', '2025-07-10')).toEqual([
+      { label: 'Whole statement', from: '2025-04-15', to: '2025-07-10' },
+      { label: 'April 2025', from: '2025-04-15', to: '2025-04-30' },
+      { label: 'May 2025', from: '2025-05-01', to: '2025-05-31' },
+      { label: 'June 2025', from: '2025-06-01', to: '2025-06-30' },
+      { label: 'July 2025', from: '2025-07-01', to: '2025-07-10' },
+    ]);
+    expect(statementRangePresets('2024-12-01', '2025-01-31').map((preset) => preset.label))
+      .toEqual(['Whole statement', 'December 2024', 'January 2025']);
+    expect(statementRangePresets('2024-02-01', '2024-02-29')[1]).toEqual(
+      { label: 'February 2024', from: '2024-02-01', to: '2024-02-29' });
   });
 });

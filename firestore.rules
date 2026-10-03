@@ -200,6 +200,12 @@ service cloud.firestore {
     match /kcb_statement_imports/{importId} {
       allow read: if can('kcb.reconcile');
       allow write: if false;
+
+      // Each selection of payments imported from the statement (#100).
+      match /runs/{runId} {
+        allow read: if can('kcb.reconcile');
+        allow write: if false;
+      }
     }
 
     // Which statement payment each existing payment accounts for (#94).

@@ -224,9 +224,12 @@ export const previewKcbStatement = async (pdfBase64: string) =>
   ).data as StatementPreview;
 
 export const importKcbStatement = async (data: {
+  requestId: string;
   pdfBase64: string;
   fileName: string;
-  includeReceipts: string[];
+  receipts: string[];
+  fromDate?: string;
+  toDate?: string;
 }) =>
   (
     await httpsCallable(functions, 'importKcbStatement', {

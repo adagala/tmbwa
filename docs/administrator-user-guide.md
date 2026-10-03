@@ -74,19 +74,22 @@ Use this to bring M-Pesa payments that reached the association's KCB account bef
 1. Download the **Account Statement** PDF for the period from KCB. Use the PDF exactly as KCB provides it; scanned or edited copies are refused.
 2. In **KCB reconciliation**, under **Import a KCB statement**, choose the PDF.
 3. TMBWA checks that the statement is for the association's account, and that its totals and running balance add up. If not, it shows why and imports nothing.
-4. Review the table. Each row shows what will happen to it:
+4. Under **Show payments from**, choose the dates to work on: the whole statement, a month from the list, or any range. For example, choose **June 2025** to see only 1–30 June.
+5. Review the table. Each row shows its status:
 
-   | Outcome | Meaning |
+   | Status | Meaning |
    | --- | --- |
-   | **Will be imported** | A new payment. It is added to the queue. |
-   | **Already received from KCB** | The payment is already in the queue or was already reconciled. It is skipped. |
-   | **Already recorded by M-Pesa code** | A payment recorded by hand with the same M-Pesa code accounts for it. It is skipped. |
-   | **Check: …** | A payment recorded by hand carries the same code but does not clearly match, for example a different amount. It is skipped unless you tick **Import anyway**. |
+   | **New** | Not yet in TMBWA. Tick it to import it. |
+   | **Check: …** | A payment recorded by hand carries the same M-Pesa code but does not clearly match, for example a different amount. Tick it only after confirming it is not already counted. |
+   | **Already received from KCB** / **Already recorded by M-Pesa code** / **Imported earlier** | Already in TMBWA. It cannot be ticked. |
    | **Opening balance** / **Not an M-Pesa payment** | Not a member payment. It is ignored. |
 
-5. Select **Import payments** and confirm.
+6. Tick the payments you want, or select **Select all new in range**. Nothing is ticked until you choose.
+7. Select **Import N selected payments** and confirm.
 
-Imported payments appear in the queue marked **From statement**, with the date paid from the statement. Reconcile them as described in [Reconcile an unresolved KCB payment](#reconcile-an-unresolved-kcb-payment). Importing the same statement again changes nothing, and overlapping statements never import a payment twice.
+Imported payments appear in the queue marked **From statement**, with the date paid from the statement. Reconcile them as described in [Reconcile an unresolved KCB payment](#reconcile-an-unresolved-kcb-payment).
+
+The statement stays open after an import, so you can choose another range and import more. You can also upload the same statement again later. Payments already imported show as **Imported earlier**. No payment is ever imported twice, even from overlapping statements.
 
 ### Mark a statement payment as already recorded
 

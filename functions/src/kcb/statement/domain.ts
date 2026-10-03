@@ -1,4 +1,4 @@
-import type { KcbStatementTransaction } from 'tmbwa-shared';
+import { normalizeMpesaReference, type KcbStatementTransaction } from 'tmbwa-shared';
 
 // Decisions for importing KCB account statements (#94), kept free of
 // Firestore so they can be unit-tested.
@@ -10,8 +10,8 @@ export type StatementRowOutcome =
   | 'new'
   // Already a KCB notification, or a payment carrying the same M-Pesa code.
   | 'already_in_app'
-  // A payment carries the code but does not clearly account for it; skipped
-  // unless the treasurer asks for it to be imported.
+  // A payment carries the code but does not clearly account for it; imported
+  // only when the treasurer selects it.
   | 'matched_check'
   // Not an M-Pesa credit.
   | 'ignored';
@@ -73,4 +73,60 @@ export const statementPdfBytes = (value: unknown) => {
   if (bytes.length > MAX_STATEMENT_PDF_BYTES) throw new Error('The statement PDF is larger than 5 MB.');
   if (bytes.subarray(0, 5).toString('latin1') !== '%PDF-') throw new Error('The file is not a PDF.');
   return bytes;
+};
+
+export const MAX_SELECTED_RECEIPTS = 1000;
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+const isoDateValue = (value: unknown, name: string) => {
+  if (value === undefined || value === null || value === '') return undefined;
+  // Round-tripping rejects dates that do not exist, such as 2025-06-31.
+  const date = typeof value === 'string' && ISO_DATE.test(value) ? new Date(`${value}T00:00:00Z`) : undefined;
+  const valid = date !== undefined && !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+  if (!valid) {
+    throw new Error(`${name} must be a date in the form YYYY-MM-DD.`);
+  }
+  return value;
+};
+
+// The payments the treasurer chose to import, checked against the uploaded
+// statement: each must be one of its M-Pesa credits and, when a date range is
+// given, dated within it.
+export const importSelection = (
+  transactions: KcbStatementTransaction[],
+  input: { receipts: unknown; fromDate?: unknown; toDate?: unknown },
+) => {
+  const { receipts } = input;
+  if (!Array.isArray(receipts) || !receipts.length) {
+    throw new Error('Choose at least one payment to import.');
+  }
+  if (receipts.length > MAX_SELECTED_RECEIPTS) {
+    throw new Error(`Import at most ${MAX_SELECTED_RECEIPTS} payments at a time.`);
+  }
+  const selected = new Set(receipts.map((receipt) => {
+    const normalized = normalizeMpesaReference(receipt);
+    if (!normalized) throw new Error('receipts must be M-Pesa receipts.');
+    return normalized;
+  }));
+  const fromDate = isoDateValue(input.fromDate, 'fromDate');
+  const toDate = isoDateValue(input.toDate, 'toDate');
+  if (fromDate && toDate && fromDate > toDate) throw new Error('fromDate must not be after toDate.');
+
+  const credits = new Map(transactions.flatMap((transaction) => {
+    const receipt = transaction.mpesa && normalizeMpesaReference(transaction.mpesa.receipt);
+    return transaction.kind === 'mpesa_credit' && receipt ? [[receipt, transaction] as const] : [];
+  }));
+  selected.forEach((receipt) => {
+    const transaction = credits.get(receipt);
+    if (!transaction) throw new Error(`${receipt} is not an M-Pesa payment in this statement.`);
+    if ((fromDate && transaction.transactionDate < fromDate) || (toDate && transaction.transactionDate > toDate)) {
+      throw new Error(`${receipt} is outside the chosen date range.`);
+    }
+  });
+  return {
+    receipts: selected,
+    ...(fromDate ? { fromDate } : {}),
+    ...(toDate ? { toDate } : {}),
+  };
 };

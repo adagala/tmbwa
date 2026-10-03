@@ -28,7 +28,6 @@ export type StatementPreviewRow = {
 
 export type StatementPreview = {
   importId: string;
-  importStatus: 'importing' | 'completed' | null;
   header: {
     accountNumber: string;
     periodStart: string;
@@ -45,6 +44,7 @@ export type StatementPreview = {
 
 export type StatementImportResult = {
   importId: string;
+  runId: string;
   duplicate: boolean;
   counts: Record<string, number>;
 };
@@ -62,7 +62,7 @@ export const bytesToBase64 = (bytes: Uint8Array) => {
 };
 
 export const statementOutcomeLabel = (row: StatementPreviewRow) => {
-  if (row.outcome === 'new') return 'Will be imported';
+  if (row.outcome === 'new') return 'New';
   if (row.outcome === 'ignored') {
     return row.reason === 'opening_balance'
       ? 'Opening balance'
@@ -121,4 +121,78 @@ export const alreadyRecordedCandidates = (
   return payments
     .filter((payment) => distance(payment) <= windowDays * 86_400_000)
     .sort((left, right) => distance(left) - distance(right));
+};
+
+// Rows the treasurer can choose to import: new payments, and payments whose
+// M-Pesa code is on a recorded payment that does not clearly match.
+export const isSelectableRow = (row: StatementPreviewRow) =>
+  Boolean(row.receipt) &&
+  (row.outcome === 'new' || row.outcome === 'matched_check');
+
+// Statement dates are YYYY-MM-DD; the date picker works with local dates.
+export const isoDate = (date: Date) =>
+  [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, '0'),
+    String(date.getDate()).padStart(2, '0'),
+  ].join('-');
+
+export const localDate = (value: string) => {
+  const [year, month, day] = value.split('-').map(Number);
+  return new Date(year, month - 1, day);
+};
+
+export type IsoDateRange = { from?: string; to?: string };
+
+export const rowsInRange = <Row extends { transactionDate: string }>(
+  rows: Row[],
+  range: IsoDateRange,
+) =>
+  rows.filter(
+    (row) =>
+      (!range.from || row.transactionDate >= range.from) &&
+      (!range.to || row.transactionDate <= range.to),
+  );
+
+const MONTH_NAMES = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
+
+// The whole statement, then each calendar month it covers, clipped to the
+// statement period.
+export const statementRangePresets = (
+  periodStart: string,
+  periodEnd: string,
+) => {
+  const presets: Array<{ label: string; from: string; to: string }> = [
+    { label: 'Whole statement', from: periodStart, to: periodEnd },
+  ];
+  const [endYear, endMonth] = periodEnd.split('-').map(Number);
+  let [year, month] = periodStart.split('-').map(Number);
+  while (year < endYear || (year === endYear && month <= endMonth)) {
+    const first = `${year}-${String(month).padStart(2, '0')}-01`;
+    const last = isoDate(new Date(year, month, 0));
+    presets.push({
+      label: `${MONTH_NAMES[month - 1]} ${year}`,
+      from: first < periodStart ? periodStart : first,
+      to: last > periodEnd ? periodEnd : last,
+    });
+    month += 1;
+    if (month > 12) {
+      month = 1;
+      year += 1;
+    }
+  }
+  return presets;
 };

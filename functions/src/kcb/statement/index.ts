@@ -6,6 +6,7 @@ import {
   auditEventDocumentSchema,
   kcbPaymentNotificationDocumentSchema,
   kcbStatementImportDocumentSchema,
+  kcbStatementImportRunDocumentSchema,
   normalizeMpesaReference,
   parseKcbStatement,
   validateKcbStatement,
@@ -22,6 +23,7 @@ export { markKcbPaymentAlreadyRecorded, undoKcbPaymentAlreadyRecorded } from './
 import {
   type ReferencePayment,
   type StatementRowOutcome,
+  importSelection,
   referenceMatch,
   statementAmount,
   statementPdfBytes,
@@ -39,7 +41,6 @@ const KCB_STATEMENT_ACCOUNT_NUMBER = defineString('KCB_STATEMENT_ACCOUNT_NUMBER'
 
 const db = () => admin.firestore();
 const ROW_CONCURRENCY = 10;
-const MAX_RECEIPTS_TO_INCLUDE = 1000;
 
 type Data = Record<string, unknown>;
 
@@ -241,30 +242,12 @@ const headerSummary = (statement: KcbStatement) => ({
 export const previewKcbStatement = onCall({ timeoutSeconds: 300, memory: '1GiB' }, async (request) => {
   await requirePermission(request.auth, 'kcb.reconcile');
   const { statement, fileHash, problems } = await readStatement(request.data as Data);
-  const importSnapshot = await db().doc(`kcb_statement_imports/${fileHash}`).get();
-  const base = {
-    importId: fileHash,
-    importStatus: importSnapshot.exists ? importSnapshot.get('status') : null,
-    header: headerSummary(statement),
-    problems,
-  };
+  const base = { importId: fileHash, header: headerSummary(statement), problems };
   if (problems.length) return { ...base, rows: [] };
   const rows = await inChunks(statement.transactions, ROW_CONCURRENCY, async (transaction) =>
     previewRow(transaction, await classifyRow(directReader, transaction, fileHash)));
   return { ...base, rows };
 });
-
-const receiptsToInclude = (value: unknown) => {
-  if (value === undefined) return new Set<string>();
-  if (
-    !Array.isArray(value) ||
-    value.length > MAX_RECEIPTS_TO_INCLUDE ||
-    !value.every((item) => typeof item === 'string' && normalizeMpesaReference(item))
-  ) {
-    throw new HttpsError('invalid-argument', 'includeReceipts must be a list of M-Pesa receipts.');
-  }
-  return new Set(value.map((item) => normalizeMpesaReference(item) as string));
-};
 
 const storeStatementPdf = async (fileHash: string, bytes: Buffer, actorId: string) => {
   const file = admin.storage().bucket().file(statementPdfPath(fileHash));
@@ -279,39 +262,40 @@ const storeStatementPdf = async (fileHash: string, bytes: Buffer, actorId: strin
 
 type ImportedRow = {
   index: number;
-  outcome: 'imported' | 'already_in_app' | 'matched_check' | 'ignored';
+  outcome: 'imported' | 'already_in_app';
   reason?: string;
-  receipt?: string;
+  receipt: string;
   bankReference?: string;
   notificationId?: string;
   matchedPaymentPaths?: string[];
 };
 
+// Imports one selected payment, unless the app already has it. A selected
+// payment that needs a check is imported: selecting it is the treasurer's
+// decision.
 const importRow = (
   actor: Actor,
-  transaction: KcbStatementTransaction,
+  transaction: KcbStatementTransaction & { mpesa: NonNullable<KcbStatementTransaction['mpesa']> },
   importId: string,
-  includeReceipts: Set<string>,
+  runId: string,
 ) => db().runTransaction(async (firestoreTransaction): Promise<ImportedRow> => {
   await reauthorizeActor(firestoreTransaction, actor);
   const classification = await classifyRow(transactionReader(firestoreTransaction), transaction, importId);
-  const receipt = transaction.mpesa
-    ? normalizeMpesaReference(transaction.mpesa.receipt) ?? transaction.mpesa.receipt
-    : undefined;
-  const row: ImportedRow = {
+  const receipt = normalizeMpesaReference(transaction.mpesa.receipt) ?? transaction.mpesa.receipt;
+  const base = {
     index: transaction.index,
-    outcome: classification.importedEarlier ? 'imported' : classification.outcome === 'new' ? 'imported'
-      : classification.outcome,
-    ...(classification.reason && !classification.importedEarlier ? { reason: classification.reason } : {}),
-    ...(receipt ? { receipt } : {}),
+    receipt,
     ...(transaction.bankReference ? { bankReference: transaction.bankReference } : {}),
-    ...(classification.notificationId ? { notificationId: classification.notificationId } : {}),
-    ...(classification.matchedPaymentPaths ? { matchedPaymentPaths: classification.matchedPaymentPaths } : {}),
   };
-  const create =
-    classification.outcome === 'new' ||
-    (classification.outcome === 'matched_check' && receipt !== undefined && includeReceipts.has(receipt));
-  if (!create || !receipt || !transaction.mpesa) return row;
+  if (classification.outcome === 'already_in_app' || classification.outcome === 'ignored') {
+    return {
+      ...base,
+      outcome: classification.importedEarlier ? 'imported' : 'already_in_app',
+      ...(classification.reason && !classification.importedEarlier ? { reason: classification.reason } : {}),
+      ...(classification.notificationId ? { notificationId: classification.notificationId } : {}),
+      ...(classification.matchedPaymentPaths ? { matchedPaymentPaths: classification.matchedPaymentPaths } : {}),
+    };
+  }
 
   const transactionDate = statementTransactionDate(transaction.transactionDate);
   const notificationRef = db().doc(`kcb_payment_notifications/${receipt}`);
@@ -335,6 +319,7 @@ const importRow = (
       mpesaReceiptNumber: receipt,
       ...(transaction.bankReference ? { kcbTransactionReference: transaction.bankReference } : {}),
       importId,
+      importRunId: runId,
       statementDate: transaction.transactionDate,
       importedBy: actor.actorId,
       ...(classification.outcome === 'matched_check' ? {
@@ -347,20 +332,28 @@ const importRow = (
     notificationRef.path,
   ));
   return {
-    ...row,
+    ...base,
     outcome: 'imported',
     notificationId: receipt,
-    ...(classification.outcome === 'matched_check' ? { reason: `included_${classification.reason}` } : {}),
+    ...(classification.outcome === 'matched_check' ? { reason: `checked_${classification.reason}` } : {}),
   };
 });
 
-// Imports a statement. Idempotent and resumable: the import is keyed by the
-// PDF's SHA-256, each notification is created at most once, and repeating a
-// completed import changes nothing.
+const sameSelection = (stored: unknown, receipts: Set<string>) =>
+  Array.isArray(stored) && stored.length === receipts.size && stored.every((receipt) => receipts.has(receipt));
+
+// Imports the payments the treasurer selected from a statement, optionally
+// within a date range (#100). Each call is a run keyed by its requestId:
+// repeating a run returns its result, an interrupted run resumes, and the
+// same statement can be imported again with another selection. A payment is
+// never imported twice: its notification is keyed by M-Pesa receipt.
 export const importKcbStatement = onCall({ timeoutSeconds: 540, memory: '1GiB' }, async (request) => {
   const actor = await requirePermission(request.auth, 'kcb.reconcile');
   const data = request.data as Data;
-  const includeReceipts = receiptsToInclude(data.includeReceipts);
+  const runId = typeof data.requestId === 'string' ? data.requestId.trim() : '';
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(runId)) {
+    throw new HttpsError('invalid-argument', 'requestId is required.');
+  }
   const { bytes, statement, fileHash, problems } = await readStatement(data);
   if (problems.length) {
     throw new HttpsError(
@@ -368,66 +361,103 @@ export const importKcbStatement = onCall({ timeoutSeconds: 540, memory: '1GiB' }
       `The statement does not balance or is for another account: ${problems.map((item) => item.message).join(' ')}`,
     );
   }
+  let selection: ReturnType<typeof importSelection>;
+  try {
+    selection = importSelection(statement.transactions, {
+      receipts: data.receipts, fromDate: data.fromDate, toDate: data.toDate,
+    });
+  } catch (error) {
+    throw new HttpsError('invalid-argument', (error as Error).message);
+  }
   const importId = fileHash;
-  const importRef = db().doc(`kcb_statement_imports/${importId}`);
-  // Starts, or resumes, the import. Nothing is written for an officer whose
+  const statementRef = db().doc(`kcb_statement_imports/${importId}`);
+  const runRef = statementRef.collection('runs').doc(runId);
+
+  // Starts, or resumes, the run. Nothing is written for an officer whose
   // access changed after requirePermission.
   const started = await db().runTransaction(async (transaction) => {
     await reauthorizeActor(transaction, actor);
-    const existing = await transaction.get(importRef);
-    if (existing.get('status') === 'completed') return { completed: true, counts: existing.get('counts') ?? {} };
-    if (!existing.exists) {
-      transaction.create(importRef, validateDocumentWrite(kcbStatementImportDocumentSchema, {
+    const [statementSnapshot, run] = await Promise.all([transaction.get(statementRef), transaction.get(runRef)]);
+    if (run.exists && !sameSelection(run.get('receipts'), selection.receipts)) {
+      throw new HttpsError('failed-precondition', 'This requestId was already used for another selection.');
+    }
+    if (run.get('status') === 'completed') return { completed: true, counts: run.get('counts') ?? {} };
+    if (!statementSnapshot.exists) {
+      transaction.create(statementRef, validateDocumentWrite(kcbStatementImportDocumentSchema, {
         fileHash,
         fileName: fileNameValue(data.fileName),
         storagePath: statementPdfPath(fileHash),
-        status: 'importing',
         ...headerSummary(statement),
         importedBy: actor.actorId,
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      }, importRef.path));
+      }, statementRef.path));
+    }
+    if (!run.exists) {
+      transaction.create(runRef, validateDocumentWrite(kcbStatementImportRunDocumentSchema, {
+        requestId: runId,
+        importId,
+        status: 'importing',
+        receipts: [...selection.receipts],
+        ...(selection.fromDate ? { fromDate: selection.fromDate } : {}),
+        ...(selection.toDate ? { toDate: selection.toDate } : {}),
+        importedBy: actor.actorId,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, runRef.path));
     }
     return { completed: false, counts: {} };
   });
-  if (started.completed) return { importId, duplicate: true, counts: started.counts };
+  if (started.completed) return { importId, runId, duplicate: true, counts: started.counts };
 
   // Kept before any notification exists, so every imported payment has its
-  // evidence. A resumed import stores it if an earlier attempt could not.
+  // evidence. A resumed run stores it if an earlier attempt could not.
   await storeStatementPdf(fileHash, bytes, actor.actorId);
 
-  const rows = await inChunks(statement.transactions, ROW_CONCURRENCY, (transaction) =>
-    importRow(actor, transaction, importId, includeReceipts));
-  const counts = rows.reduce<Record<string, number>>((total, row) => ({
-    ...total, [row.outcome]: (total[row.outcome] ?? 0) + 1,
-  }), {});
+  const selected = statement.transactions.filter((transaction) =>
+    transaction.kind === 'mpesa_credit' && transaction.mpesa &&
+    selection.receipts.has(normalizeMpesaReference(transaction.mpesa.receipt) ?? ''));
+  const rows = await inChunks(selected, ROW_CONCURRENCY, (transaction) =>
+    importRow(actor, transaction as Parameters<typeof importRow>[1], importId, runId));
+  const counts: Record<string, number> = {
+    imported: rows.filter((row) => row.outcome === 'imported').length,
+    already_in_app: rows.filter((row) => row.outcome === 'already_in_app').length,
+    not_selected: statement.transactions.filter((transaction) => transaction.kind === 'mpesa_credit').length -
+      selected.length,
+    ignored: statement.transactions.filter((transaction) => transaction.kind !== 'mpesa_credit').length,
+  };
 
   await db().runTransaction(async (transaction) => {
     await reauthorizeActor(transaction, actor);
-    const current = await transaction.get(importRef);
+    const current = await transaction.get(runRef);
     if (current.get('status') === 'completed') return;
-    transaction.update(importRef, {
+    transaction.update(runRef, {
       status: 'completed',
       counts,
       rows,
       completedAt: admin.firestore.FieldValue.serverTimestamp(),
-      completedBy: actor.actorId,
     });
-    const auditPath = `audit_events/kcb-statement-imported-${importId}`;
-    transaction.create(db().doc(auditPath), validateDocumentWrite(auditEventDocumentSchema, {
-      requestId: `kcb-statement-imported-${importId}`,
+    transaction.update(statementRef, {
+      lastImportedBy: actor.actorId,
+      lastImportedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    const auditId = `kcb-statement-imported-${runId}`;
+    transaction.create(db().doc(`audit_events/${auditId}`), validateDocumentWrite(auditEventDocumentSchema, {
+      requestId: auditId,
       actorId: actor.actorId,
       actorRoles: actor.actorRoles,
       action: 'kcb_statement.imported',
       memberId: '',
       targetId: importId,
       changes: {
+        runId,
         periodStart: statement.header.periodStart,
         periodEnd: statement.header.periodEnd,
-        transactionCount: statement.transactions.length,
+        fromDate: selection.fromDate ?? null,
+        toDate: selection.toDate ?? null,
+        selectedCount: selection.receipts.size,
         counts,
       },
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    }, auditPath));
+    }, `audit_events/${auditId}`));
   });
-  return { importId, duplicate: false, counts };
+  return { importId, runId, duplicate: false, counts };
 });

@@ -157,9 +157,16 @@ An import must be refused unless it returns no problems. Tests use synthetic sta
 1. The client sends the PDF as `pdfBase64`, at most 5 MB.
 2. The Function extracts its text with `pdfjs-dist`, with scripting and font loading disabled.
 3. It parses the text and refuses the statement unless `validateKcbStatement` reports no problems against `KCB_STATEMENT_ACCOUNT_NUMBER`.
-4. The import is keyed by the PDF's SHA-256.
+4. The statement is keyed by the PDF's SHA-256.
 
 The browser never parses or writes anything itself.
+
+**Choosing what to import (#100).** The preview shows every row. The treasurer can narrow it to a date range (the whole statement, or one of its months) and ticks the payments to import. `importKcbStatement` takes:
+- `requestId`
+- `receipts`: the selected M-Pesa receipts, non-empty, at most 1,000
+- optional `fromDate` and `toDate` (`YYYY-MM-DD`)
+
+The server rejects a receipt that isn't an M-Pesa credit in the uploaded statement, or that falls outside the range. Rows that aren't selected are left alone.
 
 **What happens to each statement row:**
 
@@ -167,20 +174,21 @@ The browser never parses or writes anything itself.
 | --- | --- |
 | `ignored` | Not an M-Pesa credit (the brought-forward balance, charges, other credits). |
 | `already_in_app` | Any of these: <br>• a KCB notification exists under the M-Pesa receipt or the `FT…` reference <br>• a notification records either one <br>• one member's payments with that `referenceNormalized` total the statement amount and that member's profile phone is the payer's |
-| `matched_check` | Payments carry the code but belong to several members, total a different amount, or the payer phone differs. Skipped unless the treasurer lists the receipt in `includeReceipts`; the notification then records `referenceCheck`. |
-| `new` | Created as `kcb_payment_notifications/{receipt}` with: <br>• `status: 'unresolved'`, `source: 'statement_import'` <br>• `importId`, `statementDate` <br>• `transactionDate` in the STK form at midnight in Nairobi <br>• a phone-based member suggestion, as for Till notifications |
+| `matched_check` | Payments carry the code but belong to several members, total a different amount, or the payer phone differs. Imported only when the treasurer selects it; the notification then records `referenceCheck`. |
+| `new` | When selected, created as `kcb_payment_notifications/{receipt}` with: <br>• `status: 'unresolved'`, `source: 'statement_import'` <br>• `importId` (the statement), `importRunId` (the run), `statementDate` <br>• `transactionDate` in the STK form at midnight in Nairobi <br>• a phone-based member suggestion, as for Till notifications |
 
 Nothing changes a balance. The treasurer reconciles imported payments exactly like live ones.
 
 **Imports are safe to repeat:**
-- Each notification is created in its own transaction that re-checks the officer and re-checks for duplicates.
-- An interrupted import resumes when the same file is imported again.
-- Importing a completed statement again changes nothing.
+- The same statement can be imported many times, with a different selection or range each time. Each call is a run keyed by its `requestId`.
+- Each notification is created in its own transaction that re-checks the officer and re-checks for duplicates. A selected payment already in the app is skipped, so no payment is imported twice.
+- Repeating a run returns its earlier result; an interrupted run resumes. A `requestId` cannot be reused for a different selection.
 
 **What is recorded:**
-- `kcb_statement_imports/{sha256}` keeps the header, counts and per-row outcomes, using identifiers only.
+- `kcb_statement_imports/{sha256}` keeps the statement header and evidence path, and who imported from it last.
+- `kcb_statement_imports/{sha256}/runs/{requestId}` keeps each run's selected receipts, range, counts (`imported`, `already_in_app`, `not_selected`, `ignored`) and the selected rows' outcomes, using identifiers only.
 - The PDF is kept at `kcb_statements/{sha256}.pdf` in the default Storage bucket. `storage.rules` denies all client access.
-- Completing an import writes the `kcb_statement.imported` audit event.
+- Each completed run writes a `kcb_statement.imported` audit event.
 
 **Late live notifications.** A live Till notification that arrives later for an imported receipt merges into the same document, as it does for STK payments, and never re-opens it.
 
