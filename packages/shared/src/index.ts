@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { isMobilePhone } from 'validator';
 
 export * from './authorization';
+export * from './kcbStatement';
 
 // ---------------------------------------------------------------------------
 // Constants

@@ -126,3 +126,25 @@ The default Functions package deploy script intentionally selects `functions:def
 Sign in as an administrator and use **KCB reconciliation → Development test payment**. The item appears unresolved and must use the normal reconciliation workflow.
 
 Never deploy the `development-tools` codebase or enable either Sandbox flag in UAT or production. After testing, set both server and client enabled flags to `false` and remove the development-tools function if it is no longer needed. Do not enable production callbacks until KCB's production authentication requirements have been confirmed and implemented.
+
+## Account statement parsing
+
+Statement imports (#94) read the KCB "Account Statement" PDF with `parseKcbStatement` and check it with `validateKcbStatement`, both in `tmbwa-shared`.
+
+**Input.** `parseKcbStatement` takes the PDF's text in content order, with any whitespace between items; pdf.js text items joined with spaces is enough.
+
+**What it returns:**
+- The header: account, period, opening and closing balances, total money in and out.
+- Every transaction, with amounts in integer cents. M-Pesa credits are recognised from details such as `Transfer 7969138 MPESA <receipt> <2547…> <NAME> /` (Till) or `Mobi 522522 MPESA …` (Paybill), and carry the receipt, payer phone, truncated payer name and KCB `FT…` reference.
+
+**When parsing fails.** Text the parser does not recognise, other than page numbers, fails the parse instead of being skipped.
+
+**What `validateKcbStatement` checks:**
+- the account number, when the expected one is given
+- the brought-forward and closing balances against the header
+- that the running ledger balance follows every row
+- that credits and debits add up to the header totals
+- that every transaction is dated within the period
+- that no bank reference or M-Pesa receipt repeats
+
+An import must be refused unless it returns no problems. Tests use synthetic statements only (`tests/kcbStatement.test.ts`).
