@@ -93,6 +93,15 @@ export const unallocatedPaymentAmount = (
 export const isMpesaReceiptNumber = (value: unknown): value is string =>
   typeof value === 'string' && /^[A-Z0-9]{8,20}$/.test(value);
 
+// A hand-typed M-Pesa code in the form KCB reports it: whitespace removed and
+// upper-cased. Anything that is not then receipt-shaped, such as
+// `BALANCE B/F` or an internal `TMBWA-…` receipt, has no normalized form.
+export const normalizeMpesaReference = (value: unknown): string | undefined => {
+  if (typeof value !== 'string') return undefined;
+  const normalized = value.replace(/\s+/g, '').toUpperCase();
+  return isMpesaReceiptNumber(normalized) ? normalized : undefined;
+};
+
 export const member_status = [
   MEMBER_STATUS.ACTIVE,
   MEMBER_STATUS.INACTIVE,
@@ -228,6 +237,9 @@ export const paymentDocumentSchema = z.object({
   action_by: z.string().optional(),
   created_at: z.unknown().optional(),
   receipt_number: z.string().optional(),
+  // Server-owned normalizeMpesaReference(referencenumber), so a statement
+  // receipt can be matched to a payment whose code was typed by hand.
+  referenceNormalized: z.string().optional(),
   balance_direction: MemberBalanceTypeEnum.optional(),
   allocations: z.array(z.object({
     contribution_id: z.string().min(1),

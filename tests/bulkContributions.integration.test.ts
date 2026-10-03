@@ -124,6 +124,8 @@ describe('bulk missing contributions', () => {
     expect(await memberDoc()).toMatchObject({ balance: -800, contributionBalance: 700 });
 
     const balancePayments = await payments();
+    // BALANCE B/F is not an M-Pesa code, so it has no normalized form.
+    balancePayments.forEach((payment) => expect(payment).not.toHaveProperty('referenceNormalized'));
     expect(
       balancePayments
         .map((payment) => [payment.contribution_id, payment.amount])

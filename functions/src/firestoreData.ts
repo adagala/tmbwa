@@ -12,6 +12,7 @@ import {
   notificationPreferenceDocumentSchema,
   paymentDocumentSchema,
 } from 'tmbwa-shared';
+import { withReferenceNormalized } from './payments/reference';
 
 const parseSnapshot = <Result>(
   snapshot: FirebaseFirestore.DocumentSnapshot,
@@ -54,6 +55,11 @@ export const validateDocumentWrite = <Result>(
   }
   return result.data;
 };
+
+// Every member payment document is written through this, so the server-owned
+// `referenceNormalized` always follows `referencenumber`.
+export const validatePaymentWrite = (payment: Record<string, unknown>, path: string) =>
+  validateDocumentWrite(paymentDocumentSchema, withReferenceNormalized(payment), path);
 
 export const memberData = (snapshot: FirebaseFirestore.DocumentSnapshot) =>
   parseSnapshot(snapshot, memberDocumentSchema, 'Member');

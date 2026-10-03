@@ -289,7 +289,7 @@ describe('Till notifications and STK callbacks for one payment', () => {
     expect(await notificationIds()).toEqual([RECEIPT]);
     const [payment, ...others] = await payments();
     expect(others).toHaveLength(0);
-    expect(payment).toMatchObject({ amount: 1000, provider_transaction_id: RECEIPT });
+    expect(payment).toMatchObject({ amount: 1000, provider_transaction_id: RECEIPT, referenceNormalized: RECEIPT });
     expect((await stkRequest('push-1')).status).toBe('reconciled');
   });
 
@@ -321,7 +321,9 @@ describe('Till notifications and STK callbacks for one payment', () => {
       merchantRequestId: 'merchant-checkout-early',
     });
     expect(await notificationIds()).toEqual([RECEIPT]);
-    expect(await payments()).toHaveLength(1);
+    const [payment, ...others] = await payments();
+    expect(others).toHaveLength(0);
+    expect(payment.referenceNormalized).toBe(RECEIPT);
   });
 
   it('keeps the settled STK payment and adds the Till details when the Till notification follows', async () => {

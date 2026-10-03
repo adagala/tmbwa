@@ -4,13 +4,13 @@ import {
   auditEventDocumentSchema,
   kcbPaymentNotificationDocumentSchema,
   notificationEventDocumentSchema,
-  paymentDocumentSchema,
 } from 'tmbwa-shared';
 import { allocateTopUpToArrears } from '../financial/domain';
 import {
   contributionData,
   memberData,
   validateDocumentWrite,
+  validatePaymentWrite,
 } from '../firestoreData';
 import {
   ACCOUNT_TOP_UP_PURPOSE,
@@ -122,8 +122,7 @@ export const recordStkTopUp = (
   );
   const receiptNumber = `TMBWA-${args.paymentId.toUpperCase()}`;
   const paymentPath = `members/${args.memberId}/payments/${args.paymentId}`;
-  const payment = validateDocumentWrite(
-    paymentDocumentSchema,
+  const payment = validatePaymentWrite(
     {
       payment_id: args.paymentId,
       referencenumber: args.providerTransactionId,

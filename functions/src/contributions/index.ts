@@ -5,13 +5,13 @@ import {
   MONTHLY_CONTRIBUTION,
   PAYMENT_STATUS,
   contributionDocumentSchema,
-  paymentDocumentSchema,
 } from 'tmbwa-shared';
 import { arrayToChunks, getCurrentMonth } from '../utils';
 import {
   contributionData,
   memberWithIdData,
   validateDocumentWrite,
+  validatePaymentWrite,
 } from '../firestoreData';
 import { availableUnreservedBalance } from '../financial/domain';
 
@@ -54,7 +54,7 @@ const createForMember = async (member: MemberWithId, month: string, amount: numb
         receipt_number: `TMBWA-${paymentId.toUpperCase()}`,
       };
       const paymentPath = `members/${member.member_id}/payments/${paymentId}`;
-      const validatedPayment = validateDocumentWrite(paymentDocumentSchema, payment, paymentPath);
+      const validatedPayment = validatePaymentWrite(payment, paymentPath);
       payments.push(validatedPayment);
       transaction.create(db().doc(paymentPath), validatedPayment);
     }

@@ -9,7 +9,6 @@ import {
   auditEventDocumentSchema,
   kcbPaymentNotificationDocumentSchema,
   notificationEventDocumentSchema,
-  paymentDocumentSchema,
   unallocatedPaymentAmount,
 } from 'tmbwa-shared';
 import {
@@ -26,6 +25,7 @@ import {
   memberData,
   paymentData,
   validateDocumentWrite,
+  validatePaymentWrite,
 } from '../firestoreData';
 import {
   acknowledgement,
@@ -609,8 +609,7 @@ export const reconcileKcbPayment = onCall(async (request) => {
     });
     transaction.create(
       db().doc(`members/${memberId}/payments/${paymentId}`),
-      validateDocumentWrite(
-        paymentDocumentSchema,
+      validatePaymentWrite(
         payment,
         `members/${memberId}/payments/${paymentId}`,
       ),
@@ -1772,8 +1771,7 @@ export const requestKcbStkPush = onCall(
             const internalReceiptNumber = `TMBWA-${paymentId.toUpperCase()}`;
             const paymentPath =
               `members/${current.memberId}/payments/${paymentId}`;
-            const payment = validateDocumentWrite(
-              paymentDocumentSchema,
+            const payment = validatePaymentWrite(
               {
                 payment_id: paymentId,
                 referencenumber: receiptNumber,
@@ -2751,8 +2749,7 @@ export const kcbStkCallback = onRequest(
               `TMBWA-${automaticPaymentId.toUpperCase()}`;
             const paymentPath =
               `members/${pending.memberId}/payments/${automaticPaymentId}`;
-            const payment = validateDocumentWrite(
-              paymentDocumentSchema,
+            const payment = validatePaymentWrite(
               {
                 payment_id: automaticPaymentId,
                 referencenumber: callback.receiptNumber,
