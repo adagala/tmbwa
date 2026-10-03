@@ -37,3 +37,5 @@ Beneficiary events record IDs and counts only. They never contain beneficiary na
 ## Statement import events
 
 `importKcbStatement` writes one `kcb_statement.imported` event when an import completes, at `audit_events/kcb-statement-imported-{importId}`, where `importId` is the statement PDF's SHA-256. `memberId` is empty and `targetId` is the import ID. `changes` hold the statement period, its transaction count, and the count of rows per outcome. They contain no payer details.
+
+`markKcbPaymentAlreadyRecorded` and `undoKcbPaymentAlreadyRecorded` write `payment.already_recorded` and `payment.already_recorded_undone` at `audit_events/{requestId}`. `memberId` is the member whose existing records account for the statement payment, and `targetId` is the notification. `changes` hold the linked payment and month IDs and the reason; the mark event also holds the amount.

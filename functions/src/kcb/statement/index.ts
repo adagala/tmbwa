@@ -17,6 +17,8 @@ import { type Actor, reauthorizeActor, requirePermission } from '../../authoriza
 import { validateDocumentWrite } from '../../firestoreData';
 import { normalizeKenyanPhone, parseKcbTransactionDate } from '../domain';
 import { extractPdfText } from './pdf';
+
+export { markKcbPaymentAlreadyRecorded, undoKcbPaymentAlreadyRecorded } from './alreadyRecorded';
 import {
   type ReferencePayment,
   type StatementRowOutcome,

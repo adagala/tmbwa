@@ -69,12 +69,24 @@ const seed = async () => {
     payment_id: 'manual-1', referencenumber: 'td22bbbbbb', referenceNormalized: 'TD22BBBBBB', amount: 500,
   });
   // A live notification keyed by receipt, and one stored before #86 keyed by FT reference.
-  await db().doc('kcb_payment_notifications/TD33CCCCCC').set({ status: 'reconciled', source: 'till_notification' });
+  await db().doc('kcb_payment_notifications/TD33CCCCCC').set(LIVE_NOTIFICATION);
   await db().doc('kcb_payment_notifications/FT25094DDDD4').set({ status: 'unresolved', source: 'till_notification' });
   // A code recorded against too little money.
   await db().doc('members/member-a/payments/manual-2').set({
     payment_id: 'manual-2', referencenumber: 'TD55EEEEEE', referenceNormalized: 'TD55EEEEEE', amount: 500,
   });
+};
+
+const LIVE_NOTIFICATION = {
+  status: 'reconciled',
+  source: 'till_notification',
+  payerPhone: '+254700000003',
+  payerName: 'CARL',
+  amount: 1500,
+  currency: 'KES',
+  billReference: '7969138',
+  transactionDate: 'Thu Apr 03 10:10:10 EAT 2025',
+  matchReason: 'no_verified_phone_match',
 };
 
 const notificationIds = async () =>
@@ -182,7 +194,7 @@ describe('importKcbStatement', () => {
     });
     // Existing notifications are left as they were.
     expect((await db().doc('kcb_payment_notifications/TD33CCCCCC').get()).data())
-      .toEqual({ status: 'reconciled', source: 'till_notification' });
+      .toEqual(LIVE_NOTIFICATION);
 
     const record = (await db().doc(`kcb_statement_imports/${result.importId}`).get()).data()!;
     expect(record).toMatchObject({
@@ -279,5 +291,121 @@ describe('importKcbStatement', () => {
   it('rejects an invalid list of receipts to include', async () => {
     await expect(call(statement.importKcbStatement, treasurer, { pdfBase64: pdfBase64(), includeReceipts: ['BALANCE B/F'] }))
       .rejects.toMatchObject({ code: 'invalid-argument' });
+  });
+});
+
+describe('already recorded statement payments', () => {
+  const mark = (data: Record<string, unknown>) =>
+    call(statement.markKcbPaymentAlreadyRecorded, treasurer, {
+      requestId: 'mark-1',
+      providerTransactionId: 'TD11AAAAAA',
+      memberId: 'member-a',
+      paymentIds: ['manual-3'],
+      contributionIds: ['2025-04-01'],
+      reason: 'Paid in cash to the treasurer and recorded by hand',
+      ...data,
+    });
+  const undo = (data: Record<string, unknown> = {}) =>
+    call(statement.undoKcbPaymentAlreadyRecorded, treasurer, {
+      requestId: 'undo-1', providerTransactionId: 'TD11AAAAAA', reason: 'Linked to the wrong payment', ...data,
+    });
+  const snapshotOf = async () => ({
+    member: (await db().doc('members/member-a').get()).data(),
+    contribution: (await db().doc('members/member-a/contributions/2025-04-01').get()).data(),
+    payments: (await db().collection('members/member-a/payments').get()).docs.map((doc) => doc.data()),
+    stats: (await db().collection('monthly_stats').get()).docs.map((doc) => doc.data()),
+  });
+
+  beforeEach(async () => {
+    await db().doc('members/member-a').set({ balance: 0, contributionBalance: 1000 }, { merge: true });
+    // Recorded by hand without the M-Pesa code, so the import could not match it.
+    await db().doc('members/member-a/payments/manual-3').set({
+      payment_id: 'manual-3', referencenumber: 'cash', amount: 1000,
+    });
+    await db().doc('members/member-a/contributions/2025-04-01').set({
+      contribution_id: '2025-04-01', month: '2025-04-01', amount: 1000, balance: 0, paid: 'paid',
+    });
+    await db().doc('members/member-a/contributions/2025-05-01').set({
+      contribution_id: '2025-05-01', month: '2025-05-01', amount: 1000, balance: 1000, paid: 'unpaid',
+    });
+    await call(statement.importKcbStatement, treasurer, { pdfBase64: pdfBase64() });
+  });
+
+  it('links the payment to existing records without changing any balance', async () => {
+    const before = await snapshotOf();
+    await expect(mark({})).resolves.toEqual({ requestId: 'mark-1', duplicate: false });
+
+    expect(await snapshotOf()).toEqual(before);
+    expect((await db().doc('kcb_payment_notifications/TD11AAAAAA').get()).data()).toMatchObject({
+      status: 'already_recorded',
+      memberId: 'member-a',
+      linkedPaymentIds: ['manual-3'],
+      linkedContributionIds: ['2025-04-01'],
+      alreadyRecordedReason: 'Paid in cash to the treasurer and recorded by hand',
+      alreadyRecordedBy: TREASURER,
+    });
+    expect((await db().doc('kcb_legacy_payment_links/member-a_manual-3').get()).data())
+      .toMatchObject({ providerTransactionId: 'TD11AAAAAA', linkedBy: TREASURER });
+    expect((await db().doc('audit_events/mark-1').get()).data()).toMatchObject({
+      action: 'payment.already_recorded', memberId: 'member-a', targetId: 'TD11AAAAAA',
+      changes: { amount: 1000, linkedPaymentIds: ['manual-3'], linkedContributionIds: ['2025-04-01'] },
+    });
+    await expect(mark({})).resolves.toEqual({ requestId: 'mark-1', duplicate: true });
+  });
+
+  it('never lets one existing payment account for two statement payments', async () => {
+    await mark({});
+    await expect(mark({ requestId: 'mark-2', providerTransactionId: 'TD66FFFFFF' })).rejects.toMatchObject({
+      code: 'failed-precondition',
+      message: 'That payment already accounts for statement payment TD11AAAAAA.',
+    });
+  });
+
+  it('refuses links that cannot account for the payment', async () => {
+    await expect(mark({ paymentIds: [], contributionIds: [] })).rejects.toMatchObject({ code: 'invalid-argument' });
+    await expect(mark({ paymentIds: ['missing'] })).rejects.toMatchObject({ code: 'not-found' });
+    await expect(mark({ paymentIds: [], contributionIds: ['2025-05-01'] }))
+      .rejects.toMatchObject({ code: 'failed-precondition' });
+    await expect(mark({ paymentIds: ['manual-1'], contributionIds: [] })).rejects.toMatchObject({ code: 'not-found' });
+    await expect(mark({ memberId: TREASURER })).rejects.toMatchObject({ code: 'permission-denied' });
+    expect((await db().doc('kcb_payment_notifications/TD11AAAAAA').get()).get('status')).toBe('unresolved');
+  });
+
+  it('applies only to unresolved payments imported from a statement', async () => {
+    await expect(mark({ providerTransactionId: 'TD33CCCCCC' })).rejects.toMatchObject({
+      code: 'failed-precondition',
+      message: 'Only payments imported from a statement can be marked already recorded.',
+    });
+    await mark({});
+    await expect(mark({ requestId: 'mark-2' })).rejects.toMatchObject({
+      code: 'failed-precondition',
+      message: 'Only unresolved payments can be marked already recorded.',
+    });
+  });
+
+  it('can be undone, returning the payment to the queue unlocked', async () => {
+    await mark({});
+    const before = await snapshotOf();
+    await expect(undo()).resolves.toEqual({ requestId: 'undo-1', duplicate: false });
+
+    expect(await snapshotOf()).toEqual(before);
+    const notification = (await db().doc('kcb_payment_notifications/TD11AAAAAA').get()).data()!;
+    expect(notification).toMatchObject({ status: 'unresolved', source: 'statement_import' });
+    for (const field of ['memberId', 'linkedPaymentIds', 'linkedContributionIds', 'alreadyRecordedReason']) {
+      expect(notification).not.toHaveProperty(field);
+    }
+    expect(notification.alreadyRecordedHistory).toEqual([expect.objectContaining({
+      requestId: 'undo-1', memberId: 'member-a', linkedPaymentIds: ['manual-3'],
+      undoneReason: 'Linked to the wrong payment', undoneBy: TREASURER,
+    })]);
+    expect((await db().doc('kcb_legacy_payment_links/member-a_manual-3').get()).exists).toBe(false);
+    expect((await db().doc('audit_events/undo-1').get()).get('action')).toBe('payment.already_recorded_undone');
+    await expect(undo()).resolves.toEqual({ requestId: 'undo-1', duplicate: true });
+
+    // The freed payment can now account for another statement payment.
+    await expect(mark({ requestId: 'mark-2', providerTransactionId: 'TD66FFFFFF' })).resolves.toMatchObject({
+      duplicate: false,
+    });
+    await expect(undo({ requestId: 'undo-2' })).rejects.toMatchObject({ code: 'failed-precondition' });
   });
 });
