@@ -495,3 +495,38 @@ describe('Till notification member suggestions', () => {
     });
   });
 });
+
+describe('Till notifications for payments imported from a statement', () => {
+  const imported = (status: string) => ({
+    status,
+    source: 'statement_import',
+    importId: 'statement-hash',
+    providerTransactionId: RECEIPT,
+    mpesaReceiptNumber: RECEIPT,
+    kcbTransactionReference: FT_REFERENCE,
+    payerPhone: PHONE,
+    payerName: 'ALIC',
+    amount: 1000,
+    currency: 'KES',
+    billReference: '7969138',
+    transactionDate: '20260930000000',
+    matchReason: 'unique_profile_phone',
+  });
+
+  it.each(['unresolved', 'reconciled'])(
+    'adds a late Till notification to the %s imported payment without a second queue item',
+    async (status) => {
+      await db().doc(`kcb_payment_notifications/${RECEIPT}`).set(imported(status));
+
+      expect((await deliverTillNotification()).statusCode).toBe(200);
+
+      expect(await notificationIds()).toEqual([RECEIPT]);
+      expect(await notification()).toMatchObject({
+        ...imported(status),
+        kcbMessageId: 'kcb-message-1',
+        kcbChannelCode: '202',
+      });
+      expect(await payments()).toHaveLength(0);
+    },
+  );
+});

@@ -340,6 +340,42 @@ export const kcbPaymentNotificationDocumentSchema = z.object({
   unallocatedAmount: z.number().nonnegative().optional(),
   creditReserved: z.boolean().optional(),
   purpose: StkPurposeEnum.optional(),
+  // Set on notifications created from an imported account statement.
+  importId: z.string().optional(),
+  statementDate: z.string().optional(),
+}).passthrough();
+
+// One imported KCB account statement (#94), keyed by the PDF's SHA-256. Rows
+// record only identifiers and outcomes; payer details live on the
+// notifications the import created.
+export const kcbStatementImportRowSchema = z.object({
+  index: z.number().int().nonnegative(),
+  outcome: z.enum(['imported', 'already_in_app', 'matched_check', 'ignored']),
+  reason: z.string().optional(),
+  receipt: z.string().optional(),
+  bankReference: z.string().optional(),
+  notificationId: z.string().optional(),
+  matchedPaymentPaths: z.array(z.string()).optional(),
+});
+
+export const kcbStatementImportDocumentSchema = z.object({
+  fileHash: z.string(),
+  fileName: z.string(),
+  storagePath: z.string(),
+  status: z.enum(['importing', 'completed']),
+  accountNumber: z.string(),
+  periodStart: z.string(),
+  periodEnd: z.string(),
+  openingBalanceCents: z.number().int(),
+  closingBalanceCents: z.number().int(),
+  totalMoneyInCents: z.number().int(),
+  totalMoneyOutCents: z.number().int(),
+  transactionCount: z.number().int().nonnegative(),
+  counts: z.record(z.number().int().nonnegative()).optional(),
+  rows: z.array(kcbStatementImportRowSchema).optional(),
+  importedBy: z.string(),
+  createdAt: z.unknown().optional(),
+  completedAt: z.unknown().optional(),
 }).passthrough();
 
 export const kcbStkRequestStatusSchema = z.enum([

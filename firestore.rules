@@ -196,6 +196,12 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Imported KCB account statements (#94). Written only by importKcbStatement.
+    match /kcb_statement_imports/{importId} {
+      allow read: if can('kcb.reconcile');
+      allow write: if false;
+    }
+
     match /kcb_notification_messages/{messageId} {
       allow read, write: if false;
     }

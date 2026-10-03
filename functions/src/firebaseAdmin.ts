@@ -11,6 +11,7 @@ import {
   getFirestore,
   Timestamp,
 } from 'firebase-admin/firestore';
+import { getStorage } from 'firebase-admin/storage';
 
 const initializeApp = (options?: AppOptions) =>
   getApps()[0] ?? initializeFirebaseApp(options);
@@ -33,6 +34,7 @@ export const admin = {
   credential: { applicationDefault },
   firestore,
   initializeApp,
+  storage: getStorage,
 };
 
 export { Timestamp };
