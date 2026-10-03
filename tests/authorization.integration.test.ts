@@ -1,4 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { statementPdf } from './fixtures/kcbStatementPdf';
 
 // Runs against the Firestore emulator only (see `npm run test:integration`).
 process.env.GCLOUD_PROJECT = 'demo-tmbwa';
@@ -11,11 +12,13 @@ process.env.KCB_STK_URL = 'https://kcb.example.test/stkpush';
 process.env.KCB_STK_ROUTE_CODE = '207';
 process.env.KCB_SHARED_REFERENCE = '7969138';
 process.env.KCB_CURRENCY = 'KES';
+process.env.KCB_STATEMENT_ACCOUNT_NUMBER = '1100000001';
 
 const { admin } = await import('../functions/src/firebaseAdmin');
-admin.initializeApp({ projectId: 'demo-tmbwa' });
+admin.initializeApp({ projectId: 'demo-tmbwa', storageBucket: 'demo-tmbwa.appspot.com' });
 const financial = await import('../functions/src/financial');
 const kcb = await import('../functions/src/kcb');
+const kcbStatement = await import('../functions/src/kcb/statement');
 const beneficiaries = await import('../functions/src/beneficiaries');
 const notifications = await import('../functions/src/notifications');
 
@@ -177,6 +180,25 @@ const cases: Case[] = [
       providerTransactionId: 'R-404',
       allocations: [{ contributionId: '2026-09-01', amount: 500 }],
     }),
+  },
+  {
+    name: 'previewKcbStatement',
+    fn: kcbStatement.previewKcbStatement,
+    allowed: 'treasurer',
+    denied: 'auditor',
+    data: () => ({ pdfBase64: 'bm90IGEgcGRm' }),
+  },
+  {
+    name: 'importKcbStatement',
+    fn: kcbStatement.importKcbStatement,
+    allowed: 'treasurer',
+    denied: 'auditor',
+    // A valid statement, so the command reaches its transactions.
+    data: () => ({ pdfBase64: statementPdf({
+      account: '1100000001', period: '01.04.2025 - 01.05.2025',
+      start: '0.00', end: '0.00', moneyIn: '0.00', moneyOut: '0.00',
+    }, [{ date: '01.04.2025', details: ['BALANCE B/FWD'], out: '0.00', in: '0.00', balance: '0.00' }])
+      .toString('base64') }),
   },
   {
     name: 'rejectKcbPayment',
@@ -503,6 +525,7 @@ describe('changes between authorization and commit', () => {
     'recordContributionPayment',
     'adjustMemberBalance',
     'listLegacyContributionInventory',
+    'previewKcbStatement',
   ];
   const mutations = cases.filter(({ name }) => !readOnlyOrRetired.includes(name));
 

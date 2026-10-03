@@ -148,3 +148,44 @@ Statement imports (#94) read the KCB "Account Statement" PDF with `parseKcbState
 - that no bank reference or M-Pesa receipt repeats
 
 An import must be refused unless it returns no problems. Tests use synthetic statements only (`tests/kcbStatement.test.ts`).
+
+## Statement imports
+
+`previewKcbStatement` and `importKcbStatement` (permission `kcb.reconcile`) bring historical M-Pesa credits from a KCB account statement PDF into the reconciliation queue (#94).
+
+**How the server reads the upload:**
+1. The client sends the PDF as `pdfBase64`, at most 5 MB.
+2. The Function extracts its text with `pdfjs-dist`, with scripting and font loading disabled.
+3. It parses the text and refuses the statement unless `validateKcbStatement` reports no problems against `KCB_STATEMENT_ACCOUNT_NUMBER`.
+4. The import is keyed by the PDF's SHA-256.
+
+The browser never parses or writes anything itself.
+
+**What happens to each statement row:**
+
+| Outcome | When |
+| --- | --- |
+| `ignored` | Not an M-Pesa credit (the brought-forward balance, charges, other credits). |
+| `already_in_app` | Any of these: <br>• a KCB notification exists under the M-Pesa receipt or the `FT…` reference <br>• a notification records either one <br>• one member's payments with that `referenceNormalized` total the statement amount and that member's profile phone is the payer's |
+| `matched_check` | Payments carry the code but belong to several members, total a different amount, or the payer phone differs. Skipped unless the treasurer lists the receipt in `includeReceipts`; the notification then records `referenceCheck`. |
+| `new` | Created as `kcb_payment_notifications/{receipt}` with: <br>• `status: 'unresolved'`, `source: 'statement_import'` <br>• `importId`, `statementDate` <br>• `transactionDate` in the STK form at midnight in Nairobi <br>• a phone-based member suggestion, as for Till notifications |
+
+Nothing changes a balance. The treasurer reconciles imported payments exactly like live ones.
+
+**Imports are safe to repeat:**
+- Each notification is created in its own transaction that re-checks the officer and re-checks for duplicates.
+- An interrupted import resumes when the same file is imported again.
+- Importing a completed statement again changes nothing.
+
+**What is recorded:**
+- `kcb_statement_imports/{sha256}` keeps the header, counts and per-row outcomes, using identifiers only.
+- The PDF is kept at `kcb_statements/{sha256}.pdf` in the default Storage bucket. `storage.rules` denies all client access.
+- Completing an import writes the `kcb_statement.imported` audit event.
+
+**Late live notifications.** A live Till notification that arrives later for an imported receipt merges into the same document, as it does for STK payments, and never re-opens it.
+
+To enable it in an environment:
+
+1. Make sure Firebase Storage has a default bucket in the project.
+2. Set the non-secret parameter `KCB_STATEMENT_ACCOUNT_NUMBER` to the association's KCB account number. Imports are refused while it is empty.
+3. Deploy `storage`, `firestore:rules`, and then the `previewKcbStatement` and `importKcbStatement` Functions.

@@ -1,0 +1,76 @@
+import type { KcbStatementTransaction } from 'tmbwa-shared';
+
+// Decisions for importing KCB account statements (#94), kept free of
+// Firestore so they can be unit-tested.
+
+export const MAX_STATEMENT_PDF_BYTES = 5 * 1024 * 1024;
+
+export type StatementRowOutcome =
+  // Imported as an unresolved notification for reconciliation.
+  | 'new'
+  // Already a KCB notification, or a payment carrying the same M-Pesa code.
+  | 'already_in_app'
+  // A payment carries the code but does not clearly account for it; skipped
+  // unless the treasurer asks for it to be imported.
+  | 'matched_check'
+  // Not an M-Pesa credit.
+  | 'ignored';
+
+export type ReferencePayment = {
+  path: string;
+  memberId: string;
+  amount: number;
+  // The member's `phoneNormalized`.
+  memberPhone?: string;
+};
+
+export type ReferenceMatch =
+  | { kind: 'none' }
+  | { kind: 'recorded'; memberId: string; paths: string[] }
+  | {
+      kind: 'check';
+      reason: 'several_members' | 'amount_differs' | 'payer_phone_differs';
+      memberIds: string[];
+      paths: string[];
+    };
+
+// Whether payments recorded by hand with the statement's M-Pesa code already
+// account for it. A lump sum is often recorded as several payments with the
+// same code, so their total is compared with the statement amount.
+export const referenceMatch = (
+  row: { amount: number; payerPhone?: string },
+  payments: ReferencePayment[],
+): ReferenceMatch => {
+  if (!payments.length) return { kind: 'none' };
+  const memberIds = [...new Set(payments.map((payment) => payment.memberId))];
+  const paths = payments.map((payment) => payment.path);
+  if (memberIds.length > 1) return { kind: 'check', reason: 'several_members', memberIds, paths };
+  const totalCents = payments.reduce((sum, payment) => sum + Math.round(payment.amount * 100), 0);
+  if (totalCents !== Math.round(row.amount * 100)) {
+    return { kind: 'check', reason: 'amount_differs', memberIds, paths };
+  }
+  if (!row.payerPhone || payments[0].memberPhone !== row.payerPhone) {
+    return { kind: 'check', reason: 'payer_phone_differs', memberIds, paths };
+  }
+  return { kind: 'recorded', memberId: memberIds[0], paths };
+};
+
+// Statements give a date without a time. Stored in the STK transaction date
+// form at midnight in Nairobi, so reconciliation can date the payment.
+export const statementTransactionDate = (isoDate: string) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(isoDate)) throw new Error(`Invalid statement date: ${isoDate}`);
+  return `${isoDate.replace(/-/g, '')}000000`;
+};
+
+export const statementAmount = (transaction: Pick<KcbStatementTransaction, 'moneyInCents'>) =>
+  transaction.moneyInCents / 100;
+
+// The decoded upload, refused unless it is a PDF of a sensible size.
+export const statementPdfBytes = (value: unknown) => {
+  if (typeof value !== 'string' || !value) throw new Error('pdfBase64 is required.');
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(value)) throw new Error('pdfBase64 is not valid base64.');
+  const bytes = Buffer.from(value, 'base64');
+  if (bytes.length > MAX_STATEMENT_PDF_BYTES) throw new Error('The statement PDF is larger than 5 MB.');
+  if (bytes.subarray(0, 5).toString('latin1') !== '%PDF-') throw new Error('The file is not a PDF.');
+  return bytes;
+};

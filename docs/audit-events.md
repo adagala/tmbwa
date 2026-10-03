@@ -33,3 +33,7 @@ Beneficiary commands write audit events in the same transaction as the change. T
 | `beneficiary.change_rejected` | Administrator | `type`, `beneficiaryCount` |
 
 Beneficiary events record IDs and counts only. They never contain beneficiary names, dates of birth, contact details or ID numbers.
+
+## Statement import events
+
+`importKcbStatement` writes one `kcb_statement.imported` event when an import completes, at `audit_events/kcb-statement-imported-{importId}`, where `importId` is the statement PDF's SHA-256. `memberId` is empty and `targetId` is the import ID. `changes` hold the statement period, its transaction count, and the count of rows per outcome. They contain no payer details.

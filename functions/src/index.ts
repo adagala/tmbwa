@@ -5,6 +5,7 @@ import * as Member from './members';
 import * as Contribution from './contributions';
 import * as Financial from './financial';
 import * as Kcb from './kcb';
+import * as KcbStatement from './kcb/statement';
 import * as Notifications from './notifications';
 import * as Beneficiaries from './beneficiaries';
 
@@ -32,6 +33,8 @@ export const rejectKcbPayment = Kcb.rejectKcbPayment;
 export const resolveKcbStkUnknownOutcome = Kcb.resolveKcbStkUnknownOutcome;
 export const requestKcbStkPush = Kcb.requestKcbStkPush;
 export const kcbStkCallback = Kcb.kcbStkCallback;
+export const previewKcbStatement = KcbStatement.previewKcbStatement;
+export const importKcbStatement = KcbStatement.importKcbStatement;
 export const queueNotificationDeliveries = Notifications.queueNotificationDeliveries;
 export const processNotificationOutbox = Notifications.processNotificationOutbox;
 export const retryNotificationDelivery = Notifications.retryNotificationDelivery;

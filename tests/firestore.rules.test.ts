@@ -185,6 +185,7 @@ describe('Firestore authorization', () => {
     await assertFails(updateDoc(doc(db, 'members/member-a'), { balance: 500 }));
     await assertFails(deleteDoc(doc(db, 'members/member-a')));
     await assertFails(deleteDoc(doc(db, 'members/member-a/payments/payment-1')));
+    await assertFails(setDoc(doc(db, 'kcb_statement_imports/import-1'), { status: 'completed' }));
     // Statement imports match on this server-owned field.
     await assertFails(updateDoc(doc(db, 'members/member-a/payments/payment-1'), { referenceNormalized: 'TD11AAAAAA' }));
     await assertFails(updateDoc(doc(db, 'monthly_stats/2026-08-01'), { amount: 0 }));
@@ -365,6 +366,7 @@ describe('role-based access', () => {
       await setDoc(doc(db, 'audit_events/event-1'), { action: 'payment.reversed', memberId: 'member-a' });
       await setDoc(doc(db, 'kcb_payment_notifications/R-1'), { status: 'unresolved', amount: 500 });
       await setDoc(doc(db, 'kcb_stk_requests/stk-1'), { memberId: 'member-a', status: 'pending' });
+      await setDoc(doc(db, 'kcb_statement_imports/import-1'), { status: 'completed' });
       await setDoc(doc(db, 'notification_events/event-1'), { memberId: 'member-a' });
       await setDoc(doc(db, 'notification_deliveries/delivery-1'), { memberId: 'member-a' });
       await setDoc(doc(db, 'contribution_rates/rate-1'), { amount: 500, effectiveFrom: '2026-01-01' });
@@ -388,6 +390,7 @@ describe('role-based access', () => {
     ['query all payments', 'payments.read', (db) => getDocs(query(collectionGroup(db, 'payments'), orderBy('paymentdate', 'desc')))],
     ['read KCB payments', 'payments.read', (db) => getDocs(collection(db, 'kcb_payment_notifications'))],
     ['read STK requests', 'payments.read', (db) => getDoc(doc(db, 'kcb_stk_requests/stk-1'))],
+    ['read statement imports', 'kcb.reconcile', (db) => getDocs(collection(db, 'kcb_statement_imports'))],
     ['read contribution rates', 'payments.read', (db) => getDocs(collection(db, 'contribution_rates'))],
     ['read monthly statistics', 'reports.read', (db) => getDoc(doc(db, 'monthly_stats/2026-08-01'))],
     ['read statistics', 'reports.read', (db) => getDoc(doc(db, 'stats/--stats--'))],
