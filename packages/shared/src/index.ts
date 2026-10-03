@@ -313,7 +313,9 @@ export const kcbPaymentNotificationDocumentSchema = z.object({
   currency: z.string(),
   billReference: z.string(),
   transactionDate: z.string(),
-  status: z.enum(['unresolved', 'reconciled', 'rejected', 'reversed']),
+  // already_recorded: a statement-imported payment an existing record
+  // already accounts for (#94).
+  status: z.enum(['unresolved', 'reconciled', 'rejected', 'reversed', 'already_recorded']),
   suggestedMemberId: z.string().nullable().optional(),
   matchReason: z.string(),
   receivedAt: z.unknown().optional(),

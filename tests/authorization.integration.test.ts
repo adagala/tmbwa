@@ -201,6 +201,22 @@ const cases: Case[] = [
       .toString('base64') }),
   },
   {
+    name: 'markKcbPaymentAlreadyRecorded',
+    fn: kcbStatement.markKcbPaymentAlreadyRecorded,
+    allowed: 'treasurer',
+    denied: 'auditor',
+    data: (memberId) => ({
+      requestId, providerTransactionId: 'R-404', memberId, paymentIds: ['payment-404'], reason: 'Recorded by hand',
+    }),
+  },
+  {
+    name: 'undoKcbPaymentAlreadyRecorded',
+    fn: kcbStatement.undoKcbPaymentAlreadyRecorded,
+    allowed: 'treasurer',
+    denied: 'registrar',
+    data: () => ({ requestId, providerTransactionId: 'R-404', reason: 'Linked in error' }),
+  },
+  {
     name: 'rejectKcbPayment',
     fn: kcb.rejectKcbPayment,
     allowed: 'treasurer',
@@ -359,6 +375,7 @@ describe('actions on the actor\'s own record', () => {
       'deleteMemberSafely',
       'transitionMemberStatus',
       'reconcileKcbPayment',
+      'markKcbPaymentAlreadyRecorded',
     ].includes(name),
   );
 

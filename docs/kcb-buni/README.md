@@ -189,3 +189,21 @@ To enable it in an environment:
 1. Make sure Firebase Storage has a default bucket in the project.
 2. Set the non-secret parameter `KCB_STATEMENT_ACCOUNT_NUMBER` to the association's KCB account number. Imports are refused while it is empty.
 3. Deploy `storage`, `firestore:rules`, and then the `previewKcbStatement` and `importKcbStatement` Functions.
+
+### Already recorded
+
+Some imported payments are already accounted for by a payment or paid month that was recorded by hand without its M-Pesa code, so the import could not match them. For these, `markKcbPaymentAlreadyRecorded({ requestId, providerTransactionId, memberId, paymentIds, contributionIds, reason })` (permission `kcb.reconcile`) links the statement payment to those records.
+
+**What linking does:**
+- Sets the notification's status to `already_recorded` and records the member, the linked IDs, the reason, and who did it.
+- **Changes no balance, contribution, credit, payment or monthly statistic.** It only takes the payment out of the queue.
+
+**What is checked:**
+- Only `unresolved` notifications with `source: 'statement_import'` can be linked.
+- Every linked payment must exist, and every linked month must be paid or partly paid, both for that member.
+- The member must not be the officer.
+- An existing payment can account for one statement payment only: `kcb_legacy_payment_links/{memberId}_{paymentId}` is claimed in the same transaction.
+
+**Undoing a link.** `undoKcbPaymentAlreadyRecorded({ requestId, providerTransactionId, reason })` returns the notification to `unresolved`, with no member lock. It releases the payment claims and records what was undone in `alreadyRecordedHistory`.
+
+Both commands are idempotent by `requestId` and write the `payment.already_recorded` and `payment.already_recorded_undone` audit events.
